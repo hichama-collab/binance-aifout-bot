@@ -9,3 +9,10 @@ docs/legacy/
 scripts/legacy/
 .env
 .env
+
+# runtime artifacts
+data/logs/
+data/runtime/
+*.log
+*_trades.csv
+*_errors.log
