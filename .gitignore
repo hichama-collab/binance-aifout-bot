@@ -7,3 +7,4 @@ __pycache__/
 legacy/
 docs/legacy/
 scripts/legacy/
+.env
