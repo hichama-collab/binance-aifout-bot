@@ -1,0 +1,18 @@
+profiles:
+  strict:
+    cap_usdc: 50
+    mom_window_sec: 30
+    mom_min_pct: 0.0005
+    mom_min_up_ratio: 0.45
+    hold_csv_every: 30
+
+  aggressive:
+    cap_usdc: 200
+    mom_window_sec: 20
+    mom_min_pct: 0.0003
+    mom_min_up_ratio: 0.35
+    hold_csv_every: 15
+
+strategies:
+  momentum: {}
+  reversal: {}

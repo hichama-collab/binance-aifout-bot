@@ -1,0 +1,158 @@
+import os
+from dataclasses import dataclass
+import dataclasses
+from pathlib import Path
+from dotenv import load_dotenv
+import yaml
+
+
+@dataclass(frozen=True)
+class StrategyProfile:
+    name: str
+    emaFast: int
+    emaSlow: int
+    rsiMin: float
+    rsiMax: float
+    volMult: float
+    spreadMax: float
+
+
+PROFILES = {
+    "strict": StrategyProfile(
+        name="strict",
+        emaFast=9,
+        emaSlow=21,
+        rsiMin=40,
+        rsiMax=75,
+        volMult=0.0,
+        spreadMax=0.006,
+    ),
+    "aggressive": StrategyProfile(
+        name="aggressive",
+        emaFast=7,
+        emaSlow=21,
+        rsiMin=30,
+        rsiMax=80,
+        volMult=0.0,
+        spreadMax=0.006,
+    ),
+}
+
+
+@dataclass(frozen=True)
+class Config:
+    apiKey: str
+    apiSecret: str
+
+    baseUrl: str = "https://api.binance.com"
+
+    orderTtl: float = 2.5
+    orderPoll: float = 0.2
+
+    idleSleep: float = 0.2
+    chkEvery: float = 2.0
+
+    cooldownWin: int = 10
+    cooldownLoss: int = 30
+
+    httpTimeout: int = 12
+    httpRetries: int = 3
+    httpBackoff: float = 0.6
+
+    ipFile: Path = Path("ip.txt")
+    ipCheckTimeout: int = 8
+
+    dataDir: Path = Path("data")
+    tradesCsv: Path = Path("data/trades.csv")
+    riskYaml: Path = Path("config/risk.yaml")
+
+    dryRun: bool = False
+    strategyName: str = 'momentum'
+    profileName: str = 'strict'
+
+
+def loadConfig() -> Config:
+    load_dotenv()
+    apiKey = os.getenv("BINANCE_API_KEY")
+    apiSecret = os.getenv("BINANCE_API_SECRET")
+    if not apiKey or not apiSecret:
+        raise RuntimeError("ENV manquant (.env)")
+
+    dry = os.getenv("DRY_RUN", "").strip().lower() in ("1", "true", "yes", "on")
+    trades_csv = os.getenv("TRADES_CSV", "").strip()
+    strat = os.getenv('STRATEGY', 'momentum').strip().lower() or 'momentum'
+    prof = (os.getenv('PROFILE') or 'strict').strip().lower() or 'strict'
+
+    cfg = Config(apiKey=apiKey, apiSecret=apiSecret, dryRun=dry, strategyName=strat, profileName=prof)
+    if trades_csv:
+        return Config(
+            apiKey=cfg.apiKey,
+            apiSecret=cfg.apiSecret,
+            baseUrl=cfg.baseUrl,
+            orderTtl=cfg.orderTtl,
+            orderPoll=cfg.orderPoll,
+            idleSleep=cfg.idleSleep,
+            chkEvery=cfg.chkEvery,
+            cooldownWin=cfg.cooldownWin,
+            cooldownLoss=cfg.cooldownLoss,
+            httpTimeout=cfg.httpTimeout,
+            httpRetries=cfg.httpRetries,
+            httpBackoff=cfg.httpBackoff,
+            ipFile=cfg.ipFile,
+            ipCheckTimeout=cfg.ipCheckTimeout,
+            dataDir=cfg.dataDir,
+            tradesCsv=Path(trades_csv),
+            dryRun=cfg.dryRun,
+            strategyName=cfg.strategyName,
+            profileName=cfg.profileName,
+        )
+    return cfg
+
+
+def _loadRiskYaml(path: Path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return {}
+
+
+def applyRiskConfig(cfg: Config) -> Config:
+    data = _loadRiskYaml(cfg.riskYaml)
+    prof = (getattr(cfg, "profileName", None) or "strict").lower()
+    strat = (getattr(cfg, "strategyName", None) or "momentum").lower()
+
+    p = (data.get("profiles") or {}).get(prof) or {}
+    s = (data.get("strategies") or {}).get(strat) or {}
+
+    fields = getattr(cfg, "__dataclass_fields__", {}) or {}
+    updates = {}
+
+    for k_yaml, k_cfg in [
+        ("cap_usdc", "cap"),
+        ("riskPct", "riskPct"),
+        ("tpPct", "tpPct"),
+        ("armPct", "armPct"),
+        ("trailPct", "trailPct"),
+        ("maxPosTimeSec", "maxPosTimeSec"),
+        ("hardMaxPosTimeSec", "hardMaxPosTimeSec"),
+        ("maxPosTime", "maxPosTimeSec"),
+        ("hardMaxPosTime", "hardMaxPosTimeSec"),
+    ]:
+        if k_yaml in p and k_cfg in fields:
+            updates[k_cfg] = p[k_yaml]
+
+    if "strategyParams" in fields:
+        updates["strategyParams"] = s
+
+    if updates:
+        cfg = dataclasses.replace(cfg, **updates)
+
+    return cfg
+
+
+def pickProfile() -> StrategyProfile:
+    name = (os.getenv("PROFILE") or "strict").strip().lower()
+    return PROFILES.get(name, PROFILES["strict"])

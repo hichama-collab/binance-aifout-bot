@@ -1,0 +1,6 @@
+from __future__ import annotations
+from typing import Protocol, Any, Dict
+
+class Strategy(Protocol):
+    def compute(self, kl1: Any, kl5: Any) -> Dict[str, Any]: ...
+    def entryOk(self, ind: Dict[str, Any], spreadOk: bool) -> bool: ...

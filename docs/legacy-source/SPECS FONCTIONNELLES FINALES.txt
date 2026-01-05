@@ -1,0 +1,353 @@
+[SPECS FONCTIONNELLES FINALES – BOT TRADING BINANCE SPOT
+Version verrouillée – base unique pour le dev]
+
+---
+
+## 1) OBJECTIF DU BOT
+
+Développer un bot **Binance Spot** robuste, stable et exploitable en continu, destiné aux **paires Spot standards (non-Alpha)**, avec une logique **momentum / trend-following**, orientée **répétabilité, contrôle du risque et exécution propre**.
+
+Objectifs opérationnels :
+
+* Capturer des mouvements **progressifs et propres**
+* Éviter les marchés morts, illiquides ou manipulés
+* Standardiser le risque par trade (capital first)
+* Réduire au maximum les comportements non déterministes
+* Fonctionner sans intervention humaine
+
+---
+
+## 2) PÉRIMÈTRE ET CONTRAINTES
+
+### 2.1 Périmètre inclus
+
+* Binance **Spot uniquement**
+* Paires **TRADING** visibles dans `exchangeInfo`
+* Quote prioritaire : **USDC**
+* Fallback autorisé : **USDT**
+* 1 seul symbol à la fois
+* 1 position maximum simultanée
+
+### 2.2 Hors périmètre strict
+
+* Tokens Alpha
+* Contrats 0x
+* Futures
+* Margin
+* Market orders
+* Multi-positions
+* Scan multi-tokens
+
+---
+
+## 3) ENTRÉE UTILISATEUR
+
+### 3.1 Entrée unique
+
+```
+SYMBOLUSDC
+```
+
+Exemples :
+
+```
+BTCUSDC
+ETHUSDC
+AIAUSDC
+FHEUSDC
+```
+
+### 3.2 Validation immédiate au démarrage
+
+* Vérification via `exchangeInfo`
+* `status != TRADING` → **STOP**
+* Symbol inexistant → **STOP**
+* Tick size / step size récupérés et validés
+
+Aucune autre entrée utilisateur.
+
+---
+
+## 4) ENVIRONNEMENT TECHNIQUE
+
+* OS : Ubuntu
+* Python : `.venv`
+* Lancement :
+
+```
+./.venv/bin/python main.py SYMBOLUSDC
+```
+
+* Dépendances :
+
+  * requests
+  * websockets
+  * numpy
+  * pandas
+
+Aucun module Alpha, aucun scraper, aucun cloud.
+
+---
+
+## 5) ARCHITECTURE GÉNÉRALE
+
+### 5.1 Boucles séparées
+
+#### 1) Boucle Analyse (REST)
+
+* Source : `/api/v3/klines`
+* Timeframes :
+
+  * **1m** (exécution)
+  * **5m ou 15m** (filtre régime)
+* Refresh : 15–30 secondes
+* Calcul :
+
+  * EMA 9
+  * EMA 21
+  * RSI 14
+  * Volume moyen (N=20)
+  * ATR (pour stops)
+
+#### 2) Boucle Exécution (WebSocket)
+
+* Flux :
+
+  * `@miniTicker`
+  * `@bookTicker`
+* Rôles :
+
+  * Pricing précis
+  * Spread / liquidité
+  * Suivi position
+  * Trailing stop temps réel
+
+Communication via **état interne partagé** (state machine).
+
+---
+
+## 6) FILTRE DE RÉGIME DE MARCHÉ (OBLIGATOIRE)
+
+Un trade n’est autorisé que si :
+
+* EMA9 > EMA21 sur **1m**
+* EMA9 > EMA21 sur **HTF (5m ou 15m)**
+* Pente EMA21 HTF positive
+
+Si le régime HTF est invalide → **NO TRADE**, même si 1m est haussier.
+
+---
+
+## 7) INDICATEURS ET CONDITIONS D’ENTRÉE
+
+### 7.1 Conditions cumulatives (toutes vraies)
+
+* Symbol valide et tradable
+* Pas déjà en position
+* Régime marché valide (cf. section 6)
+* EMA9 > EMA21 (1m)
+* RSI ∈ [40 ; 65]
+* Volume actuel > moyenne volume
+* Clôture proche du high (proxy pression acheteuse)
+* Spread ≤ seuil max (% du prix)
+* Liquidité bid ≥ X fois la taille de position
+
+Si **une seule condition échoue** → NO TRADE.
+
+---
+
+## 8) GESTION DU RISQUE (FONDATION DU BOT)
+
+### 8.1 Risk par trade
+
+* Risque fixe par trade : **R % du capital** (ex : 0.3 %)
+* Aucune exception
+
+### 8.2 Sizing
+
+* Quantité calculée **à partir du stop initial**
+* Jamais de taille fixe
+* Toujours normalisée par le risque
+
+---
+
+## 9) ORDRE D’ENTRÉE
+
+* Type : **LIMIT BUY**
+* Prix :
+
+  * best ask
+  * ou best ask − 1 tick si spread suffisant
+* TTL : 1–3 secondes
+* 1 retry maximum
+* Non exécuté → abandon immédiat
+
+Aucun market order.
+Aucune poursuite.
+
+---
+
+## 10) PROTECTION INITIALE (OBLIGATOIRE)
+
+Dès l’entrée :
+
+* Placement logique d’un **hard stop initial**
+
+  * Basé sur :
+
+    * dernier low structurel **ou**
+    * ATR × facteur
+* Stop large mais réel
+* Position jamais laissée sans protection
+
+---
+
+## 11) GESTION DE POSITION
+
+### 11.1 Règles strictes
+
+* 1 position max
+* Pas de moyenne à la baisse
+* Pas d’ajout
+* Pas d’exception discrétionnaire
+
+### 11.2 Données suivies
+
+* Prix d’entrée
+* Heure d’entrée
+* Hard stop
+* Plus haut atteint
+* PnL latent
+* R multiple en cours
+
+---
+
+## 12) SORTIES
+
+### 12.1 Sortie normale
+
+Déclenchée si :
+
+* EMA9 < EMA21 (1m)
+* RSI > 70
+* Trailing stop touché
+
+### 12.2 Trailing stop
+
+* Activé **uniquement après passage en profit**
+* Basé sur :
+
+  * % fixe **ou**
+  * ATR dynamique
+* Ne redescend jamais
+
+### 12.3 Ordre de sortie
+
+* LIMIT SELL
+* Prix :
+
+  * best bid
+  * ou best bid − offset léger
+* TTL court
+* Repricing limité
+
+---
+
+## 13) SORTIE FORCÉE (SÉCURITÉ)
+
+Déclenchée si :
+
+* Liquidité bid disparaît
+* Spread explose
+* WebSocket down > seuil critique
+* Temps max en position dépassé
+
+Action :
+
+* LIMIT SELL agressif
+* Objectif : **sortir**, pas optimiser
+
+---
+
+## 14) GESTION WS / MODE DÉGRADÉ
+
+* Micro-coupure WS :
+
+  * Timer de grâce (2–3 s)
+  * Si REST OK → gestion dégradée
+* Double silence WS + REST → sortie forcée
+
+---
+
+## 15) POST-TRADE
+
+* Cooldown automatique
+
+  * Plus long après loss
+  * Plus court après win
+* Anti-revenge strict
+* Reset état interne propre
+
+---
+
+## 16) LOGS ET MÉTRIQUES
+
+### 16.1 Logs trade
+
+Dans `data/trades.log` :
+
+* Timestamp entrée / sortie
+* Prix
+* Quantité
+* Raison entrée
+* Raison sortie
+* PnL brut / net
+* R multiple
+
+### 16.2 Métriques internes
+
+* Win rate
+* Expectancy
+* Temps moyen en position
+
+---
+
+## 17) CE QUE LE BOT NE FAIT JAMAIS
+
+* Pas d’Alpha
+* Pas de Futures
+* Pas de Market
+* Pas de multi-tokens
+* Pas de moyenne à la baisse
+* Pas d’émotion
+* Pas de bavardage
+
+---
+
+## 18) LIVRABLE
+
+* Un seul fichier : `main.py`
+* Entrée unique : `SYMBOLUSDC`
+* Stable
+* Lisible
+* Testable
+* Sans hacks
+
+---
+
+## 19) PHILOSOPHIE FINALE
+
+* Capital > signal
+* Régime > indicateur
+* Sortie > entrée
+* Répétabilité > coup unique
+* Silence > bruit
+
+---
+
+Ces specs sont **figées** et **suffisantes** pour coder directement.
+Prochaine étape logique : **architecture technique détaillée + state machine exacte**, puis dev.
+
+
+Configuration : 
+pas de proxy juste un vpn avce adresse ip

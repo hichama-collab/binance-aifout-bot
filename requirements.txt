@@ -1,0 +1,8 @@
+python-binance==1.0.19
+websocket-client==1.8.0
+requests==2.32.3
+numpy==1.26.4
+ta==0.11.0
+PyYAML>=6.0
+python-dotenv>=1.0.0
+websocket-client>=1.6

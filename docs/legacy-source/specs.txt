@@ -1,0 +1,156 @@
+## Specs fonctionnelles – Bot Binance Spot (LIMIT only)
+
+### 1) Périmètre
+
+* Marché : Binance **Spot** uniquement.
+* Paires : `XXXUSDC` (ex : `AVNTUSDC`). Le symbole est passé en argument CLI.
+* Ordres : **LIMIT uniquement** (BUY/SELL). Aucune market order.
+* Position : **1 seule position max** (pas de pyramiding, pas de multi-positions).
+
+### 2) Entrées / paramètres
+
+* Entrée CLI :
+
+  * `python3 main.py SYMBOL` (ex `python3 main.py AVNTUSDC`)
+* Configuration (fichier config ou variables) :
+
+  * `MAX_USDC_PER_TRADE` (cap par trade, ex 50)
+  * `ORDER_TTL` (durée max avant annulation si non rempli)
+  * `ORDER_POLL` (fréquence de polling ordre)
+  * `MAX_POS_TIME` (time stop en position)
+  * `TRAIL_PCT` (trailing stop)
+  * `COOLDOWN_WIN`, `COOLDOWN_LOSS` (cooldown après trade)
+  * Filtres stratégie (EMA/RSI/Volume/Spread) via `profile`.
+
+### 3) Préconditions d’exécution
+
+* VPN actif + IP whitelist Binance OK.
+* Connexion API Spot valide.
+* Wallet Spot : USDC dispo (au moins `minNotional + marge`).
+* Le bot doit bloquer si :
+
+  * IP courante ≠ IP attendue (si check IP activé).
+
+### 4) Données utilisées
+
+* Market data REST :
+
+  * `klines` 1m (LTF) + 5m (HTF) pour indicateurs.
+* Market data temps réel :
+
+  * book best bid/ask via stream.
+* Wallet :
+
+  * `account` balances pour USDC et asset base.
+* Métadonnées symbole :
+
+  * tickSize, stepSize, minNotional.
+
+### 5) Stratégie (décision d’entrée)
+
+* Le bot calcule à chaque cycle :
+
+  * EMA fast/slow (1m et 5m)
+  * RSI (1m)
+  * Filtre volume (comparaison vol bougie vs moyenne)
+  * Spread `(ask-bid)/ask`
+* Conditions d’entrée (ENTRY) :
+
+  * Spread <= `SPREAD_MAX`
+  * Logique `trend` et/ou `reversal` selon profil (implémentée dans `strategy/basic_v1.py`)
+* Si ENTRY non valide : rester en `IDLE`.
+
+### 6) Sizing et contraintes d’ordre
+
+* Budget engagé :
+
+  * `budget = min(MAX_USDC_PER_TRADE, USDC_free)`
+  * Si volume faible : budget peut être réduit (ex 50%).
+* Quantité :
+
+  * `qty = floor_to_step(budget / ask, stepSize)`
+* Garde-fous :
+
+  * `qty > 0`
+  * `qty * price >= minNotional`
+* Prix BUY (LIMIT) :
+
+  * Mode “fill” : BUY au `ask` (LIMIT mais exécution rapide).
+  * (Optionnel futur : BUY au bid si tu veux maker-only, mais non requis ici)
+* Prix SELL (LIMIT) :
+
+  * au `ask` (ou `last` fallback si book indispo).
+
+### 7) Exécution d’ordre
+
+* BUY :
+
+  * Place limit BUY avec `qty` + `buyPx`.
+  * Attend remplissage jusqu’à `ORDER_TTL` avec polling `ORDER_POLL`.
+  * Si non rempli : annule et passe en cooldown.
+* SELL :
+
+  * Déclenché par règle de sortie (trailing stop / time stop).
+  * Place limit SELL, attend fill ou cancel comme BUY.
+
+### 8) Gestion de position
+
+* États :
+
+  * `IDLE` : pas de position.
+  * `IN_POS` : position ouverte.
+  * `COOLDOWN` : temporisation après tentative/trade.
+* Objet position :
+
+  * `qty`, `entry`, `high`, `stop`, `ts_entry`
+* Mise à jour en temps réel :
+
+  * `high` suit le prix.
+  * `stop` suit `high` via `TRAIL_PCT`.
+
+### 9) Règles de sortie
+
+* Trailing stop :
+
+  * Si prix <= `stop` → SELL.
+* Time stop :
+
+  * Si `time_in_pos > MAX_POS_TIME` → SELL.
+* Après SELL :
+
+  * Calcul PnL, log trade, cooldown win/loss.
+
+### 10) Synchronisation wallet
+
+* Sync périodique (ex toutes les 60s) :
+
+  * Si wallet montre une position alors que local non → créer/adapter `Position`.
+  * Si wallet ne montre plus la position → remettre `IDLE`.
+* Objectif : survivre aux redémarrages et aux divergences.
+
+### 11) Logs attendus
+
+* Console :
+
+  * `INIT`, `PROFILE`, `CFG`, `CHK`, `DEBUG_ENTRY`, `BUY_*`, `SELL_*`, `SYNC_*`
+* Fichier :
+
+  * Un log “trades” (BUY/SELL) horodaté + PnL + symbole + profile (si activé).
+
+### 12) Non-fonctionnel (contraintes)
+
+* Robustesse :
+
+  * Pas de crash sur erreurs réseau (retry/backoff côté REST).
+  * Websocket : reconnexion si drop (à traiter si instable).
+* Sécurité :
+
+  * Clés via `.env`.
+  * IP whitelist Binance requise.
+* Performance :
+
+  * Loop stable, pas de sleep excessif.
+  * Polling ordre configurable.
+
+Si tu veux une version “format contrat” (1 page, numérotée, sans ambiguïté), je te la sors directement.
+
