@@ -1,0 +1,7 @@
+ts_utc,symbol,event,side,qty,price,reason,pnl,profile,dry_run,spread_pct,mom_pct,up_ratio,rsi,ema1_ok,ema5_ok,vol_ok
+2026-01-06 12:00:00,BNBUSDT,BUY_FILLED,BUY,1.0,300.0,MOM,,aggressive,1,0.001,0.05,0.2,48,1,1,1
+2026-01-06 12:05:00,BNBUSDT,SELL_FILLED,SELL,1.0,303.0,TP,3.0,aggressive,1,0.001,0.05,0.2,55,1,1,1
+2026-01-06 12:10:00,BNBUSDT,DECIDE_HOLD,,,,HOLD_BAL,,aggressive,1,0.0009,0.02,0.18,52,1,1,1
+2026-01-06 12:15:00,BNBUSDT,BUY_FILLED,BUY,1.2,302.0,MOM,,aggressive,1,0.0008,0.01,0.15,50,1,1,1
+2026-01-06 12:20:00,BNBUSDT,SELL_FILLED,SELL,1.2,300.5,TRAIL,-1.8,aggressive,1,0.0008,0.01,0.12,47,1,1,1
+2026-01-06 12:25:00,BNBUSDT,DECIDE_HOLD,,,,HOLD_RSI,,aggressive,1,0.0011,0.03,0.2,60,1,1,1
