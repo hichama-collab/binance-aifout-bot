@@ -1,18 +1,41 @@
 profiles:
   strict:
     cap_usdc: 50
+
+    # momentum (entry)
     mom_window_sec: 30
     mom_min_pct: 0.0005
     mom_min_up_ratio: 0.45
     hold_csv_every: 30
 
+    # exits (shared)
+    riskPct: 0.008
+    tpPct: 0.018
+    armPct: 0.015
+    trailPct: 0.008
+    feeBufPct: 0.0015
+    maxPosTime: 900
+    hardMaxPosTime: 0
+
   aggressive:
     cap_usdc: 200
+
+    # momentum (entry)
     mom_window_sec: 20
     mom_min_pct: 0.0003
     mom_min_up_ratio: 0.35
     hold_csv_every: 15
 
+    # exits (shared)
+    riskPct: 0.010
+    tpPct: 0.015
+    armPct: 0.012
+    trailPct: 0.007
+    feeBufPct: 0.0015
+    maxPosTime: 900
+    hardMaxPosTime: 0
+
 strategies:
   momentum: {}
   reversal: {}
+
