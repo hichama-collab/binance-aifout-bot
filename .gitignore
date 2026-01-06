@@ -1,17 +1,14 @@
-env
+.env
 .venv/
-pycache/
+__pycache__/
 .DS_Store
+
 legacy/
 docs/legacy/
 scripts/legacy/
 
-runtime artifacts
+# runtime artifacts only
 data/logs/
 data/runtime/
 *.log
-*_trades.csv
 *_errors.log
-optional samples (allowed to commit)
-!data_sample/
-!data_sample/*.csv
