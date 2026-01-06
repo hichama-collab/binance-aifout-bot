@@ -3,6 +3,53 @@ import sys
 import time
 from decimal import Decimal
 
+
+def momentum_ok(ticks, window_sec: float, min_pct: float, min_up_ratio: float):
+    """
+    ticks: list[(ts, bid)]
+    Retour: (ok, mom_pct, up_ratio)
+
+    Tiered relaxation:
+    - momentum fort => tolérance up_ratio plus basse
+    """
+    if not ticks:
+        return False, 0.0, 0.0
+
+    now = ticks[-1][0]
+    cutoff = now - window_sec
+    win = [(ts, bid) for ts, bid in ticks if ts >= cutoff]
+
+    if len(win) < 2:
+        return False, 0.0, 0.0
+
+    p0 = win[0][1]
+    p1 = win[-1][1]
+    if p0 <= 0 or p1 <= 0:
+        return False, 0.0, 0.0
+
+    mom = (p1 - p0) / p0
+
+    ups = 0
+    tot = 0
+    last = win[0][1]
+    for _, b in win[1:]:
+        if b > last:
+            ups += 1
+        tot += 1
+        last = b
+
+    up_ratio = (ups / tot) if tot else 0.0
+
+    relaxed = min_up_ratio
+    if mom >= min_pct * 4:
+        relaxed *= 0.6
+    elif mom >= min_pct * 2:
+        relaxed *= 0.8
+
+    ok = (mom >= min_pct) and (up_ratio >= relaxed)
+    return ok, mom, up_ratio
+
+
 from core.config import loadConfig, pickProfile, applyRiskConfig
 from core.logging import tradeLogger, tradeCsvLogger, errorLogger, ensureCsvHeader
 from services.ipguard import vpnCheckOrDie
@@ -56,51 +103,6 @@ def get_usdc_balance_safe(bx: Binance) -> float:
         if b.get("asset") == "USDC":
             return float(b.get("free", "0"))
     return 0.0
-
-
-def momentum_ok(ticks, window_sec: float, min_pct: float, min_up_ratio: float):
-    """
-    ticks: list[(ts, bid)]
-    Retour: (ok, mom_pct, up_ratio)
-    """
-    if not ticks:
-        return False, 0.0, 0.0
-
-    now = ticks[-1][0]
-    cutoff = now - window_sec
-    # oldest in window
-    oldest = None
-    for ts, bid in ticks:
-        if ts >= cutoff:
-            oldest = (ts, bid)
-            break
-    if oldest is None:
-        return False, 0.0, 0.0
-
-    p0 = oldest[1]
-    p1 = ticks[-1][1]
-    if p0 <= 0 or p1 <= 0:
-        return False, 0.0, 0.0
-
-    mom = (p1 - p0) / p0
-
-    # up ratio across window points
-    win = [(ts, bid) for ts, bid in ticks if ts >= cutoff]
-    if len(win) < 4:
-        return False, mom, 0.0
-
-    ups = 0
-    tot = 0
-    last = win[0][1]
-    for _, b in win[1:]:
-        if b > last:
-            ups += 1
-        tot += 1
-        last = b
-    up_ratio = (ups / tot) if tot else 0.0
-
-    ok = (mom >= min_pct) and (up_ratio >= min_up_ratio)
-    return ok, mom, up_ratio
 
 
 def main():
