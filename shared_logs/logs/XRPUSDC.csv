@@ -1,0 +1,6 @@
+ts_utc,symbol,event,side,qty,price,reason,pnl,profile,dry_run,spread_pct,mom_pct,up_ratio,rsi,ema1_ok,ema5_ok,vol_ok
+2026-02-01 10:00:00,XRPUSDC,DECIDE_HOLD,,,,HOLD_MOM,,aggressive,1,0.0025,0.1,12.0,55,1,1,1
+2026-02-01 10:01:00,XRPUSDC,BUY_FILLED,BUY,150.0,0.52,MOM,,aggressive,1,0.0024,0.08,15.0,58,1,1,1
+2026-02-01 10:02:00,XRPUSDC,SELL_FILLED,SELL,150.0,0.525,TP,0.75,aggressive,1,0.0023,0.05,18.0,60,1,1,1
+2026-02-01 10:03:00,XRPUSDC,BUY_FILLED,BUY,120.0,0.53,MOM,,aggressive,1,0.0022,0.04,10.0,52,1,0,1
+2026-02-01 10:04:00,XRPUSDC,SELL_FILLED,SELL,120.0,0.528,TRAIL,-0.24,aggressive,1,0.0022,-0.02,8.0,48,1,0,1

@@ -1,0 +1,6 @@
+ts_utc,symbol,event,side,qty,price,reason,pnl,profile,dry_run,spread_pct,mom_pct,up_ratio,rsi,ema1_ok,ema5_ok,vol_ok
+2026-02-02 12:00:00,SOLUSDC,DECIDE_HOLD,,,,HOLD_RSI,,balanced,1,0.0031,0.12,20.0,45,0,1,1
+2026-02-02 12:05:00,SOLUSDC,BUY_FILLED,BUY,12.0,95.4,MOM,,balanced,1,0.0032,0.09,22.0,47,1,1,1
+2026-02-02 12:06:00,SOLUSDC,SELL_FILLED,SELL,12.0,96.0,TP,7.2,balanced,1,0.0033,0.11,25.0,50,1,1,1
+2026-02-02 12:10:00,SOLUSDC,BUY_FILLED,BUY,10.0,96.2,MOM,,balanced,1,0.0030,-0.03,18.0,43,0,0,1
+2026-02-02 12:12:00,SOLUSDC,SELL_FILLED,SELL,10.0,95.8,TRAIL,-4.0,balanced,1,0.0031,-0.05,16.0,41,0,0,1
