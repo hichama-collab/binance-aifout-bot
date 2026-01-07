@@ -14,7 +14,7 @@ profiles:
     armPct: 0.015
     trailPct: 0.008
     feeBufPct: 0.0015
-    maxPosTime: 900
+    maxPosTime: 300
     hardMaxPosTime: 0
 
   aggressive:
@@ -32,7 +32,7 @@ profiles:
     armPct: 0.012
     trailPct: 0.007
     feeBufPct: 0.0015
-    maxPosTime: 900
+    maxPosTime: 300
     hardMaxPosTime: 0
 
 strategies:
