@@ -86,6 +86,9 @@ class Config:
     momWindowSec: float = 30.0
     momMinPct: float = 0.0005
     momMinUpRatio: float = 0.55
+    momRangeMinPct: float = 0.003
+    momRangeRelaxPct: float = 0.6
+    momRangeRelaxUpRatio: float = 0.75
 
     # logs
     holdCsvEvery: float = 60.0
@@ -142,6 +145,9 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("mom_window_sec", "momWindowSec"),
         ("mom_min_pct", "momMinPct"),
         ("mom_min_up_ratio", "momMinUpRatio"),
+        ("mom_range_min_pct", "momRangeMinPct"),
+        ("mom_range_relax_pct", "momRangeRelaxPct"),
+        ("mom_range_relax_up_ratio", "momRangeRelaxUpRatio"),
         ("hold_csv_every", "holdCsvEvery"),
     ]:
         if k_yaml in p and k_cfg in fields:

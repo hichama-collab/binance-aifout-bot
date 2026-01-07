@@ -4,28 +4,37 @@ import time
 from decimal import Decimal
 
 
-def momentum_ok(ticks, window_sec: float, min_pct: float, min_up_ratio: float):
+def momentum_ok(
+    ticks,
+    window_sec: float,
+    min_pct: float,
+    min_up_ratio: float,
+    range_min_pct: float,
+    range_relax_pct: float,
+    range_relax_up_ratio: float,
+):
     """
     ticks: list[(ts, bid)]
-    Retour: (ok, mom_pct, up_ratio)
+    Retour: (ok, mom_pct, up_ratio, range_pct)
 
     Tiered relaxation:
     - momentum fort => tolérance up_ratio plus basse
+    - range fort => tolérance up_ratio et min_pct plus basses
     """
     if not ticks:
-        return False, 0.0, 0.0
+        return False, 0.0, 0.0, 0.0
 
     now = ticks[-1][0]
     cutoff = now - window_sec
     win = [(ts, bid) for ts, bid in ticks if ts >= cutoff]
 
     if len(win) < 2:
-        return False, 0.0, 0.0
+        return False, 0.0, 0.0, 0.0
 
     p0 = win[0][1]
     p1 = win[-1][1]
     if p0 <= 0 or p1 <= 0:
-        return False, 0.0, 0.0
+        return False, 0.0, 0.0, 0.0
 
     mom = (p1 - p0) / p0
 
@@ -40,14 +49,23 @@ def momentum_ok(ticks, window_sec: float, min_pct: float, min_up_ratio: float):
 
     up_ratio = (ups / tot) if tot else 0.0
 
+    win_prices = [bid for _, bid in win]
+    low = min(win_prices)
+    high = max(win_prices)
+    range_pct = ((high - low) / low) if low > 0 else 0.0
+
     relaxed = min_up_ratio
+    relaxed_min_pct = min_pct
     if mom >= min_pct * 4:
         relaxed *= 0.6
     elif mom >= min_pct * 2:
         relaxed *= 0.8
+    if range_pct >= range_min_pct:
+        relaxed *= range_relax_up_ratio
+        relaxed_min_pct *= range_relax_pct
 
-    ok = (mom >= min_pct) and (up_ratio >= relaxed)
-    return ok, mom, up_ratio
+    ok = (mom >= relaxed_min_pct) and (up_ratio >= relaxed)
+    return ok, mom, up_ratio, range_pct
 
 
 from core.config import loadConfig, pickProfile, applyRiskConfig
@@ -154,6 +172,9 @@ def main():
     momWindowSec = float(getattr(cfg, "momWindowSec", 30.0))
     momMinPct = float(getattr(cfg, "momMinPct", 0.0005))          # 0.05%
     momMinUpRatio = float(getattr(cfg, "momMinUpRatio", 0.55))    # 55% ticks up
+    momRangeMinPct = float(getattr(cfg, "momRangeMinPct", 0.003))
+    momRangeRelaxPct = float(getattr(cfg, "momRangeRelaxPct", 0.6))
+    momRangeRelaxUpRatio = float(getattr(cfg, "momRangeRelaxUpRatio", 0.75))
 
     logTrade(f"SESSION_START symbol={symbol} dry_run={int(bool(getattr(cfg,'dryRun',False)))} profile={profile.name} strategy={getattr(cfg,'strategyName','')} base_url={cfg.baseUrl}")
 
@@ -165,7 +186,11 @@ def main():
         f"VOL_MULT={profile.volMult} "
         f"SPREAD_MAX={profile.spreadMax}"
     )
-    print(f"MOM window={momWindowSec}s minPct={momMinPct} minUpRatio={momMinUpRatio}")
+    print(
+        f"MOM window={momWindowSec}s minPct={momMinPct} minUpRatio={momMinUpRatio} "
+        f"rangeMinPct={momRangeMinPct} rangeRelaxPct={momRangeRelaxPct} "
+        f"rangeRelaxUpRatio={momRangeRelaxUpRatio}"
+    )
     print(f"CFG TTL={cfg.orderTtl}s POLL={cfg.orderPoll}s")
     if getattr(cfg, "dryRun", False):
         print("DRY_RUN ON (no real orders)")
@@ -185,7 +210,18 @@ def main():
     lastHoldCsv = 0.0
     holdCsvEvery = float(getattr(cfg, 'holdCsvEvery', 60))
 
-    def maybe_hold(now, reason, spread, momPct, upRatio, rsi, ema1_ok, ema5_ok, vol_ok):
+    def maybe_hold(
+        now,
+        reason,
+        spread,
+        momPct,
+        momRangePct,
+        upRatio,
+        rsi,
+        ema1_ok,
+        ema5_ok,
+        vol_ok,
+    ):
         nonlocal lastHoldCsv
         if (now - lastHoldCsv) < holdCsvEvery:
             return
@@ -204,6 +240,7 @@ def main():
                 'dry_run': int(getattr(cfg, 'dryRun', False)),
                 'spread_pct': float(spread)*100.0,
                 'mom_pct': float(momPct)*100.0,
+                'mom_range_pct': float(momRangePct)*100.0,
                 'up_ratio': float(upRatio)*100.0,
                 'rsi': float(rsi) if rsi is not None else '',
                 'ema1_ok': int(bool(ema1_ok)),
@@ -215,7 +252,8 @@ def main():
         try:
             logTrade(
                 f"DECIDE_HOLD reason={reason} spread={spread*100:.4f}% mom={momPct*100:.4f}% "
-                f"up={upRatio*100:.2f}% rsi={float(rsi) if rsi is not None else 'NA'}"
+                f"range={momRangePct*100:.4f}% up={upRatio*100:.2f}% "
+                f"rsi={float(rsi) if rsi is not None else 'NA'}"
             )
         except Exception:
             pass
@@ -264,7 +302,15 @@ def main():
             
             spread = (ask - bid) / bid if bid > 0 else 1.0
             
-            momOk, momPct, upRatio = momentum_ok(ticks, momWindowSec, momMinPct, momMinUpRatio)
+            momOk, momPct, upRatio, momRangePct = momentum_ok(
+                ticks,
+                momWindowSec,
+                momMinPct,
+                momMinUpRatio,
+                momRangeMinPct,
+                momRangeRelaxPct,
+                momRangeRelaxUpRatio,
+            )
             ind = strat.compute(s1, s5, momOk, momPct, upRatio, spread)
             
             if now - lastChk >= cfg.chkEvery:
@@ -272,7 +318,9 @@ def main():
                 chk_msg = (
                     f"CHK EMA1m:{'OK' if s1.ema_ok else 'NO'} EMA5m:{'OK' if s5.ema_ok else 'NO'} "
                     f"RSI:{fmt(s1.rsi)} VOL:{'OK' if s1.vol_ok else 'NO'} "
-                    f"MOM:{fmt(momPct*100, Decimal('0.01'))}% UP:{fmt(upRatio*100, Decimal('0.01'))}% "
+                    f"MOM:{fmt(momPct*100, Decimal('0.01'))}% "
+                    f"RANGE:{fmt(momRangePct*100, Decimal('0.01'))}% "
+                    f"UP:{fmt(upRatio*100, Decimal('0.01'))}% "
                     f"SPREAD:{fmt(spread*100)}% BID:{fmt(bid)} ASK:{fmt(ask)} "
                     f"STATE:{'IN_POS' if pos else 'IDLE'}"
                 )
@@ -282,24 +330,68 @@ def main():
             # ===== ENTRY =====
             if pos is None:
                 if spread > profile.spreadMax:
-                    maybe_hold(now, 'HOLD_SPREAD', spread, momPct, upRatio, s1.rsi, s1.ema_ok, s5.ema_ok, s1.vol_ok)
+                    maybe_hold(
+                        now,
+                        'HOLD_SPREAD',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        s1.rsi,
+                        s1.ema_ok,
+                        s5.ema_ok,
+                        s1.vol_ok,
+                    )
                     time.sleep(cfg.idleSleep)
                     continue
             
                 # primary trigger
                 if not momOk:
-                    maybe_hold(now, 'HOLD_MOM', spread, momPct, upRatio, s1.rsi, s1.ema_ok, s5.ema_ok, s1.vol_ok)
+                    maybe_hold(
+                        now,
+                        'HOLD_MOM',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        s1.rsi,
+                        s1.ema_ok,
+                        s5.ema_ok,
+                        s1.vol_ok,
+                    )
                     time.sleep(cfg.idleSleep)
                     continue
                 # secondary filters (EMA kept for logs only)
                 if not (profile.rsiMin <= s1.rsi <= profile.rsiMax):
-                    maybe_hold(now, 'HOLD_RSI', spread, momPct, upRatio, s1.rsi, s1.ema_ok, s5.ema_ok, s1.vol_ok)
+                    maybe_hold(
+                        now,
+                        'HOLD_RSI',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        s1.rsi,
+                        s1.ema_ok,
+                        s5.ema_ok,
+                        s1.vol_ok,
+                    )
                     time.sleep(cfg.idleSleep)
                     continue
             
                 usdc = get_usdc_balance_safe(bx)
                 if usdc < minNotional:
-                    maybe_hold(now, 'HOLD_BAL', spread, momPct, upRatio, s1.rsi, s1.ema_ok, s5.ema_ok, s1.vol_ok)
+                    maybe_hold(
+                        now,
+                        'HOLD_BAL',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        s1.rsi,
+                        s1.ema_ok,
+                        s5.ema_ok,
+                        s1.vol_ok,
+                    )
                     time.sleep(cfg.idleSleep)
                     continue
             
@@ -310,7 +402,18 @@ def main():
             
                 qty = round_step(spend / buyPx, step)
                 if qty <= 0 or (qty * buyPx) < minNotional:
-                    maybe_hold(now, 'HOLD_QTY', spread, momPct, upRatio, s1.rsi, s1.ema_ok, s5.ema_ok, s1.vol_ok)
+                    maybe_hold(
+                        now,
+                        'HOLD_QTY',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        s1.rsi,
+                        s1.ema_ok,
+                        s5.ema_ok,
+                        s1.vol_ok,
+                    )
                     time.sleep(cfg.idleSleep)
                     continue
             
@@ -344,7 +447,10 @@ def main():
                 pos.init_stops(cfg, profile, tick=tick)
             
                 print("BUY_FILLED", pos.qty, "@", fmt(pos.entry), "STOP", fmt(pos.stop))
-                logTrade(f"BUY symbol={symbol} qty={pos.qty} entry={pos.entry} momPct={momPct} upRatio={upRatio} profile={profile.name}")
+                logTrade(
+                    f"BUY symbol={symbol} qty={pos.qty} entry={pos.entry} momPct={momPct} "
+                    f"rangePct={momRangePct} upRatio={upRatio} profile={profile.name}"
+                )
                 logCsv({
                     "ts_utc": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
                     "symbol": symbol,
@@ -356,6 +462,14 @@ def main():
                     "pnl": "",
                     "profile": profile.name,
                     "dry_run": int(getattr(cfg, "dryRun", False)),
+                    "mom_pct": float(momPct) * 100.0,
+                    "mom_range_pct": float(momRangePct) * 100.0,
+                    "up_ratio": float(upRatio) * 100.0,
+                    "rsi": float(s1.rsi),
+                    "ema1_ok": int(bool(s1.ema_ok)),
+                    "ema5_ok": int(bool(s5.ema_ok)),
+                    "vol_ok": int(bool(s1.vol_ok)),
+                    "spread_pct": float(spread) * 100.0,
                 })
                 continue
             

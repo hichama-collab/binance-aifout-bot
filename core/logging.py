@@ -67,7 +67,7 @@ def tradeCsvLogger(cfg, symbol: str | None = None):
     def log(row: dict):
         cols = [
             "ts_utc","symbol","event","side","qty","price","reason","pnl",
-            "profile","dry_run","spread_pct","mom_pct","up_ratio","rsi",
+            "profile","dry_run","spread_pct","mom_pct","mom_range_pct","up_ratio","rsi",
             "ema1_ok","ema5_ok","vol_ok"
         ]
         csvFile.parent.mkdir(parents=True, exist_ok=True)
@@ -88,7 +88,7 @@ def ensureCsvHeader(cfg, symbol: str | None = None):
     # Write an empty header only (row with blanks is avoided by creating file and header).
     cols = [
         "ts_utc","symbol","event","side","qty","price","reason","pnl",
-        "profile","dry_run","spread_pct","mom_pct","up_ratio","rsi",
+        "profile","dry_run","spread_pct","mom_pct","mom_range_pct","up_ratio","rsi",
         "ema1_ok","ema5_ok","vol_ok"
     ]
     logDir = _log_dir(cfg)
