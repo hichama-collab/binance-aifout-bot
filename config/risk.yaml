@@ -1,6 +1,6 @@
 profiles:
   strict:
-    cap_usdc: 50
+    cap_usdc: 100
 
     # momentum (entry)
     mom_window_sec: 30
@@ -18,7 +18,7 @@ profiles:
     hardMaxPosTime: 0
 
   aggressive:
-    cap_usdc: 200
+    cap_usdc: 100
 
     # momentum (entry)
     mom_window_sec: 20
