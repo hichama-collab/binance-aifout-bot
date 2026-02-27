@@ -1,0 +1,26 @@
+{
+  "symbol": "DYMUSDC",
+  "time": "2025-12-18T04:44:17.573785",
+  "timeframes": {
+    "15m": {
+      "vwap": 0.07639751614687677,
+      "median": 0.0739,
+      "mad": 0.0020999999999999908,
+      "drift": -0.09395973154362407,
+      "max_excursion": 0.010300000000000004,
+      "return_ratio": 0.498
+    },
+    "1h": {
+      "vwap": 0.08216790323915323,
+      "median": 0.0789,
+      "mad": 0.004199999999999995,
+      "drift": -0.25578831312017636,
+      "max_excursion": 0.0131,
+      "return_ratio": 0.4954954954954955
+    }
+  },
+  "verdict": "NO-TRADE",
+  "reasons": [
+    "Drift trop fort (trend / bleed)"
+  ]
+}

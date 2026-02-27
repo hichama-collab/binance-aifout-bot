@@ -1,0 +1,86 @@
+SPECS TECHNIQUES – BOT BINANCE SPOT (TXT)
+
+1. Environnement
+- OS: Linux (VPS recommandé pour IP fixe)
+- Python: 3.13
+- venv: .venv
+- Dépendances: requests/websocket-client/pandas + PyYAML (risk.yaml)
+
+2. Architecture (modules)
+- main.py
+  - boucle runtime
+  - subscribe WS bookTicker (bid/ask)
+  - calcul momentum (ticks window)
+  - computeSignals (EMA/RSI/volume flags)
+  - walletSyncEvery (adopt/clear)
+  - entry via strategy (factory)
+  - exit via Position (TP/trail/BE/stop/time)
+  - ordre via execution/orders.py
+  - logs via core/logging.py
+
+- core/config.py
+  - load .env
+  - profiles strict/aggressive (EMA/RSI/spread)
+  - applyRiskConfig(): charge config/risk.yaml et injecte:
+    - cap, riskPct, tpPct, armPct, trailPct, time stops
+    - strategyParams (dict) pour stratégie active
+  - STRATEGY (env) + PROFILE (env)
+
+- strategy/*
+  - factory.py: instancie MomentumV1 ou ReversalV1
+  - momentum_v1.py: entryOk() utilise cfg.strategyParams:
+    - momWindowSec, momMinPct, momMinUpRatio
+  - reversal_v1.py: entryOk() utilise cfg.strategyParams:
+    - rsiCushion, requireEma1Ok
+
+- indicators/basic.py
+  - klines REST
+  - EMA fast/slow 1m/5m
+  - RSI 1m
+  - vol flag (volMult)
+
+- state/position.py
+  - init stops: riskPct, tpPct
+  - trailing armed after armPct, trailPct
+  - break-even fees buffer
+  - time stop soft/hard
+  - exit reason: TP/TRAIL/STOP/TIME
+
+- execution/orders.py
+  - placeLimit
+  - waitFillOrCancel + cancel
+
+- exchange/*
+  - REST: signed endpoints, exchangeInfo, orders, account
+  - WS: bookTicker stream
+
+- services/ipguard.py
+  - IP check vs ip.txt (fail-closed)
+
+- core/logging.py
+  - trades.log / errors.log
+  - trades.csv schema
+
+3. Fichiers de données
+- data/trades.log
+- data/errors.log
+- data/trades.csv
+
+4. Paramètres runtime (ENV)
+- BINANCE_API_KEY / BINANCE_API_SECRET
+- PROFILE=strict|aggressive
+- STRATEGY=momentum|reversal
+- DRY_RUN=1 (désactive ordres réels)
+- TRADES_CSV=... (optionnel)
+
+5. Paramètres tuning (YAML)
+config/risk.yaml
+- profiles.<name>:
+  - cap_usdc, riskPct, tpPct, armPct, trailPct, maxPosTimeSec, hardMaxPosTimeSec
+- strategies.<name>:
+  - momentum: momWindowSec, momMinPct, momMinUpRatio
+  - reversal: rsiCushion, requireEma1Ok
+
+6. Critères de validation (CSV)
+- >= 30 SELL pour conclusion
+- KPI: winrate, pnl total, max drawdown, ratio TP/STOP, durée moyenne.

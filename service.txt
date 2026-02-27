@@ -1,0 +1,30 @@
+
+Verification :
+sudo systemctl status binance-aifout-bot.service --no-pager
+
+
+
+Arreter le service:
+sudo systemctl stop binance-aifout-bot.service
+
+
+
+Reprise plus tard :
+sudo systemctl start binance-aifout-bot.service
+
+
+
+
+Redemarrage :
+sudo systemctl restart binance-aifout-bot.service
+
+modifier token : 
+- arreter le service 
+- modifier le token dans fichier nano .service.env 
+- supprimer les logs :  ./scripts/clean-all.sh 
+- redemarrer le service 
+>>>>> 
+sudo systemctl stop binance-aifout-bot.service
+nano /opt/binance-aifout-bot/.service.env
+sudo systemctl start binance-aifout-bot.service
+

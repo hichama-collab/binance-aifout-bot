@@ -1,0 +1,6 @@
+cd ~/Trade/binance-aifout-bot
+unzip -o ~/Downloads/patch_restore_and_guards.zip
+git diff
+git add main.py execution/orders.py state/wallet_sync.py config/risk.yaml PATCH_REVIEW.txt
+git commit -m "fix: restore runtime + hard time stop + wallet adopt + order poll guard"
+git push

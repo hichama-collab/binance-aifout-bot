@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>botdash</title>
+  <link rel="stylesheet" href="/static/app.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="side-brand">botdash</div>
+      <button class="side-item active" data-tab="monitor">Monitoring</button>
+      <button class="side-item" data-tab="stats">Performance</button>
+      <button class="side-item" data-tab="portfolio">Portefeuille</button>
+      <button class="side-item" data-tab="control">Actions</button>
+      <button class="side-item" data-tab="logs">Logs</button>
+      <div class="side-foot">
+        <button class="btn ghost" id="btnRefresh">refresh</button>
+      </div>
+    </aside>
+
+    <div class="content">
+      <header class="topbar">
+        <div class="meta">
+          <div>host: {{ host }}</div>
+          <div>utc: {{ utc }}</div>
+          <div class="muted">base: {{ base }} | logs: {{ logs }}</div>
+        </div>
+        <div class="fx" id="fxBox">FX USDC->EUR: --</div>
+      </header>
+
+      <main class="container">
+        <!-- MONITOR -->
+        <section class="panel active" id="tab-monitor">
+          <div class="grid">
+            <div class="card zone-a">
+              <div class="card-title">Marche / Bot (live)</div>
+              <div class="kv">
+                <div class="k">token</div><div class="v" id="mSymbol">--</div>
+                <div class="k">profil</div><div class="v" id="mProfile">--</div>
+                <div class="k">mode</div><div class="v" id="mDry">--</div>
+                <div class="k">etat</div><div class="v" id="mState">--</div>
+                <div class="k">bid / ask</div><div class="v" id="mBidAsk">--</div>
+                <div class="k">rsi</div><div class="v" id="mRSI">--</div>
+                <div class="k">momentum</div><div class="v" id="mMOM">--</div>
+                <div class="k">spread</div><div class="v" id="mSPREAD">--</div>
+              </div>
+              <div class="hint">Si vide: le bot ne log pas encore.</div>
+            </div>
+
+            <div class="card zone-b">
+              <div class="card-title">Position (live)</div>
+              <div class="kv">
+                <div class="k">token</div><div class="v" id="pSymbol">--</div>
+                <div class="k">qty</div><div class="v" id="pQty">--</div>
+                <div class="k">entree</div><div class="v" id="pEntry">--</div>
+                <div class="k">pnl latent</div><div class="v" id="pUnreal">--</div>
+                <div class="k">depuis</div><div class="v" id="pSince">--</div>
+                <div class="k">raison</div><div class="v" id="pReason">--</div>
+              </div>
+              <div class="hint">pnl latent en USDC et EUR si FX defini.</div>
+            </div>
+
+            <div class="card zone-c">
+              <div class="card-title">Serveur</div>
+              <pre class="pre" id="sysUp">--</pre>
+              <pre class="pre" id="sysDf">--</pre>
+            </div>
+
+            <div class="card zone-d">
+              <div class="card-title">Memoire</div>
+              <pre class="pre" id="sysMem">--</pre>
+            </div>
+
+            <div class="card zone-e">
+              <div class="card-title">Services</div>
+              <div class="units" id="unitsBox">--</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- STATS -->
+        <section class="panel" id="tab-stats">
+          <div class="grid two">
+            <div class="card zone-f">
+              <div class="card-title">PnL (session)</div>
+              <div class="kpi-row">
+                <div class="kpi">
+                  <div class="k">Realise (USDC)</div>
+                  <div class="v big" id="kTotalUSDC">--</div>
+                </div>
+                <div class="kpi">
+                  <div class="k">Realise (EUR)</div>
+                  <div class="v big" id="kTotalEUR">--</div>
+                </div>
+                <div class="kpi">
+                  <div class="k">Winrate</div>
+                  <div class="v big" id="kWinrate">--</div>
+                </div>
+                <div class="kpi">
+                  <div class="k">Profit factor</div>
+                  <div class="v big" id="kPF">--</div>
+                </div>
+              </div>
+              <canvas id="equityChart" height="120"></canvas>
+              <div class="hint">Equity basee sur la colonne pnl du trades.csv.</div>
+            </div>
+
+            <div class="card zone-g">
+              <div class="card-title">Tokens trades (PnL realise)</div>
+              <table class="table" id="tokenTable">
+                <thead>
+                  <tr>
+                    <th>token</th>
+                    <th>trades</th>
+                    <th>pnl USDC</th>
+                    <th>pnl EUR</th>
+                    <th>last</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <div class="hint">EUR calcule uniquement si FX_USDC_EUR defini.</div>
+            </div>
+
+            <div class="card zone-h" style="grid-column:1 / -1;">
+              <div class="card-title">Dernieres decisions</div>
+              <table class="table" id="lastTrades">
+                <thead><tr id="lastTradesHead"></tr></thead>
+                <tbody id="lastTradesBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- PORTFOLIO -->
+        <section class="panel" id="tab-portfolio">
+          <div class="grid two">
+            <div class="card zone-i" style="grid-column:1 / -1;">
+              <div class="card-title">Portefeuille spot</div>
+              <div class="muted" id="walletFile">source: --</div>
+              <table class="table" id="walletTable">
+                <thead>
+                  <tr>
+                    <th>asset</th>
+                    <th>free</th>
+                    <th>locked</th>
+                    <th>total</th>
+                    <th>value USDC</th>
+                    <th>value EUR</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <div class="kpi-row">
+                <div class="kpi">
+                  <div class="k">Total value (USDC)</div>
+                  <div class="v big" id="walletTotalUSDC">--</div>
+                </div>
+                <div class="kpi">
+                  <div class="k">Total value (EUR)</div>
+                  <div class="v big" id="walletTotalEUR">--</div>
+                </div>
+              </div>
+              <div class="hint">Pour valoriser tout le spot en USDC/EUR, il faut un snapshot wallet avec value_usdc (ou un pricing service). Sans ca, seules certaines lignes auront une valeur.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- CONTROL -->
+        <section class="panel" id="tab-control">
+          <div class="grid two">
+            <div class="card zone-j">
+              <div class="card-title">Main Bot</div>
+              <div class="btn-row">
+                <button class="btn" data-action="start" data-unit="binance-aifout-bot.service">Start trading</button>
+                <button class="btn warn" data-action="stop" data-unit="binance-aifout-bot.service">Stop trading</button>
+                <button class="btn ghost" data-action="restart" data-unit="binance-aifout-bot.service">Restart</button>
+              </div>
+              <div class="hint">Stop = arret du trading (aucune prise de position).</div>
+            </div>
+            <div class="card zone-k">
+              <div class="card-title">Selector Timer</div>
+              <div class="btn-row">
+                <button class="btn" data-action="start" data-unit="token-profile-selector.timer">Start scanner</button>
+                <button class="btn warn" data-action="stop" data-unit="token-profile-selector.timer">Stop scanner</button>
+                <button class="btn ghost" data-action="restart" data-unit="token-profile-selector.timer">Restart</button>
+              </div>
+              <div class="hint">Le scanner choisit le token a trader.</div>
+            </div>
+
+            <div class="card zone-l" style="grid-column:1 / -1;">
+              <div class="card-title">Changer mode (service env)</div>
+              <div class="form">
+                <label>SYMBOL <input id="cfgSymbol" placeholder="ex: BTCUSDC"/></label>
+                <label>PROFILE <input id="cfgProfile" placeholder="strict/major/aggressive"/></label>
+                <label>DRY_RUN
+                  <select id="cfgDry">
+                    <option value="">--</option>
+                    <option value="0">0 (reel)</option>
+                    <option value="1">1 (dry run)</option>
+                  </select>
+                </label>
+                <label class="chk">
+                  <input type="checkbox" id="cfgRestart"/> appliquer + restart bot
+                </label>
+                <button class="btn" id="btnApplyCfg">Appliquer</button>
+              </div>
+              <pre class="pre" id="cfgOut">--</pre>
+              <div class="hint">Ecrit dans .service.env. Attention: impact sur le trading.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- LOGS -->
+        <section class="panel" id="tab-logs">
+          <div class="grid two">
+            <div class="card zone-m">
+              <div class="card-title">Fichiers logs</div>
+              <div class="logs-list" id="logFiles">--</div>
+            </div>
+            <div class="card zone-n">
+              <div class="card-title">Lecture</div>
+              <div class="btn-row">
+                <button class="btn ghost" id="btnTail200">tail 200</button>
+                <button class="btn ghost" id="btnTail600">tail 600</button>
+              </div>
+              <pre class="pre" id="logTail">--</pre>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

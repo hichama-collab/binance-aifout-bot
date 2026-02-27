@@ -1,0 +1,17 @@
+[Unit]
+Description=BOT trading Spot - Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/binance-aifout-bot/dashboard
+EnvironmentFile=-/opt/binance-aifout-bot/dashboard/botdash.env
+ExecStart=/opt/binance-aifout-bot/dashboard/.venv/bin/python /opt/binance-aifout-bot/dashboard/app.py
+Restart=always
+RestartSec=2
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% set title = "Services" %}
+{% set active = "services" %}
+{% block content %}
+<div class="grid grid-12 gap-16">
+  <div class="card card-amber col-12">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Contrôle</div>
+        <div class="card-sub">Start / Stop / Restart</div>
+      </div>
+    </div>
+
+    <div class="control-grid">
+      <div class="control">
+        <div class="control-title">Main Bot</div>
+        <div class="btn-row">
+          <button class="btn btn-green" data-unit="binance-aifout-bot.service" data-action="start">Start</button>
+          <button class="btn btn-red" data-unit="binance-aifout-bot.service" data-action="stop">Stop</button>
+          <button class="btn btn-blue" data-unit="binance-aifout-bot.service" data-action="restart">Restart</button>
+        </div>
+      </div>
+
+      <div class="control">
+        <div class="control-title">Selector Timer</div>
+        <div class="btn-row">
+          <button class="btn btn-green" data-unit="token-profile-selector.timer" data-action="start">Start</button>
+          <button class="btn btn-red" data-unit="token-profile-selector.timer" data-action="stop">Stop</button>
+          <button class="btn btn-blue" data-unit="token-profile-selector.timer" data-action="restart">Restart</button>
+        </div>
+      </div>
+    </div>
+
+    <pre class="jsonbox" id="ctl-out">{ "ok": true }</pre>
+  </div>
+
+  <div class="card card-slate col-12">
+    <div class="card-head">
+      <div>
+        <div class="card-title">État des unités</div>
+        <div class="card-sub">Vue détaillée</div>
+      </div>
+      <div class="pill" id="svc2-pill">--</div>
+    </div>
+    <div class="table-wrap">
+      <table class="table" id="services-table">
+        <thead><tr><th>Service</th><th>État</th><th>Depuis</th><th>Détails</th></tr></thead>
+        <tbody><tr><td colspan="4" class="muted">Chargement...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

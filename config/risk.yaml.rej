@@ -1,0 +1,17 @@
+diff a/config/risk.yaml b/config/risk.yaml	(rejected hunks)
+@@ -21,6 +21,7 @@ profiles:
+     order_rest_backoff_sec: 0.2
+     allow_warmup_entry: false
+     ticks_keep_min_sec: 40
++    sell_bal_unavailable_max_loops: 30
+   aggressive:
+     cap_usdc: 200
+     mom_window_sec: 20
+@@ -43,6 +44,7 @@ profiles:
+     order_rest_backoff_sec: 0.2
+     allow_warmup_entry: false
+     ticks_keep_min_sec: 40
++    sell_bal_unavailable_max_loops: 30
+ strategies:
+   momentum: {}
+   reversal: {}

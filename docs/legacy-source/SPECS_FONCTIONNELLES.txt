@@ -1,0 +1,45 @@
+SPECS FONCTIONNELLES – BOT BINANCE SPOT (TXT)
+
+1. Objectif
+Bot Spot Binance réel pour scalping court terme, 1 position max, ordres LIMIT uniquement, logique observable via logs + CSV.
+
+2. Entrées / sorties (fonctionnel)
+2.1 Entrée
+- Déclenchement via STRATEGY:
+  - momentum: accélération bid sur fenêtre courte + up ratio + filtre RSI.
+  - reversal: RSI bas (surachat/survente) + spread ok (+ filtre EMA1 optionnel).
+- Contraintes:
+  - spread <= spreadMax (profil)
+  - wallet USDC >= minNotional
+  - cap USDC par trade (cap_usdc)
+
+2.2 Sortie (commune à toutes stratégies)
+- TP fixe (prioritaire)
+- Trailing armé uniquement après armPct
+- Break-even + buffer fees obligatoire quand applicable
+- Stop de protection (riskPct)
+- Time stop soft (maxPosTimeSec) + hard optionnel (hardMaxPosTimeSec)
+- Cooldown après sortie:
+  - cooldownWin / cooldownLoss
+
+3. Contraintes de trading
+- Ordres LIMIT uniquement.
+- 1 position max.
+- Pas de DCA, pas d’ajout, pas de moyenne à la baisse.
+- Cap par trade configurable.
+- Binance minNotional, step, tick respectés.
+
+4. Observabilité
+- trades.log: CHK/BUY/SELL/COOLDOWN en temps réel.
+- errors.log: stacktraces complètes.
+- trades.csv: journal structuré (BUY/SELL + contexte) pour mesurer:
+  - winrate, pnl cumulé, drawdown, raisons de sortie.
+
+5. Sécurité opérationnelle
+- Guard IP: blocage si IP publique != ip.txt (si activé).
+- Reconnect / retry: REST backoff + WS reconnect (si présents dans la version).
+
+6. Tuning (sans code)
+- config/risk.yaml:
+  - profiles: strict/aggressive (cap, riskPct, tpPct, armPct, trailPct, time stops)
+  - strategies: momentum/reversal (mom window/seuils, rsiCushion, ema requirement)

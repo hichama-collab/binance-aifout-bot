@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BRANCH="main"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+cd "$PROJECT_DIR"
+
+echo "===== UPDATE START ====="
+
+echo "-- Fetch"
+git fetch origin
+
+echo "-- Checkout branch"
+git checkout "$BRANCH"
+
+echo "-- Hard reset to origin"
+git reset --hard "origin/$BRANCH"
+
+echo "-- Clean untracked (respect .gitignore)"
+git clean -fd
+
+echo "===== UPDATE DONE ====="

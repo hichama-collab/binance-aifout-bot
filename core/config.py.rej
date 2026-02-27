@@ -1,0 +1,10 @@
+diff a/core/config.py b/core/config.py	(rejected hunks)
+@@ -175,6 +178,8 @@ def applyRiskConfig(cfg: Config) -> Config:
+         ("wallet_retry_backoff_sec", "walletRetryBackoffSec"),
+         ("order_rest_max_retries", "orderRestMaxRetries"),
+         ("order_rest_backoff_sec", "orderRestBackoffSec"),
++        ("sell_bal_unavailable_max_loops", "sellBalUnavailableMaxLoops"),
++        ("sell_bal_unavailable_max_loops", "sellBalUnavailableMaxLoops"),
+         ("allow_warmup_entry", "allowWarmupEntry"),
+         ("ticks_keep_min_sec", "ticksKeepMinSec"),
+     ]:

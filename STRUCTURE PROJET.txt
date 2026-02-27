@@ -1,0 +1,39 @@
+bot/
+│
+├── main.py
+├── requirements.txt
+├── README.md
+│
+├── core/
+├── exchange/
+├── execution/
+├── indicators/
+├── services/
+├── state/
+├── strategy/
+├── tools/
+│
+├── config/
+│   └── risk.yaml
+│
+├── data/
+│   ├── logs/
+│   └── runtime/
+│
+├── scripts/
+│   ├── start.sh
+│   ├── stop.sh
+│   ├── clean-logs.sh
+│   ├── clean-csv.sh
+│   ├── update-repo.sh
+│   └── setup-venv.sh
+│
+├── docs/
+│   ├── architecture.md
+│   ├── run.md
+│   ├── config.md
+│   ├── troubleshooting.md
+│   └── conventions.md
+│
+└── .gitignore
+

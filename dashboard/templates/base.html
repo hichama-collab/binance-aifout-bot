@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{{ title or "botdash" }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}"/>
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="logo">bd</div>
+        <div class="brand-text">
+          <div class="brand-name">botdash</div>
+          <div class="brand-sub" id="hdr-host">--</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <a class="nav-item {% if active=='dashboard' %}active{% endif %}" href="/" data-nav="dashboard">
+          <span class="dot dot-blue"></span> Dashboard
+        </a>
+        <a class="nav-item {% if active=='services' %}active{% endif %}" href="/services" data-nav="services">
+          <span class="dot dot-green"></span> Services
+        </a>
+        <a class="nav-item {% if active=='statistics' %}active{% endif %}" href="/statistics" data-nav="statistics">
+          <span class="dot dot-purple"></span> Statistiques
+        </a>
+        <a class="nav-item {% if active=='logs' %}active{% endif %}" href="/logs" data-nav="logs">
+          <span class="dot dot-amber"></span> Logs
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="kv">
+          <div class="k">Base</div><div class="v" id="kv-base">--</div>
+          <div class="k">Logs</div><div class="v" id="kv-logs">--</div>
+          <div class="k">FX</div><div class="v" id="kv-fx">--</div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn" id="btn-menu" aria-label="menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+
+        <div class="topbar-title">
+          <div class="page-title">{{ title or "Dashboard" }}</div>
+          <div class="page-sub" id="hdr-utc">utc: --</div>
+        </div>
+
+        <div class="topbar-actions">
+          <button class="btn btn-ghost" id="btn-refresh">Refresh</button>
+        </div>
+      </header>
+
+      <section class="content">
+        {% block content %}{% endblock %}
+      </section>
+
+      <footer class="footer">
+        <span id="footer-status">--</span>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

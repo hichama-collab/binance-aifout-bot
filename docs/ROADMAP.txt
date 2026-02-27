@@ -1,0 +1,35 @@
+ROADMAP BOT BINANCE SPOT SCALPING
+------
+PRINCIPE
+- 1 changement a la fois
+- 1 commit par changement
+- 1 metrique unique: trades csv
+- sortie commune intouchable sauf bug
+------
+PHASE 1 STABILISATION ENTREE MOMENTUM
+- objectif: le bot prend des trades sur un symbole liquide (SUIUSDC) sans surtrader
+- patch actif: relaxation progressive du up ratio sur spikes forts + tolerance si peu de ticks
+- succes: presence de BUY FILLED puis SELL FILLED dans data logs du symbole
+------
+PHASE 2 MULTI SYMBOL LIGHT
+- objectif: choisir 3 a 5 symboles max via tools besttokentrade
+- regle: 1 seule position max, 1 symbole a la fois
+- sortie: liste shortlist + rotation planifiee, pas de scan permanent
+------
+PHASE 3 STRATEGY REVERSAL
+- objectif: ajouter reversal comme entree optionnelle
+- regle: strategies gerent uniquement lentree, sorties identiques
+- validation: comparaison via trades csv strict vs aggressive
+------
+PHASE 4 ANALYSE ET REPLAY CIBLE
+- objectif: replay local a partir des periodes ou le bot a deja trade
+- pas de backtest lourd
+- usage: detecter faux positifs et ajuster seuils dans config risk yaml
+------
+PHASE 5 FILTRES FINS
+- objectif: ajuster RSI EMA uniquement si logs montrent trop de faux signaux
+- pas de widening arbitraire avant preuve dans trades csv
+------
+NOTES
+- exclure stablecoins (ex USD1USDC) des tests momentum
+- priorite tests: SUIUSDC, XRPUSDC, ADAUSDC

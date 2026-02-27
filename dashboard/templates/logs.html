@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% set title = "Logs" %}
+{% set active = "logs" %}
+{% block content %}
+<div class="grid grid-12 gap-16">
+  <div class="card card-purple col-12">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Fichiers récents</div>
+        <div class="card-sub">Clique pour ouvrir</div>
+      </div>
+      <div class="pill pill-purple" id="logs-pill">--</div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="table" id="logs-table">
+        <thead><tr><th>Fichier</th><th class="right">Taille</th><th>Dernière modif</th><th>Action</th></tr></thead>
+        <tbody><tr><td colspan="4" class="muted">Chargement...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card card-slate col-12">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Aperçu</div>
+        <div class="card-sub">Les 200 dernières lignes</div>
+      </div>
+    </div>
+    <pre class="logbox" id="log-view">Sélectionne un fichier…</pre>
+  </div>
+</div>
+{% endblock %}

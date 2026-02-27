@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% set title = "Statistiques" %}
+{% set active = "statistics" %}
+{% block content %}
+<div class="grid grid-12 gap-16">
+  <div class="card card-blue col-12">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Performance</div>
+        <div class="card-sub">PnL / Winrate / Profit Factor (selon logs)</div>
+      </div>
+      <div class="pill" id="pnl-pill">--</div>
+    </div>
+
+    <div class="kpi-row" id="kpi-row">
+      <div class="kpi"><div class="kpi-k">Session</div><div class="kpi-v" id="kpi-session">--</div></div>
+      <div class="kpi"><div class="kpi-k">Semaine</div><div class="kpi-v" id="kpi-week">--</div></div>
+      <div class="kpi"><div class="kpi-k">Mois</div><div class="kpi-v" id="kpi-month">--</div></div>
+      <div class="kpi"><div class="kpi-k">Année</div><div class="kpi-v" id="kpi-year">--</div></div>
+      <div class="kpi"><div class="kpi-k">Trades</div><div class="kpi-v" id="kpi-trades">--</div></div>
+      <div class="kpi"><div class="kpi-k">Winrate</div><div class="kpi-v" id="kpi-winrate">--</div></div>
+      <div class="kpi"><div class="kpi-k">Profit Factor</div><div class="kpi-v" id="kpi-pf">--</div></div>
+    </div>
+
+    <div class="chart-wrap">
+      <canvas id="equityChart"></canvas>
+    </div>
+    <div class="muted small">Graph: equity réalisée (si dispo dans tes logs).</div>
+  </div>
+</div>
+{% endblock %}

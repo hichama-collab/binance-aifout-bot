@@ -1,0 +1,28 @@
+{
+  "symbol": "DYMUSDC",
+  "time": "2025-12-18T04:48:09.395237+00:00",
+  "timeframes": {
+    "15m": {
+      "vwap": 0.07639751614687677,
+      "median": 0.0739,
+      "mad": 0.0020999999999999908,
+      "drift": -0.09395973154362407,
+      "max_excursion": 0.010300000000000004,
+      "return_ratio": 0.496,
+      "spike_ratio": 0.1393775372124493
+    },
+    "1h": {
+      "vwap": 0.08216790323915323,
+      "median": 0.0789,
+      "mad": 0.004199999999999995,
+      "drift": -0.25578831312017636,
+      "max_excursion": 0.0131,
+      "return_ratio": 0.4954954954954955,
+      "spike_ratio": 0.16603295310519647
+    }
+  },
+  "verdict": "NO-TRADE",
+  "reasons": [
+    "Drift 1h trop \u00e9lev\u00e9 (march\u00e9 directionnel)"
+  ]
+}
