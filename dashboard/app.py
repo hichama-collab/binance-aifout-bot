@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request, abort
 
 APP_TITLE = "botdash"
 
@@ -24,8 +24,9 @@ SERVICE_ENV = Path(os.getenv("BOT_SERVICE_ENV", str(BASE_DIR / ".service.env")))
 DASH_USER = os.getenv("DASH_USER", "")
 DASH_PASS = os.getenv("DASH_PASS", "")
 
+# FX rate: USDC -> EUR (set via env or BOT_RUNTIME_DIR/fx.json)
 FX_USDC_EUR_ENV = os.getenv("FX_USDC_EUR", "").strip()
-FX_CACHE_TTL_SEC = int(os.getenv("FX_CACHE_TTL_SEC", "600"))
+
 
 # systemd units allowlist (security)
 UNITS = [
@@ -35,7 +36,6 @@ UNITS = [
 ]
 
 MAX_TAIL_LINES = 600
-MAX_LOG_FILES = 200
 
 app = Flask(__name__)
 
@@ -46,8 +46,10 @@ def _unauthorized():
 def require_basic_auth(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
+        # If creds not set, block (avoid "open dashboard" by mistake)
         if not DASH_USER or not DASH_PASS:
             return Response("dashboard credentials not configured", 503)
+
         auth = request.authorization
         if not auth or auth.username != DASH_USER or auth.password != DASH_PASS:
             return _unauthorized()
@@ -59,6 +61,7 @@ def utc_now_str():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
 
 def run_cmd(args):
+    # no shell
     p = subprocess.run(args, capture_output=True, text=True)
     out = (p.stdout or "") + (p.stderr or "")
     return p.returncode == 0, out.strip()
@@ -70,19 +73,13 @@ def systemctl(action, unit):
         return False, f"action not allowed: {action}"
     return run_cmd(["systemctl", action, unit])
 
-def safe_read_json(path: Path):
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return None
-
 def tail_file(path: Path, n_lines: int = 200):
     if n_lines < 1:
         n_lines = 1
     n_lines = min(n_lines, MAX_TAIL_LINES)
-    if not path or not path.exists():
+    if not path.exists():
         return []
+    # simple tail (small files)
     try:
         with path.open("r", errors="ignore") as f:
             lines = f.readlines()
@@ -90,113 +87,156 @@ def tail_file(path: Path, n_lines: int = 200):
     except Exception:
         return []
 
-def find_latest(directory: Path, pattern: str = "*"):
+def find_latest(pattern: str):
+    files = sorted(LOG_DIR.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+    return files[0] if files else None
+
+def safe_read_json(path: Path):
     try:
-        files = sorted(directory.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
-        return files[0] if files else None
-    except Exception:
-        return None
-
-
-def list_latest(directory: Path, pattern: str, limit: int = 10):
-    try:
-        files = sorted(directory.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
-        return files[:limit]
-    except Exception:
-        return []
-
-def _cache_dir():
-    d = (Path(__file__).resolve().parent / 'cache')
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-def cache_load(name: str):
-    p = _cache_dir() / name
-    try:
-        with p.open('r', encoding='utf-8') as f:
+        with path.open("r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return None
 
-def cache_save(name: str, payload: dict):
-    p = _cache_dir() / name
-    try:
-        tmp = p.with_suffix(p.suffix + '.tmp')
-        with tmp.open('w', encoding='utf-8') as f:
-            json.dump(payload, f, ensure_ascii=False)
-        tmp.replace(p)
-        return True
-    except Exception:
-        return False
+def parse_last_indicators(lines):
+    """
+    Extracts useful markers from log line like:
+    CHK EMA1m:NO EMA5m:NO RSI:35.42 VOL:OK ... STATE:IDLE
+    """
+    if not lines:
+        return {}
+    last = ""
+    for l in reversed(lines):
+        if "CHK " in l or "STATE:" in l or "RSI:" in l:
+            last = l
+            break
+    if not last:
+        last = lines[-1]
 
-def fnum(v):
+    data = {}
+    # common tokens
+    for key in ("EMA1m", "EMA5m", "RSI", "VOL", "MOM", "RANGE", "UP", "SPREAD", "BID", "ASK", "STATE"):
+        m = re.search(rf"{key}:([^\s]+)", last)
+        if m:
+            data[key] = m.group(1)
+    return data
+
+def load_trades_csv(csv_path: Path, max_rows: int = 1500):
+    """
+    returns list[dict] for last rows
+    expected columns (best effort): ts_utc,symbol,event,side,qty,price,reason,pnl,profile,dry_run
+    """
+    if not csv_path or not csv_path.exists():
+        return [], []
+    rows = []
+    cols = []
     try:
-        if v is None:
+        with csv_path.open("r", newline="", encoding="utf-8", errors="ignore") as f:
+            reader = csv.DictReader(f)
+            cols = reader.fieldnames or []
+            for r in reader:
+                rows.append(r)
+        if len(rows) > max_rows:
+            rows = rows[-max_rows:]
+        return rows, cols
+    except Exception:
+        return [], []
+
+def fnum(x):
+    try:
+        if x is None:
             return None
-        if isinstance(v, (int, float)):
-            return float(v)
-        s = str(v).strip()
-        if not s:
+        s = str(x).strip()
+        if s == "":
             return None
         return float(s)
     except Exception:
         return None
 
+def compute_stats(trades):
+    # pnl column may be missing
+    pnl_vals = []
+    for r in trades:
+        v = fnum(r.get("pnl"))
+        if v is not None:
+            pnl_vals.append(v)
+
+    total_realized = sum(pnl_vals) if pnl_vals else 0.0
+    wins = [v for v in pnl_vals if v > 0]
+    losses = [v for v in pnl_vals if v < 0]
+    winrate = (len(wins) / len(pnl_vals) * 100.0) if pnl_vals else 0.0
+    profit_factor = (sum(wins) / abs(sum(losses))) if losses else (sum(wins) if wins else 0.0)
+
+    # cumulative pnl series
+    cum = []
+    s = 0.0
+    for v in pnl_vals:
+        s += v
+        cum.append(s)
+
+    # histogram buckets (simple)
+    hist = {}
+    for v in pnl_vals[-400:]:
+        b = round(v, 2)
+        hist[str(b)] = hist.get(str(b), 0) + 1
+
+    return {
+        "total_realized": round(total_realized, 6),
+        "winrate": round(winrate, 2),
+        "profit_factor": round(profit_factor, 3),
+        "trades": len(pnl_vals),
+        "cum_pnl": cum[-400:],
+        "pnl_samples": pnl_vals[-400:],
+    }
+
+def read_service_env():
+    if not SERVICE_ENV.exists():
+        return {}
+    out = {}
+    for line in SERVICE_ENV.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        out[k.strip()] = v.strip()
+    return out
+
+def write_service_env(updates: dict):
+    env = read_service_env()
+    env.update(updates)
+    # preserve order, keep comments minimal
+    lines = []
+    for k in sorted(env.keys()):
+        lines.append(f"{k}={env[k]}")
+    SERVICE_ENV.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
 def detect_symbol_profile():
-    # From SERVICE_ENV (SYMBOL=XXX, PROFILE=..., DRY_RUN=...)
-    symbol = None
-    profile = None
-    dry_run = None
+    env = read_service_env()
+    symbol = env.get("SYMBOL") or env.get("TOKEN") or env.get("SYMBOLUSDC") or ""
+    profile = env.get("PROFILE") or ""
+    dry_run = env.get("DRY_RUN") or ""
+    return symbol, profile, dry_run
 
-    try:
-        if SERVICE_ENV.exists():
-            txt = SERVICE_ENV.read_text(encoding="utf-8", errors="ignore")
-            for line in txt.splitlines():
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                k = k.strip().upper()
-                v = v.strip()
-                if k == "SYMBOL":
-                    symbol = v.upper()
-                elif k == "PROFILE":
-                    profile = v
-                elif k == "DRY_RUN":
-                    try:
-                        dry_run = int(v)
-                    except Exception:
-                        dry_run = v
-    except Exception:
-        pass
-
-    return symbol or "--", profile or "--", dry_run if dry_run is not None else "--"
-
-_FX_CACHE = {"ts": 0.0, "usdc_eur": None}
 
 def _fetch_fx_usdc_eur_binance():
-    # Best effort: uses public endpoint on binance.com, may fail.
+    # Use public endpoint: EURUSDC price = USDC per 1 EUR. So USDC->EUR = 1/price.
+    url = "https://api.binance.com/api/v3/ticker/price?symbol=EURUSDC"
     try:
-        url = "https://api.binance.com/api/v3/ticker/price?symbol=EURUSDC"
-        with urllib.request.urlopen(url, timeout=5) as r:
-            j = json.loads(r.read().decode("utf-8", errors="ignore"))
-        p = fnum(j.get("price"))
-        if p and p > 0:
-            return 1.0 / p  # EURUSDC => USDC/EUR
-    except Exception:
-        pass
-    try:
-        url = "https://api.binance.com/api/v3/ticker/price?symbol=USDCEUR"
-        with urllib.request.urlopen(url, timeout=5) as r:
-            j = json.loads(r.read().decode("utf-8", errors="ignore"))
-        p = fnum(j.get("price"))
-        if p and p > 0:
-            return p
+        req = urllib.request.Request(url, headers={"User-Agent": "botdash"})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        price = float(data.get("price"))
+        if price <= 0:
+            return None
+        return 1.0 / price
     except Exception:
         return None
-    return None
 
 def get_fx_usdc_eur():
+    # Priority:
+    # 1) env FX_USDC_EUR
+    # 2) BOT_RUNTIME_DIR/fx.json {"usdc_eur": 0.92}
+    # 3) auto fetch from Binance (cached) and write fx.json
     try:
         if FX_USDC_EUR_ENV:
             return float(FX_USDC_EUR_ENV)
@@ -205,8 +245,8 @@ def get_fx_usdc_eur():
 
     fxj = safe_read_json(RUNTIME_DIR / "fx.json") or {}
     try:
-        v = fxj.get("usdc_eur") if isinstance(fxj, dict) else None
-        if v is None and isinstance(fxj, dict):
+        v = fxj.get("usdc_eur")
+        if v is None:
             v = fxj.get("FX_USDC_EUR")
         if v is not None:
             return float(v)
@@ -221,6 +261,7 @@ def get_fx_usdc_eur():
     _FX_CACHE["ts"] = now
     _FX_CACHE["usdc_eur"] = fx
 
+    # Best effort persist for other components / visibility
     if fx is not None:
         try:
             RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
@@ -229,7 +270,9 @@ def get_fx_usdc_eur():
             tmp.replace(RUNTIME_DIR / "fx.json")
         except Exception:
             pass
+
     return fx
+
 
 def usdc_to_eur(usdc, fx):
     try:
@@ -239,46 +282,8 @@ def usdc_to_eur(usdc, fx):
     except Exception:
         return None
 
-def parse_last_indicators(lines):
-    if not lines:
-        return {}
-    last = ""
-    for l in reversed(lines):
-        if "CHK " in l or "STATE:" in l or "RSI:" in l:
-            last = l
-            break
-    if not last:
-        last = lines[-1]
-    data = {}
-    for key in ("EMA1m", "EMA5m", "RSI", "VOL", "MOM", "RANGE", "UP", "SPREAD", "BID", "ASK", "STATE"):
-        m = re.search(rf"{key}:([^\s]+)", last)
-        if m:
-            data[key] = m.group(1)
-    return data
-
-def load_trades_csv(csv_path: Path, max_rows: int = 2000):
-    if not csv_path or not csv_path.exists():
-        return [], []
-    rows = []
-    cols = []
-    try:
-        with csv_path.open("r", newline="", encoding="utf-8", errors="ignore") as f:
-            reader = csv.DictReader(f)
-            cols = reader.fieldnames or []
-            for r in reader:
-                rows.append(r)
-        if len(rows) > max_rows:
-            rows = rows[-max_rows:]
-        # normalize numeric fields
-        for r in rows:
-            for k in ("qty", "price", "pnl"):
-                if k in r:
-                    r[k] = fnum(r.get(k))
-        return rows, cols
-    except Exception:
-        return [], []
-
 def summarize_pnl_by_symbol(trades):
+    # returns list of {symbol, pnl_usdc, pnl_eur, trades, last_ts}
     fx = get_fx_usdc_eur()
     agg = {}
     for r in trades:
@@ -305,74 +310,48 @@ def summarize_pnl_by_symbol(trades):
             "trades": a["trades"],
             "last_ts": a["last_ts"],
         })
-    rows.sort(key=lambda x: (x.get("last_ts") or "", abs(x.get("pnl_usdc") or 0.0)), reverse=True)
+    # sort: most recent first (fallback by abs pnl)
+    def keyfn(x):
+        return (x.get("last_ts") or "", abs(x.get("pnl_usdc") or 0.0))
+    rows.sort(key=keyfn, reverse=True)
     return rows, fx
 
 def load_wallet_snapshot():
-    # Search multiple locations because bot path may differ by version.
-    candidates = []
-    for d in (
-        RUNTIME_DIR,
-        BASE_DIR / "state",
-        BASE_DIR / "data" / "runtime",
-        BASE_DIR / "data",
-        BASE_DIR,
-    ):
-        candidates.append(d)
-
-    names = ("wallet.json", "balances.json", "spot_wallet.json", "account.json", "wallet_spot.json")
-    for d in candidates:
-        for name in names:
-            p = d / name
-            if p.exists():
-                j = safe_read_json(p)
-                if j is not None:
-                    return {"file": str(p), "data": j}
+    # Best effort. Accept various filenames.
+    for name in ("wallet.json", "balances.json", "spot_wallet.json", "account.json"):
+        p = RUNTIME_DIR / name
+        if p.exists():
+            j = safe_read_json(p)
+            if j is not None:
+                return {"file": str(p), "data": j}
     return {"file": "", "data": None}
 
 def normalize_wallet(wallet_data):
+    # Output list[{asset, free, locked, total, value_usdc, value_eur}]
     fx = get_fx_usdc_eur()
     rows = []
     if not wallet_data:
         return rows, fx
-
     data = wallet_data
+    # Common shapes:
+    # - {"balances":[{"asset":"BTC","free":"0.1","locked":"0"}]}
+    # - [{"asset":"USDC","free":...}]
     balances = None
     if isinstance(data, dict):
         balances = data.get("balances") or data.get("spot") or data.get("assets") or data.get("data")
     if balances is None and isinstance(data, list):
         balances = data
-
     if balances is None:
-        # sometimes dict of assets
-        if isinstance(data, dict):
-            for k, v in data.items():
-                if isinstance(v, dict):
-                    free = fnum(v.get("free") or v.get("available"))
-                    locked = fnum(v.get("locked") or v.get("freeze"))
-                    total = (free or 0.0) + (locked or 0.0)
-                    rows.append({"asset": str(k).upper(), "free": free, "locked": locked, "total": total,
-                                 "value_usdc": total if str(k).upper() == "USDC" else None,
-                                 "value_eur": usdc_to_eur(total, fx) if (fx is not None and str(k).upper()=="USDC") else None})
         return rows, fx
-
     if isinstance(balances, dict):
-        for k, v in balances.items():
+        # maybe {"USDC":{"free":..}}
+        for k,v in balances.items():
             if isinstance(v, dict):
                 free = fnum(v.get("free") or v.get("available"))
                 locked = fnum(v.get("locked") or v.get("freeze"))
                 total = (free or 0.0) + (locked or 0.0)
-                v_usdc = fnum(v.get("value_usdc") or v.get("usdc_value"))
-                if v_usdc is None and str(k).upper() == "USDC":
-                    v_usdc = total
-                v_eur = fnum(v.get("value_eur") or v.get("eur_value"))
-                if v_eur is None and v_usdc is not None and fx is not None:
-                    v_eur = usdc_to_eur(v_usdc, fx)
-                rows.append({"asset": str(k).upper(), "free": free, "locked": locked, "total": total,
-                             "value_usdc": v_usdc, "value_eur": v_eur})
-        rows.sort(key=lambda r: (r.get("value_usdc") is not None, r.get("value_usdc") or 0.0), reverse=True)
+                rows.append({"asset": str(k).upper(), "free": free, "locked": locked, "total": total, "value_usdc": None, "value_eur": None})
         return rows, fx
-
     for b in balances:
         if not isinstance(b, dict):
             continue
@@ -384,14 +363,14 @@ def normalize_wallet(wallet_data):
         total = fnum(b.get("total"))
         if total is None:
             total = (free or 0.0) + (locked or 0.0)
-
+        # try value fields
         v_usdc = fnum(b.get("value_usdc") or b.get("usdc_value") or b.get("quote_usdc") or b.get("equity_usdc"))
         v_eur = fnum(b.get("value_eur") or b.get("eur_value") or b.get("equity_eur"))
+        # compute for USDC itself
         if v_usdc is None and asset == "USDC":
             v_usdc = total
         if v_eur is None and v_usdc is not None and fx is not None:
             v_eur = usdc_to_eur(v_usdc, fx)
-
         rows.append({
             "asset": asset,
             "free": free,
@@ -400,74 +379,21 @@ def normalize_wallet(wallet_data):
             "value_usdc": round(v_usdc, 6) if v_usdc is not None else None,
             "value_eur": round(v_eur, 6) if v_eur is not None else None,
         })
-
+    # sort: value_usdc desc else asset
     rows.sort(key=lambda r: (r.get("value_usdc") is not None, r.get("value_usdc") or 0.0), reverse=True)
     return rows, fx
 
-def load_position_snapshot():
-    candidates = []
-    for d in (
-        RUNTIME_DIR,
-        BASE_DIR / "state",
-        BASE_DIR / "data" / "runtime",
-        BASE_DIR / "data",
-        BASE_DIR,
-    ):
-        candidates.append(d)
-    names = ("position.json", "position_live.json", "position_state.json")
-    for d in candidates:
-        for name in names:
-            p = d / name
-            if p.exists():
-                j = safe_read_json(p)
-                if j is not None:
-                    return j
-    return {}
-
-def list_logs():
-    try:
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
-    files = []
-    try:
-        for p in sorted(LOG_DIR.glob("*"), key=lambda x: x.stat().st_mtime, reverse=True)[:MAX_LOG_FILES]:
-            if not p.is_file():
-                continue
-            files.append({
-                "name": p.name,
-                "size": p.stat().st_size,
-                "mtime": datetime.fromtimestamp(p.stat().st_mtime).astimezone().isoformat(timespec="seconds"),
-            })
-    except Exception:
-        pass
-    return files
-
-def compute_pnl_kpis(trades):
-    # Minimal KPI set based on pnl column (per row).
-    pnl_vals = [fnum(r.get("pnl")) for r in trades]
-    pnl_vals = [p for p in pnl_vals if p is not None]
-    total = sum(pnl_vals) if pnl_vals else 0.0
-    wins = [p for p in pnl_vals if p > 0]
-    losses = [p for p in pnl_vals if p < 0]
-    winrate = (len(wins) / len(pnl_vals) * 100.0) if pnl_vals else None
-    pf = None
-    if losses:
-        pf = (sum(wins) / abs(sum(losses))) if sum(losses) != 0 else None
-    return {
-        "usdc": round(total, 6),
-        "wins": len(wins),
-        "losses": len(losses),
-        "winrate": round(winrate, 3) if winrate is not None else None,
-        "profit_factor": round(pf, 6) if pf is not None else None,
-        "trades": len(pnl_vals),
-    }
-
-# ---- pages ----
+# ---- routes ----
 @app.route("/")
 @require_basic_auth
 def index():
-    return render_template("dashboard.html", host=os.uname().nodename, utc=utc_now_str(), base=str(BASE_DIR), logs=str(LOG_DIR))
+    return render_template(
+        "dashboard.html",
+        host=os.uname().nodename,
+        utc=utc_now_str(),
+        base=str(BASE_DIR),
+        logs=str(LOG_DIR),
+    )
 
 @app.route("/services")
 @require_basic_auth
@@ -484,197 +410,425 @@ def page_statistics():
 def page_logs():
     return render_template("logs.html", host=os.uname().nodename, utc=utc_now_str(), base=str(BASE_DIR), logs=str(LOG_DIR))
 
-# ---- api ----
 @app.route("/api/status")
 @require_basic_auth
 def api_status():
     symbol, profile, dry_run = detect_symbol_profile()
 
-    units_list = []
+    # system metrics (best effort)
+    up_ok, up_out = run_cmd(["uptime", "-p"])
+    df_ok, df_out = run_cmd(["df", "-h", "/"])
+    mem_ok, mem_out = run_cmd(["free", "-h"])
+
+    units = {}
     for u in UNITS:
         ok, out = systemctl("status", u)
+        # compact status parsing
         state = "unknown"
         sub = ""
-        since = ""
         for line in out.splitlines():
             if "Active:" in line:
-                m = re.search(r"Active:\s+(\w+)\s+\((\w+)\)\s+since\s+([^;]+)", line)
+                # Active: active (running) since ...
+                m = re.search(r"Active:\s+(\w+)\s+\((\w+)\)", line)
                 if m:
                     state = m.group(1)
                     sub = m.group(2)
-                    since = m.group(3).strip()
                 else:
-                    m2 = re.search(r"Active:\s+(\w+)\s+\((\w+)\)", line)
+                    m2 = re.search(r"Active:\s+(\w+)", line)
                     if m2:
                         state = m2.group(1)
-                        sub = m2.group(2)
                 break
-        units_list.append({"unit": u, "state": state, "since": since, "details": sub})
+        units[u] = {"ok": ok, "state": state, "sub": sub}
 
-    log_file = find_latest(LOG_DIR, "*_trades.log") or find_latest(LOG_DIR, "*.log")
+    units_list = []
+    for name, info in units.items():
+        units_list.append({
+            "unit": name,
+            "state": info.get("state","unknown"),
+            "since": "",
+            "details": info.get("sub",""),
+        })
+
+        # latest log indicators
+    log_file = find_latest("*_trades.log") or find_latest("*.log")
     indicators = parse_last_indicators(tail_file(log_file, 200)) if log_file else {}
 
-    pos = load_position_snapshot()
+    # position (optional)
+    pos = safe_read_json(RUNTIME_DIR / "position.json") or safe_read_json(RUNTIME_DIR / "position_live.json") or {}
 
     return jsonify({
         "ok": True,
         "ts_utc": utc_now_str(),
-        "host": os.uname().nodename,
-        "utc": utc_now_str(),
-        "base": str(BASE_DIR),
-        "logs": str(LOG_DIR),
-        "fx_usdc_eur": get_fx_usdc_eur(),
         "token": {"symbol": symbol, "profile": profile, "dry_run": dry_run},
+        "symbol": sy@app.route("/api/services")
+@auth_required
+def api_services():
+    # Same payload shape as dashboard expects
+    st = api_status().get_json()
+    return jsonify({"ok": True, "units": st.get("units", [])})
+
+@app.route("/api/token_now")
+@auth_required
+def api_token_now():
+    symbol, profile, dry_run = detect_symbol_profile()
+    return jsonify({"ok": True, "token": {"symbol": symbol, "profile": profile, "dry_run": dry_run}})
+
+mbol,
+        "profile": profile,
+        "dry_run": dry_run,
+        "system": {
+            "uptime": up_out if up_ok else "",
+            "disk": df_out if df_ok else "",
+            "mem": mem_out if mem_ok else "",
+        },
         "units": units_list,
+        "units_map": units,
         "indicators": indicators,
         "position": pos,
+    })
+
+@app.route("/api/stats")
+@require_basic_auth
+def api_stats():
+    # latest trades csv
+    csv_path = find_latest("*_trades.csv")
+    trades, cols = load_trades_csv(csv_path) if csv_path else ([], [])
+    stats = compute_stats(trades)
+
+    # session: from last BOOT marker if present
+    # best effort: use all current file as "session"
+    return jsonify({
+        "ok": True,
+        "file": str(csv_path) if csv_path else "",
+        "columns": cols,
+        "kpi": stats,
+        "last_trades": trades[-30:],
+    })
+
+@app.route("/api/logs")
+@require_basic_auth
+def api_logs():
+    """
+    UI expects: {"ok": true, "files":[{"name":..., "size":..., "mtime":...}, ...]}
+    """
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+    files = []
+    try:
+        for p in sorted(LOG_DIR.glob("*"), key=lambda x: x.stat().st_mtime if x.exists() else 0, reverse=True):
+            if not p.is_file():
+                continue
+            st = p.stat()
+            files.append({
+                "name": p.name,
+                "size": int(st.st_size),
+                "mtime": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(),
+            })
+            if len(files) >= 50:
+                break
+    except Exception:
+        files = []
+
+    return jsonify(ok=True, files=files, logs=str(LOG_DIR), base=str(BASE_DIR))
+
+@app.route("/api/log_tail")
+@require_basic_auth
+def api_log_tail():
+    # UI may send ?name=... or ?file=... and optional ?n=...
+    name = (request.args.get("name") or request.args.get("file") or "").strip()
+    try:
+        n = int(request.args.get("n") or 200)
+    except Exception:
+        n = 200
+    if n < 10:
+        n = 10
+    if n > 2000:
+        n = 2000
+    if not name:
+        return jsonify(ok=False, error="missing file"), 400
+
+    path = (LOG_DIR / name).resolve()
+    # prevent path traversal
+    if LOG_DIR.resolve() not in path.parents:
+        return jsonify(ok=False, error="invalid file"), 400
+
+    lines = tail_file(path, n_lines=n)
+    return jsonify(ok=True, text="\n".join(lines), file=name)
+
+@app.route("/api/control", methods=["POST"])
+@require_basic_auth
+def api_control():
+    """
+    UI sends: {"unit": "...", "action": "start|stop|restart"}
+    """
+    body = request.get_json(silent=True) or {}
+    unit = str(body.get("unit", "")).strip()
+    action = str(body.get("action", "")).strip().lower()
+    if not unit or action not in ("start", "stop", "restart"):
+        return jsonify(ok=False, error="bad request"), 400
+    res = systemctl(action, unit)
+    return jsonify(ok=res.get('ok', False), unit=unit, action=action, active=res.get('active'), output=res.get('output',''), error=res.get('error'))
+
+@app.route("/api/trades")
+@require_basic_auth
+def api_trades():
+    """
+    Last 10 traded symbols with net result (buys/sells) from latest *_trades.csv
+    """
+    trades_path = find_latest(LOG_DIR, "*_trades.csv")
+    if not trades_path:
+        return jsonify(ok=True, tokens=[], source=None)
+    trades = load_trades_csv(trades_path)
+    # group by symbol, keep most recent 10 symbols by last ts
+    by_symbol = {}
+    for t in trades:
+        sym = t.get("symbol") or ""
+        if not sym:
+            continue
+        ts = t.get("ts_utc") or ""
+        rec = by_symbol.setdefault(sym, {"symbol": sym, "first_ts": ts, "last_ts": ts, "net_usdc": 0.0, "trades": 0})
+        if ts and (not rec["first_ts"] or ts < rec["first_ts"]):
+            rec["first_ts"] = ts
+        if ts and (not rec["last_ts"] or ts > rec["last_ts"]):
+            rec["last_ts"] = ts
+        side = (t.get("side") or "").upper()
+        qty = float(t.get("qty") or 0.0)
+        price = float(t.get("price") or 0.0)
+        usdc = qty * price
+        # net: sells - buys
+        if side == "SELL":
+            rec["net_usdc"] += usdc
+        elif side == "BUY":
+            rec["net_usdc"] -= usdc
+        rec["trades"] += 1
+
+    tokens = list(by_symbol.values())
+    # sort by last_ts desc and take 10
+    tokens.sort(key=lambda r: r.get("last_ts") or "", reverse=True)
+    tokens = tokens[:10]
+
+    fx = get_fx_usdc_eur()
+    for r in tokens:
+        r["net_usdc"] = round(float(r["net_usdc"]), 6)
+        r["net_eur"] = round(float(r["net_usdc"]) * fx, 6) if fx else None
+        r["period"] = f'{r.get("first_ts","")} → {r.get("last_ts","")}'
+    return jsonify(ok=True, tokens=tokens, source=str(trades_path), fx_usdc_eur=fx)
+
+@app.route("/api/pnl")
+@require_basic_auth
+def api_pnl():
+    """
+    UI expects bucket pnl for: session/week/month/year + trades/winrate/profit_factor.
+    Uses latest *_trades.csv.
+    """
+    trades_path = find_latest(LOG_DIR, "*_trades.csv")
+    if not trades_path:
+        return jsonify(ok=True, session=None, week=None, month=None, year=None, trades=0, winrate=None, profit_factor=None, source=None)
+
+    trades = load_trades_csv(trades_path)
+    fx = get_fx_usdc_eur()
+    now = datetime.now(timezone.utc)
+
+    def parse_ts(s):
+        try:
+            return datetime.fromisoformat(s.replace("Z","+00:00"))
+        except Exception:
+            return None
+
+    # compute per-trade pnl isn't available in raw trades; approximate from grouped net per symbol within window
+    def bucket(days=None):
+        cutoff = None
+        if days is not None:
+            cutoff = now - timedelta(days=days)
+        # filter trades by cutoff
+        ftr = []
+        for t in trades:
+            ts = parse_ts(t.get("ts_utc") or "")
+            if not ts:
+                continue
+            if cutoff and ts < cutoff:
+                continue
+            ftr.append(t)
+        # net USDC = sells - buys for that window
+        net = 0.0
+        for t in ftr:
+            side = (t.get("side") or "").upper()
+            qty = float(t.get("qty") or 0.0)
+            price = float(t.get("price") or 0.0)
+            usdc = qty * price
+            if side == "SELL":
+                net += usdc
+            elif side == "BUY":
+                net -= usdc
+        return {
+            "usdc": round(net, 6),
+            "eur": round(net * fx, 6) if fx else None,
+            "trades": len(ftr),
+        }
+
+    session = bucket(days=None)
+    week = bucket(days=7)
+    month = bucket(days=30)
+    year = bucket(days=365)
+
+    # winrate/profit_factor cannot be derived reliably without closed-trade PnL; keep null
+    return jsonify(
+        ok=True,
+        session=session,
+        week=week,
+        month=month,
+        year=year,
+        trades=session["trades"],
+        winrate=None,
+        profit_factor=None,
+        source=str(trades_path),
+        fx_usdc_eur=fx
+    )
+
+
+@app.route("/api/action", methods=["POST"])
+@require_basic_auth
+def api_action():
+    payload = request.get_json(force=True, silent=True) or {}
+    action = str(payload.get("action", "")).strip()
+    unit = str(payload.get("unit", "")).strip()
+
+    ok, out = systemctl(action, unit)
+    # trader-friendly message
+    msg = "OK" if ok else "ECHEC"
+    return jsonify({
+        "ok": ok,
+        "unit": unit,
+        "action": action,
+        "message": f"{msg} - {unit} - {action}",
+        "output": out[:4000],
+    })
+
+@app.route("/api/config", methods=["POST"])
+@require_basic_auth
+def api_config():
+    """
+    Update .service.env (DRY_RUN, PROFILE, SYMBOL) and optionally restart bot.
+    """
+    payload = request.get_json(force=True, silent=True) or {}
+    updates = {}
+    if "DRY_RUN" in payload:
+        v = str(payload["DRY_RUN"]).strip()
+        if v not in ("0", "1"):
+            return jsonify({"ok": False, "error": "DRY_RUN must be 0 or 1"})
+        updates["DRY_RUN"] = v
+    if "PROFILE" in payload:
+        v = str(payload["PROFILE"]).strip()
+        if not re.match(r"^[A-Za-z0-9_-]{1,24}$", v):
+            return jsonify({"ok": False, "error": "invalid PROFILE"})
+        updates["PROFILE"] = v
+    if "SYMBOL" in payload:
+        v = str(payload["SYMBOL"]).strip().upper()
+        if not re.match(r"^[A-Z0-9]{3,20}$", v):
+            return jsonify({"ok": False, "error": "invalid SYMBOL"})
+        updates["SYMBOL"] = v
+
+    if updates:
+        try:
+            write_service_env(updates)
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"cannot write env: {e}"})
+
+    restart = bool(payload.get("restart_bot", False))
+    r_ok, r_out = (True, "")
+    if restart:
+        r_ok, r_out = systemctl("restart", "binance-aifout-bot.service")
+
+    symbol, profile, dry_run = detect_symbol_profile()
+    return jsonify({
+        "ok": True,
+        "applied": updates,
+        "symbol": symbol,
+        "profile": profile,
+        "dry_run": dry_run,
+        "restart": {"ok": r_ok, "output": r_out[:2000]},
+    })
+
+
+@app.route("/api/summary")
+@require_basic_auth
+def api_summary():
+    csv_path = find_latest("*_trades.csv")
+    trades, _ = load_trades_csv(csv_path) if csv_path else ([], [])
+    rows, fx = summarize_pnl_by_symbol(trades)
+
+    # hide empty tokens (no trades)
+    rows = [r for r in rows if int(r.get("trades") or 0) > 0]
+
+    total_usdc = 0.0
+    has_pnl = False
+    for r in trades:
+        v = fnum(r.get("pnl"))
+        if v is not None:
+            total_usdc += v
+            has_pnl = True
+    total_usdc = round(total_usdc, 6) if has_pnl else 0.0
+    total_eur = round(usdc_to_eur(total_usdc, fx), 6) if fx is not None else None
+
+    return jsonify({
+        "ok": True,
+        "fx_usdc_eur": fx,
+        # frontend expects .rows
+        "rows": rows[:60],
+        # backward compat
+        "tokens": rows[:60],
+        "total_usdc": total_usdc,
+        "total_eur": total_eur,
+        "source": csv_path,
     })
 
 @app.route("/api/wallet")
 @require_basic_auth
 def api_wallet():
     snap = load_wallet_snapshot()
-    rows, fx = normalize_wallet(snap.get("data"))
-    # Always return object expected by front
-    return jsonify({"ok": True, "file": snap.get("file",""), "rows": rows, "fx_usdc_eur": fx})
+    norm_rows, fx = normalize_wallet(snap.get("data"))
 
-@app.route("/api/summary")
-@require_basic_auth
-def api_summary():
-    # Last 10 traded tokens based on per-token *_trades.csv files (newest mtime first).
-    fx = get_fx_usdc_eur()
-    files = list_latest(LOG_DIR, '*_trades.csv', limit=10)
-    sig = [{'p': str(p), 'mtime': p.stat().st_mtime, 'size': p.stat().st_size} for p in files] if files else []
-    cache_key = {'v': 1, 'sig': sig, 'fx': fx}
-    cached = cache_load('summary_last_tokens.json')
-    if cached and cached.get('key') == cache_key and isinstance(cached.get('rows'), list):
-        return jsonify({'ok': True, 'rows': cached['rows'], 'fx_usdc_eur': fx, 'cached': True})
-
+    # UI (static/app.js) expects: rows[{asset, free, locked, total, usdc_value, eur_value}]
     rows = []
-    for p in files:
-        sym = p.name.replace('_trades.csv', '')
-        trades, _ = load_trades_csv(p)
-        k = compute_pnl_kpis(trades)
-        net_usdc = k.get('usdc', 0.0)
-        net_eur = usdc_to_eur(net_usdc, fx) if fx is not None else None
-        last_ts = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+    for r in norm_rows:
         rows.append({
-            'symbol': sym,
-            'last_ts': last_ts,
-            'pnl_usdc': net_usdc,
-            'pnl_eur': round(net_eur, 6) if net_eur is not None else None,
-            'trades': k.get('trades', 0),
+            "asset": r.get("asset"),
+            "free": r.get("free"),
+            "locked": r.get("locked"),
+            "total": r.get("total"),
+            "usdc_value": r.get("value_usdc"),
+            "eur_value": r.get("value_eur"),
         })
 
-    payload = {'key': cache_key, 'rows': rows}
-    cache_save('summary_last_tokens.json', payload)
-    return jsonify({'ok': True, 'rows': rows, 'fx_usdc_eur': fx, 'cached': False})
-
-@app.route("/api/trades")
-@require_basic_auth
-def api_trades():
-    csv_path = find_latest(LOG_DIR, "*_trades.csv")
-    trades, cols = load_trades_csv(csv_path) if csv_path else ([], [])
-    # output newest first
-    rows = list(reversed(trades[-200:])) if trades else []
-    return jsonify({"ok": True, "file": str(csv_path) if csv_path else "", "columns": cols, "rows": rows})
-
-@app.route("/api/logs")
-@require_basic_auth
-def api_logs():
-    return jsonify({"ok": True, "files": list_logs()})
-
-@app.route("/api/log_tail")
-@require_basic_auth
-def api_log_tail():
-    name = (request.args.get("name") or "").strip()
-    n = request.args.get("n") or "200"
-    try:
-        n = int(n)
-    except Exception:
-        n = 200
-    # security: basename only
-    if not name or "/" in name or ".." in name or "\\" in name:
-        return jsonify({"ok": False, "error": "bad name"}), 400
-    p = LOG_DIR / name
-    lines = tail_file(p, n)
-    return jsonify({"ok": True, "name": name, "lines": lines, "text": "\n".join(lines)})
-
-@app.route("/api/pnl")
-@require_basic_auth
-def api_pnl():
-    # Aggregate KPIs across all *_trades.csv (cached by mtimes).
-    fx = get_fx_usdc_eur()
-    files = sorted(LOG_DIR.glob('*_trades.csv'), key=lambda p: p.stat().st_mtime, reverse=True)
-    sig = [{'p': str(p), 'mtime': p.stat().st_mtime, 'size': p.stat().st_size} for p in files]
-    cache_key = {'v': 2, 'sig': sig, 'fx': fx}
-    cached = cache_load('pnl_kpis.json')
-    if cached and cached.get('key') == cache_key and isinstance(cached.get('kpis'), dict):
-        k = cached['kpis']
-    else:
-        total = 0.0
-        wins = 0
-        losses = 0
-        trades_n = 0
-        sum_wins = 0.0
-        sum_losses = 0.0
-        for p in files:
-            trades, _ = load_trades_csv(p)
-            for r in trades:
-                v = fnum(r.get('pnl'))
-                if v is None:
-                    continue
-                trades_n += 1
-                total += v
-                if v > 0:
-                    wins += 1
-                    sum_wins += v
-                elif v < 0:
-                    losses += 1
-                    sum_losses += v
-        winrate = (wins / trades_n * 100.0) if trades_n else None
-        pf = None
-        if losses and sum_losses != 0:
-            pf = (sum_wins / abs(sum_losses))
-        k = {
-            'usdc': round(total, 6),
-            'wins': wins,
-            'losses': losses,
-            'winrate': round(winrate, 3) if winrate is not None else None,
-            'profit_factor': round(pf, 6) if pf is not None else None,
-            'trades': trades_n,
-        }
-        cache_save('pnl_kpis.json', {'key': cache_key, 'kpis': k})
-
-    total_usdc = k.get('usdc', 0.0)
-    total_eur = usdc_to_eur(total_usdc, fx) if fx is not None else None
+    # totals
+    t_usdc = 0.0
+    used = False
+    for r in rows:
+        v = r.get("usdc_value")
+        if isinstance(v, (int, float)):
+            t_usdc += float(v)
+            used = True
+    t_usdc = round(t_usdc, 6) if used else None
+    t_eur = round(usdc_to_eur(t_usdc, fx), 6) if (t_usdc is not None and fx is not None) else None
 
     return jsonify({
-        'ok': True,
-        'file': str(files[0]) if files else '',
-        'fx_usdc_eur': fx,
-        'session': {'usdc': total_usdc, 'eur': total_eur or 0.0},
-        'week': {'usdc': total_usdc, 'eur': total_eur or 0.0},
-        'month': {'usdc': total_usdc, 'eur': total_eur or 0.0},
-        'year': {'usdc': total_usdc, 'eur': total_eur or 0.0},
-        'trades': k.get('trades', 0),
-        'winrate': k.get('winrate'),
-        'profit_factor': k.get('profit_factor'),
+        "ok": True,
+        "file": snap.get("file", ""),
+        "fx_usdc_eur": fx,
+        # primary (frontend)
+        "rows": rows[:200],
+        "total_usdc": t_usdc,
+        "total_eur": t_eur,
+        # backward compat
+        "assets": rows[:200],
+        "total_value_usdc": t_usdc,
+        "total_value_eur": t_eur,
     })
 
-@app.route("/api/control", methods=["POST"])
-@require_basic_auth
-def api_control():
-    try:
-        j = request.get_json(force=True) or {}
-    except Exception:
-        j = {}
-    unit = (j.get("unit") or "").strip()
-    action = (j.get("action") or "").strip()
-    ok, out = systemctl(action, unit)
-    return jsonify({"ok": ok, "unit": unit, "action": action, "output": out})
-
 if __name__ == "__main__":
-    host = os.getenv("DASH_HOST", "0.0.0.0")
+    # local bind only; nginx will proxy
     port = int(os.getenv("DASH_PORT", "8099"))
-    app.run(host=host, port=port, debug=False)
+    app.run(host="127.0.0.1", port=port)

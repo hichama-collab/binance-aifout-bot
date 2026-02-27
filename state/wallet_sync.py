@@ -1,4 +1,7 @@
 import time
+import os
+import json
+from pathlib import Path
 from state.position import Position
 
 
@@ -9,6 +12,27 @@ def _safe_book_bid(bx, symbol: str) -> float:
     except Exception:
         return 0.0
 
+
+
+def _runtime_dir() -> Path:
+    # Bot runtime directory (default: data/runtime relative to project root)
+    p = os.getenv("BOT_RUNTIME_DIR") or "data/runtime"
+    d = Path(p)
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return d
+
+
+def _safe_write_json(path: Path, data: object) -> None:
+    try:
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    except Exception:
+        # best effort
+        return
 
 def walletSyncEvery(
     bx,
@@ -64,6 +88,27 @@ def walletSyncEvery(
             free_usdc = float(b.get("free", 0.0))
 
     syncState['usdc'] = free_usdc
+
+    # Write runtime snapshots for dashboard (best effort; no impact on trading)
+    try:
+        rt = _runtime_dir()
+        _safe_write_json(rt / "account.json", {"ts": now, "symbol": symbol, "account": acc})
+        _safe_write_json(rt / "wallet.json", {"ts": now, "symbol": symbol, "balances": balances})
+        if pos is not None:
+            _safe_write_json(rt / "position.json", {
+                "ts": now,
+                "symbol": symbol,
+                "qty": float(getattr(pos, "qty", 0.0) or 0.0),
+                "entry": float(getattr(pos, "entry", 0.0) or 0.0),
+                "high": float(getattr(pos, "high", 0.0) or 0.0),
+                "stop": float(getattr(pos, "stop", 0.0) or 0.0),
+                "ts_entry": float(getattr(pos, "ts_entry", 0.0) or 0.0),
+            })
+        else:
+            _safe_write_json(rt / "position.json", {"ts": now, "symbol": "", "qty": 0.0})
+    except Exception:
+        pass
+
 
     qty_now = free_base
 
