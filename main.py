@@ -392,7 +392,7 @@ def main():
     syncState = {"next": 0.0}
     syncInfo = {"usdc": 0.0}
 
-    # ring buffer of (ts, bid)
+    # ring buffer of (ts, price_ref). We store MID=(bestBid+bestAsk)/2 for P1..P4 logic.
     ticks = []
 
     stream.start()
@@ -464,8 +464,9 @@ def main():
                 time.sleep(cfg.idleSleep)
                 continue
             
-            # update ticks buffer
-            ticks.append((now, float(bid)))
+            # update ticks buffer (MID)
+            mid = (float(bid) + float(ask)) / 2.0
+            ticks.append((now, float(mid)))
             # prune: keep last max(window, 40s)
             keep_sec = max(momWindowSec, float(getattr(cfg, "ticksKeepMinSec", 40.0)))
             cutoff = now - keep_sec
@@ -540,6 +541,18 @@ def main():
                     bool(getattr(cfg, 'allowWarmupEntry', False)),
                 )
 
+            # P1..P4 (MID-based)
+            def _get_p(tl, n_from_end: int):
+                try:
+                    return float(tl[-n_from_end][1])
+                except Exception:
+                    return None
+
+            P1 = _get_p(ticks, 1)
+            P2 = _get_p(ticks, 2)
+            P3 = _get_p(ticks, 3)
+            P4 = _get_p(ticks, 4)
+
             p1p4Ok = p1p4_ok(ticks, lookback=4)
             ind = strat.compute(s1, s5, momOk, momPct, upRatio, spread, p1p4Ok)
             
@@ -551,7 +564,9 @@ def main():
                     f"MOM:{fmt(momPct*100, Decimal('0.01'))}% "
                     f"RANGE:{fmt(momRangePct*100, Decimal('0.01'))}% "
                     f"UP:{fmt(upRatio*100, Decimal('0.01'))}% "
-                    f"SPREAD:{fmt(spread*100)}% BID:{fmt(bid)} ASK:{fmt(ask)} "
+                    f"SPREAD:{fmt(spread*100)}% BID:{fmt(bid)} ASK:{fmt(ask)} MID:{fmt(mid)} "
+                    f"P1:{fmt(P1) if P1 is not None else 'NA'} P2:{fmt(P2) if P2 is not None else 'NA'} "
+                    f"P3:{fmt(P3) if P3 is not None else 'NA'} P4:{fmt(P4) if P4 is not None else 'NA'} "
                     f"STATE:{'IN_POS' if pos else 'IDLE'}"
                 )
                 print(chk_msg)
@@ -560,166 +575,13 @@ def main():
             # hot-reload token from .service.env (IDLE only)
             symbol, last_env_mtime = _maybe_reexec_on_token_change(symbol, pos, last_env_mtime)
 
-            # ===== ENTRY =====
-            if pos is None:
-                # tick entry (micro): computed early for spread relaxation + primary trigger
-                tick_entry_ok, tick_entry_prog = tick_confirmation_ok(
-                    ticks,
-                    int(getattr(cfg, 'tickEntryLookback', getattr(cfg, 'tickConfirmationLookback', 3))),
-                    float(getattr(cfg, 'tickEntryMinPct', getattr(cfg, 'tickConfirmationMinPct', 0.0002))),
-                )
+            # ===== ENTRY (P algo, MID-based) =====
+            # BUY if (P1 > P3) OR (P1 >= P2 >= P3)
+            buySignal = False
+            if (P1 is not None) and (P2 is not None) and (P3 is not None):
+                buySignal = (P1 > P3) or (P1 >= P2 and P2 >= P3)
 
-                spreadMax = profile.spreadMax
-                if tick_entry_ok:
-                    spreadMax = spreadMax * float(getattr(cfg, 'spreadRelaxOnTick', 1.5))
-                if spread > spreadMax:
-                    maybe_hold(
-                        now,
-                        'HOLD_SPREAD',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        s1.rsi,
-                        s1.ema_ok,
-                        s5.ema_ok,
-                        s1.vol_ok,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
-
-                # anti-range gate: avoid chop (range too small vs fees/spread)
-                min_range_entry = float(getattr(cfg, 'minRangeEntryPct', 0.0))
-                min_range_vs_spread = float(getattr(cfg, 'minRangeVsSpread', 0.0))
-                if min_range_entry > 0 and momRangePct < min_range_entry:
-                    maybe_hold(
-                        now,
-                        'HOLD_RANGE_CHOP',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        s1.rsi,
-                        s1.ema_ok,
-                        s5.ema_ok,
-                        s1.vol_ok,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
-                if min_range_vs_spread > 0 and spread > 0 and (momRangePct / spread) < min_range_vs_spread:
-                    maybe_hold(
-                        now,
-                        'HOLD_RANGE_SPREAD',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        s1.rsi,
-                        s1.ema_ok,
-                        s5.ema_ok,
-                        s1.vol_ok,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
-
-                # microstructure gate: orderbook imbalance (bid_vol/ask_vol)
-                ob_ok, ob_ratio = orderbook_imbalance_ok(
-                    bx, symbol,
-                    float(getattr(cfg, 'obImbalanceMinRatio', 0.0)),
-                    int(getattr(cfg, 'obDepthLevels', 5)),
-                )
-                if float(getattr(cfg, 'obImbalanceMinRatio', 0.0)) > 0 and not ob_ok:
-                    maybe_hold(
-                        now,
-                        'HOLD_IMBALANCE',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        s1.rsi,
-                        s1.ema_ok,
-                        s5.ema_ok,
-                        s1.vol_ok,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
-
-                # microstructure gate: stale ticks (only when instant mode is on)
-                if bool(getattr(cfg, 'momUseInstant', False)) and not ticks_fresh(
-                    ticks, float(getattr(cfg, 'momMaxAgeSec', 2.0))
-                ):
-                    maybe_hold(
-                        now,
-                        'HOLD_STALE',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        s1.rsi,
-                        s1.ema_ok,
-                        s5.ema_ok,
-                        s1.vol_ok,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
-
-                # primary trigger
-                # primary trigger: allow MOM or fast tick-entry (avoid late entries)
-                if not (momOk or tick_entry_ok):
-                    maybe_hold(
-                        now,
-                        'HOLD_MOM',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        s1.rsi,
-                        s1.ema_ok,
-                        s5.ema_ok,
-                        s1.vol_ok,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
-                # secondary filters (EMA kept for logs only)
-                # secondary filters (EMA kept for logs only)
-                if not (profile.rsiMin <= s1.rsi <= profile.rsiMax):
-                    maybe_hold(
-                        now,
-                        'HOLD_RSI',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        s1.rsi,
-                        s1.ema_ok,
-                        s5.ema_ok,
-                        s1.vol_ok,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
-
-                # tick confirmation (micro)
-                if bool(getattr(cfg, "tickConfirmationEnabled", False)):
-                    tick_ok, tick_prog = tick_confirmation_ok(
-                        ticks,
-                        int(getattr(cfg, "tickConfirmationLookback", 3)),
-                        float(getattr(cfg, "tickConfirmationMinPct", 0.0005)),
-                    )
-                    if not tick_ok:
-                        maybe_hold(
-                            now,
-                            "HOLD_TICK_CONF",
-                            spread,
-                            momPct,
-                            momRangePct,
-                            upRatio,
-                            s1.rsi,
-                            s1.ema_ok,
-                            s5.ema_ok,
-                            s1.vol_ok,
-                        )
-                        time.sleep(cfg.idleSleep)
-                        continue
+            if buySignal:
                 if usdc is None:
                     maybe_hold(
                         now,
@@ -735,8 +597,8 @@ def main():
                     )
                     time.sleep(cfg.idleSleep)
                     continue
-            
-                if usdc < minNotional:
+
+                if usdc < float(minNotional):
                     maybe_hold(
                         now,
                         'HOLD_MIN_NOTIONAL',
@@ -753,17 +615,11 @@ def main():
                     continue
 
                 spend = min(cap, usdc)
-            
-                # BUY LIMIT (dynamic offset in compression; no offset in expansion)
-                if bool(getattr(cfg, 'entryCrossSpread', False)):
-                    buyPx = ask
-                else:
-                    buyPx = ask
-                # align BUY to tick (ceil) so it is never below ask
-                buyPx = round_tick_up(buyPx, tick)
-            
+
+                # BUY LIMIT at ASK (rounded up to tick)
+                buyPx = round_tick_up(float(ask), tick)
                 qty = round_step(spend / buyPx, step)
-                if qty <= 0:
+                if qty <= 0 or (qty * buyPx) < float(minNotional):
                     maybe_hold(
                         now,
                         'HOLD_QTY',
@@ -778,29 +634,14 @@ def main():
                     )
                     time.sleep(cfg.idleSleep)
                     continue
-                if (qty * buyPx) < minNotional:
-                    maybe_hold(
-                        now,
-                        'HOLD_QTY',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        s1.rsi,
-                        s1.ema_ok,
-                        s5.ema_ok,
-                        s1.vol_ok,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
-            
+
                 order = placeLimit(
                     bx, symbol, 'BUY',
                     qty, buyPx,
                     stepQ=step, tickQ=tick,
                     dryRun=getattr(cfg, 'dryRun', False)
                 )
-            
+
                 filled, info = waitFillOrCancel(
                     bx, symbol, order["orderId"],
                     float(getattr(cfg, 'entryFillTtlSec', cfg.orderTtl)), cfg.orderPoll,
@@ -817,27 +658,39 @@ def main():
                     cooldownUntil = time.time() + float(getattr(cfg, 'entryCooldownSec', 30.0))
                     time.sleep(cfg.idleSleep)
                     continue
-            
+
                 execQty = float(info.get("executedQty", qty))
                 quoteQty = float(info.get("cummulativeQuoteQty", execQty * buyPx))
                 entryPx = quoteQty / execQty if execQty > 0 else buyPx
-            
-                pos = Position(qty=execQty, entry=entryPx, high=entryPx, stop=0.0, ts_entry=time.time())
-                pos.init_stops(cfg, profile, tick=tick)
-            
-                print("BUY_FILLED", pos.qty, "@", fmt(pos.entry), "STOP", fmt(pos.stop))
-                logTrade(
-                    f"BUY symbol={symbol} qty={pos.qty} entry={pos.entry} momPct={momPct} "
-                    f"rangePct={momRangePct} upRatio={upRatio} profile={profile.name}"
-                )
+
+                if pos is None:
+                    pos = Position(qty=execQty, entry=entryPx, high=entryPx, stop=0.0, ts_entry=time.time())
+                    pos.init_stops(cfg, profile, tick=tick)
+                else:
+                    # add to existing position (weighted average)
+                    old_qty = float(getattr(pos, 'qty', 0.0))
+                    old_entry = float(getattr(pos, 'entry', 0.0))
+                    new_qty = old_qty + execQty
+                    if new_qty > 0:
+                        new_entry = ((old_qty * old_entry) + quoteQty) / new_qty
+                        pos.qty = new_qty
+                        pos.entry = new_entry
+                        try:
+                            pos.high = max(float(getattr(pos, 'high', new_entry)), float(bid))
+                        except Exception:
+                            pos.high = float(getattr(pos, 'high', new_entry))
+                        pos.init_stops(cfg, profile, tick=tick)
+
+                print("BUY_FILLED", getattr(pos, 'qty', ''), "@", fmt(getattr(pos, 'entry', 0.0)), "STOP", fmt(getattr(pos, 'stop', 0.0)))
+                logTrade(f"BUY symbol={symbol} qty={getattr(pos,'qty','')} entry={getattr(pos,'entry','')} P1={P1} P2={P2} P3={P3} P4={P4}")
                 logCsv({
                     "ts_utc": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
                     "symbol": symbol,
                     "event": "BUY_FILLED",
                     "side": "BUY",
-                    "qty": pos.qty,
-                    "price": pos.entry,
-                    "reason": "MOM",
+                    "qty": getattr(pos, 'qty', ''),
+                    "price": getattr(pos, 'entry', ''),
+                    "reason": f"PBUY P1={P1} P2={P2} P3={P3} P4={P4}",
                     "pnl": "",
                     "profile": profile.name,
                     "dry_run": int(getattr(cfg, "dryRun", False)),
@@ -860,6 +713,15 @@ def main():
             else:
                 pos.update(bid, cfg, profile, tick=tick)
                 exitReason = pos.exit_reason(bid, cfg, profile)
+
+            # Additional SELL rules (P algo, MID-based)
+            # SELL if (P1 < P3) OR (P2 < P3 AND P2 == P1) OR ((P1 < P2) AND (P2 < entryPrice))
+            if exitReason is None and (pos is not None) and (pos.entry > 0):
+                sellSignal = False
+                if (P1 is not None) and (P2 is not None) and (P3 is not None):
+                    sellSignal = (P1 < P3) or ((P2 < P3) and (P2 == P1)) or ((P1 < P2) and (P2 < float(pos.entry)))
+                if sellSignal:
+                    exitReason = f"PSELL P1={P1} P2={P2} P3={P3} P4={P4} entry={pos.entry}"
             
             if exitReason is None:
                 time.sleep(cfg.idleSleep)

@@ -24,6 +24,16 @@ def get_symbols_usdc_trading():
         sym = s.get("symbol")
         if not sym or sym in EXCLUDED:
             continue
+        # Filter out non-ASCII / non [A-Z0-9] symbols (can break downstream + dashboard)
+        if not sym.isascii():
+            continue
+        bad = False
+        for ch in sym:
+            if not ("A" <= ch <= "Z" or "0" <= ch <= "9"):
+                bad = True
+                break
+        if bad:
+            continue
         out.append(sym)
     return out
 
