@@ -808,6 +808,21 @@ def api_wallet():
             "usdc_value": r.get("value_usdc"),
             "eur_value": r.get("value_eur"),
         })
+    # filter: hide tiny lines (< 1 USDC by default)
+    min_usdc = float(os.getenv("WALLET_MIN_USDC", "1") or "1")
+    filtered = []
+    for r in rows:
+        asset = (r.get("asset") or "").upper()
+        v = r.get("usdc_value")
+        try:
+            v = float(v) if v is not None else 0.0
+        except Exception:
+            v = 0.0
+        if asset == "USDC" or v >= min_usdc:
+            filtered.append(r)
+    rows = filtered
+
+
 
     # totals
     t_usdc = 0.0
