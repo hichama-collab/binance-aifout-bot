@@ -36,3 +36,25 @@ Thumbs.db
 # ===== Temp =====
 *.swp
 *.tmp
+
+# venv / python
+.venv/
+dashboard/.venv/
+__pycache__/
+dashboard/__pycache__/
+*.py[cod]
+
+# secrets/env locaux
+.service.env
+dashboard/botdash.env
+
+# runtime + caches
+data/runtime/
+*.cache.json
+*.tmp
+
+# logs / exports
+data/logs/
+archivelog/
+*.log
+*.csv
