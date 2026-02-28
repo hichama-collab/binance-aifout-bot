@@ -14,8 +14,17 @@ case "$1" in
   4)
     sudo systemctl stop binance-aifout-bot.service
     ;;
+  5)
+    sudo systemctl status botdash.service --no-pager
+    ;;
+  6)
+    sudo systemctl stop botdash.service
+    ;;
+  7)
+    sudo systemctl start botdash.service
+    ;;
   *)
-    echo "Usage: $0 {1|2|3|4}"
+    echo "Usage: $0 {1|2|3|4|5|6|7}"
     exit 1
     ;;
 esac
