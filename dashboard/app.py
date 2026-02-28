@@ -27,6 +27,10 @@ DASH_PASS = os.getenv("DASH_PASS", "")
 # FX rate: USDC -> EUR (set via env or BOT_RUNTIME_DIR/fx.json)
 FX_USDC_EUR_ENV = os.getenv("FX_USDC_EUR", "").strip()
 
+# FX cache (avoid hitting network on each refresh)
+FX_CACHE_TTL_SEC = int(os.getenv("FX_CACHE_TTL_SEC", "300"))
+_FX_CACHE = {"ts": 0.0, "usdc_eur": None}
+
 
 # systemd units allowlist (security)
 UNITS = [
@@ -285,7 +289,10 @@ def get_fx_usdc_eur():
         except Exception:
             pass
 
-    return fx
+        if fx is None:
+        return 0.0
+
+    return float(fx)
 
 
 def usdc_to_eur(usdc, fx):
@@ -492,6 +499,19 @@ def api_token_now():
     symbol, profile, dry_run = detect_symbol_profile()
     return jsonify({"ok": True, "token": {"symbol": symbol, "profile": profile, "dry_run": dry_run}})
 
+mbol,
+        "profile": profile,
+        "dry_run": dry_run,
+        "system": {
+            "uptime": up_out if up_ok else "",
+            "disk": df_out if df_ok else "",
+            "mem": mem_out if mem_ok else "",
+        },
+        "units": units_list,
+        "units_map": units,
+        "indicators": indicators,
+        "position": pos,
+    })
 
 @app.route("/api/stats")
 @require_basic_auth
@@ -562,7 +582,7 @@ def api_log_tail():
         return jsonify(ok=False, error="invalid file"), 400
 
     lines = tail_file(path, n_lines=n)
-    return jsonify(ok=True, text="\n".join(lines), file=name)
+    return jsonify(ok=True, text="\n".join(lines), lines=lines, file=name)
 
 @app.route("/api/control", methods=["POST"])
 @require_basic_auth
@@ -587,7 +607,7 @@ def api_trades():
     trades_path = find_latest(LOG_DIR, "*_trades.csv")
     if not trades_path:
         return jsonify(ok=True, tokens=[], source=None)
-    trades = load_trades_csv(trades_path)
+    trades, _ = load_trades_csv(trades_path)
     # group by symbol, keep most recent 10 symbols by last ts
     by_symbol = {}
     for t in trades:
@@ -634,7 +654,7 @@ def api_pnl():
     if not trades_path:
         return jsonify(ok=True, session=None, week=None, month=None, year=None, trades=0, winrate=None, profit_factor=None, source=None)
 
-    trades = load_trades_csv(trades_path)
+    trades, _ = load_trades_csv(trades_path)
     fx = get_fx_usdc_eur()
     now = datetime.now(timezone.utc)
 
