@@ -87,9 +87,23 @@ def tail_file(path: Path, n_lines: int = 200):
     except Exception:
         return []
 
-def find_latest(pattern: str):
-    files = sorted(LOG_DIR.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
-    return files[0] if files else None
+def find_latest(directory_or_pattern, pattern: str | None = None):
+    """Return latest file by mtime.
+    Compatible with older calls:
+      - find_latest("*_trades.csv")  # uses LOG_DIR
+      - find_latest(LOG_DIR, "*_trades.csv")
+    """
+    try:
+        if pattern is None:
+            directory = LOG_DIR
+            pat = str(directory_or_pattern)
+        else:
+            directory = Path(directory_or_pattern)
+            pat = str(pattern)
+        files = sorted(directory.glob(pat), key=lambda p: p.stat().st_mtime, reverse=True)
+        return files[0] if files else None
+    except Exception:
+        return None
 
 def safe_read_json(path: Path):
     try:
@@ -449,7 +463,7 @@ def api_status():
             "details": info.get("sub",""),
         })
 
-        # latest log indicators
+    # latest log indicators
     log_file = find_latest("*_trades.log") or find_latest("*.log")
     indicators = parse_last_indicators(tail_file(log_file, 200)) if log_file else {}
 
@@ -460,15 +474,20 @@ def api_status():
         "ok": True,
         "ts_utc": utc_now_str(),
         "token": {"symbol": symbol, "profile": profile, "dry_run": dry_run},
-        "symbol": sy@app.route("/api/services")
-@auth_required
+        "units": units_list,
+        "indicators": indicators,
+        "position": pos,
+    })
+
+@app.route("/api/services")
+@require_basic_auth
 def api_services():
     # Same payload shape as dashboard expects
     st = api_status().get_json()
     return jsonify({"ok": True, "units": st.get("units", [])})
 
 @app.route("/api/token_now")
-@auth_required
+@require_basic_auth
 def api_token_now():
     symbol, profile, dry_run = detect_symbol_profile()
     return jsonify({"ok": True, "token": {"symbol": symbol, "profile": profile, "dry_run": dry_run}})
