@@ -1,60 +1,53 @@
-# ===== Runtime data =====
-data/runtime/
-data/cache/
 
-# ===== Logs =====
-data/logs/*.log
-data/logs/*_trades.csv
-data/logs/*_errors.log
-
-# ===== Environment / secrets =====
-.service.env
-dashboard/botdash.env
-.env
-.env.*
-
-# ===== Python =====
+# =============================
+# Python
+# =============================
 __pycache__/
-*.pyc
+**/__pycache__/
+*.py[cod]
 *.pyo
 *.pyd
+
+# =============================
+# Virtual environments
+# =============================
 .venv/
 venv/
-.python-version
+env/
+ENV/
+dashboard/.venv/
 
-# ===== System / OS =====
+# =============================
+# Environment files
+# =============================
+*.env
+.service.env
+dashboard/botdash.env
+
+# =============================
+# Runtime / Generated data
+# =============================
+data/runtime/*.json
+data/runtime/*.tmp
+data/runtime/*.cache
+
+# Logs
+data/logs/*.log
+data/logs/*.csv
+
+# =============================
+# OS / Editor
+# =============================
 .DS_Store
 Thumbs.db
-
-# ===== IDE =====
+*.swp
+*.swo
 .vscode/
 .idea/
 
-# ===== Local systemd units (server-specific) =====
-*.service
-
-# ===== Temp =====
-*.swp
-*.tmp
-
-# venv / python
-.venv/
-dashboard/.venv/
-__pycache__/
-dashboard/__pycache__/
-*.py[cod]
-
-# secrets/env locaux
-.service.env
-dashboard/botdash.env
-
-# runtime + caches
-data/runtime/
-*.cache.json
-*.tmp
-
-# logs / exports
-data/logs/
-archivelog/
-*.log
-*.csv
+# =============================
+# Archives
+# =============================
+*.zip
+*.tar
+*.gz
