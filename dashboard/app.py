@@ -13,6 +13,19 @@ from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request, abort
 
+
+def _json_safe(obj):
+    """Recursively convert Path objects to str so jsonify never crashes."""
+    from pathlib import Path as _Path
+    if isinstance(obj, _Path):
+        return str(obj)
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 APP_TITLE = "botdash"
 
 # ---- config (env) ----
@@ -779,7 +792,7 @@ def api_summary():
     total_usdc = round(total_usdc, 6) if has_pnl else 0.0
     total_eur = round(usdc_to_eur(total_usdc, fx), 6) if fx is not None else None
 
-    return jsonify({
+    return jsonify(_json_safe({
         "ok": True,
         "fx_usdc_eur": fx,
         # frontend expects .rows
@@ -788,9 +801,9 @@ def api_summary():
         "tokens": rows[:60],
         "total_usdc": total_usdc,
         "total_eur": total_eur,
-        "source": csv_path,
+        "source": str(csv_path),
     })
-
+)
 @app.route("/api/wallet")
 @require_basic_auth
 def api_wallet():
@@ -808,21 +821,6 @@ def api_wallet():
             "usdc_value": r.get("value_usdc"),
             "eur_value": r.get("value_eur"),
         })
-    # filter: hide tiny lines (< 1 USDC by default)
-    min_usdc = float(os.getenv("WALLET_MIN_USDC", "1") or "1")
-    filtered = []
-    for r in rows:
-        asset = (r.get("asset") or "").upper()
-        v = r.get("usdc_value")
-        try:
-            v = float(v) if v is not None else 0.0
-        except Exception:
-            v = 0.0
-        if asset == "USDC" or v >= min_usdc:
-            filtered.append(r)
-    rows = filtered
-
-
 
     # totals
     t_usdc = 0.0
