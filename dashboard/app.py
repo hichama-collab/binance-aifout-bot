@@ -1,3 +1,4 @@
+from datetime import timedelta
 #!/usr/bin/env python3
 import os
 import re
@@ -7,11 +8,25 @@ import time
 import subprocess
 import urllib.request
 import urllib.error
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request, abort
+
+def _json_safe(obj):
+    """Convert Path and other non-JSON types into JSON-safe primitives."""
+    try:
+        from pathlib import Path as _Path
+        if isinstance(obj, _Path):
+            return str(obj)
+    except Exception:
+        pass
+    if isinstance(obj, dict):
+        return {str(k): _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
 
 APP_TITLE = "botdash"
 
@@ -27,9 +42,6 @@ DASH_PASS = os.getenv("DASH_PASS", "")
 # FX rate: USDC -> EUR (set via env or BOT_RUNTIME_DIR/fx.json)
 FX_USDC_EUR_ENV = os.getenv("FX_USDC_EUR", "").strip()
 
-# in-memory FX cache
-FX_CACHE_TTL_SEC = 300
-_FX_CACHE = {"ts": 0.0, "usdc_eur": None}
 
 # systemd units allowlist (security)
 UNITS = [
@@ -495,6 +507,19 @@ def api_token_now():
     symbol, profile, dry_run = detect_symbol_profile()
     return jsonify({"ok": True, "token": {"symbol": symbol, "profile": profile, "dry_run": dry_run}})
 
+mbol,
+        "profile": profile,
+        "dry_run": dry_run,
+        "system": {
+            "uptime": up_out if up_ok else "",
+            "disk": df_out if df_ok else "",
+            "mem": mem_out if mem_ok else "",
+        },
+        "units": units_list,
+        "units_map": units,
+        "indicators": indicators,
+        "position": pos,
+    })
 
 @app.route("/api/stats")
 @require_basic_auth
@@ -584,119 +609,107 @@ def api_control():
 @app.route("/api/trades")
 @require_basic_auth
 def api_trades():
-    """
-    Last 10 traded symbols with net result (buys/sells) from latest *_trades.csv
-    """
-    trades_path = find_latest(LOG_DIR, "*_trades.csv")
-    if not trades_path:
-        return jsonify(ok=True, tokens=[], source=None)
-    trades, _ = load_trades_csv(trades_path)
-    # group by symbol, keep most recent 10 symbols by last ts
+    # Aggregates latest trades per token from *_trades.csv (and optionally *_trades.log if present).
+    limit = int(request.args.get("limit", 10))
+    trades, meta = load_trades_csv()
+    # trades can be a list of dicts; ignore non-dict rows
+    items = [t for t in (trades or []) if isinstance(t, dict)]
     by_symbol = {}
-    for t in trades:
-        sym = t.get("symbol") or ""
+    for t in items:
+        sym = str(t.get("symbol") or "").strip()
         if not sym:
             continue
-        ts = t.get("ts_utc") or ""
-        rec = by_symbol.setdefault(sym, {"symbol": sym, "first_ts": ts, "last_ts": ts, "net_usdc": 0.0, "trades": 0})
-        if ts and (not rec["first_ts"] or ts < rec["first_ts"]):
-            rec["first_ts"] = ts
-        if ts and (not rec["last_ts"] or ts > rec["last_ts"]):
-            rec["last_ts"] = ts
-        side = (t.get("side") or "").upper()
-        qty = float(t.get("qty") or 0.0)
-        price = float(t.get("price") or 0.0)
-        usdc = qty * price
-        # net: sells - buys
-        if side == "SELL":
-            rec["net_usdc"] += usdc
-        elif side == "BUY":
-            rec["net_usdc"] -= usdc
-        rec["trades"] += 1
+        side = str(t.get("side") or "").upper().strip()
+        evt = str(t.get("event") or "").upper().strip()
+        qty = t.get("qty")
+        price = t.get("price")
+        # keep only real executions (BUY/SELL) OR events *_FILLED
+        is_exec = side in ("BUY", "SELL") or evt.endswith("_FILLED") or evt in ("BUY_FILLED", "SELL_FILLED")
+        if not is_exec:
+            continue
+        d = by_symbol.setdefault(sym, {"symbol": sym, "trades": 0, "net_usdc": 0.0, "first_ts": None, "last_ts": None})
+        d["trades"] += 1
+        # ts can be int epoch or iso
+        ts = t.get("ts") or t.get("ts_utc") or t.get("time") or t.get("timestamp")
+        try:
+            ts_val = int(float(ts))
+        except Exception:
+            ts_val = None
+        if ts_val is not None:
+            d["first_ts"] = ts_val if d["first_ts"] is None else min(d["first_ts"], ts_val)
+            d["last_ts"] = ts_val if d["last_ts"] is None else max(d["last_ts"], ts_val)
+        # pnl
+        pnl = t.get("pnl")
+        try:
+            pnl_f = float(pnl)
+        except Exception:
+            pnl_f = 0.0
+        d["net_usdc"] += pnl_f
 
-    tokens = list(by_symbol.values())
-    # sort by last_ts desc and take 10
-    tokens.sort(key=lambda r: r.get("last_ts") or "", reverse=True)
-    tokens = tokens[:10]
+    # sort by last_ts desc
+    rows = list(by_symbol.values())
+    rows.sort(key=lambda r: (r["last_ts"] or 0), reverse=True)
+    rows = rows[:limit]
 
-    fx = get_fx_usdc_eur()
-    for r in tokens:
-        r["net_usdc"] = round(float(r["net_usdc"]), 6)
-        r["net_eur"] = round(float(r["net_usdc"]) * fx, 6) if fx else None
-        r["period"] = f'{r.get("first_ts","")} → {r.get("last_ts","")}'
-    return jsonify(ok=True, tokens=tokens, source=str(trades_path), fx_usdc_eur=fx)
+    fx = fx_usdc_eur()
+    for r in rows:
+        r["net_eur"] = round((r["net_usdc"] or 0.0) * fx, 4) if fx else 0.0
+        # human period label
+        r["period"] = ""
+        if r["first_ts"] and r["last_ts"]:
+            r["period"] = f'{r["first_ts"]}..{r["last_ts"]}'
+    return jsonify(_json_safe({"ok": True, "rows": rows, "meta": meta, "fx_usdc_eur": fx}))
 
 @app.route("/api/pnl")
 @require_basic_auth
 def api_pnl():
-    """
-    UI expects bucket pnl for: session/week/month/year + trades/winrate/profit_factor.
-    Uses latest *_trades.csv.
-    """
-    trades_path = find_latest(LOG_DIR, "*_trades.csv")
-    if not trades_path:
-        return jsonify(ok=True, session=None, week=None, month=None, year=None, trades=0, winrate=None, profit_factor=None, source=None)
-
-    trades, _ = load_trades_csv(trades_path)
-    fx = get_fx_usdc_eur()
-    now = datetime.now(timezone.utc)
-
-    def parse_ts(s):
+    trades, meta = load_trades_csv()
+    items = [t for t in (trades or []) if isinstance(t, dict)]
+    # keep only executed trades
+    execs = []
+    for t in items:
+        side = str(t.get("side") or "").upper().strip()
+        evt = str(t.get("event") or "").upper().strip()
+        is_exec = side in ("BUY", "SELL") or evt.endswith("_FILLED") or evt in ("BUY_FILLED", "SELL_FILLED")
+        if not is_exec:
+            continue
+        ts = t.get("ts") or t.get("ts_utc") or t.get("time") or t.get("timestamp")
         try:
-            return datetime.fromisoformat(s.replace("Z","+00:00"))
+            ts_val = int(float(ts))
         except Exception:
-            return None
+            continue
+        pnl = t.get("pnl")
+        try:
+            pnl_f = float(pnl)
+        except Exception:
+            pnl_f = 0.0
+        execs.append((ts_val, pnl_f))
 
-    # compute per-trade pnl isn't available in raw trades; approximate from grouped net per symbol within window
-    def bucket(days=None):
-        cutoff = None
-        if days is not None:
-            cutoff = now - timedelta(days=days)
-        # filter trades by cutoff
-        ftr = []
-        for t in trades:
-            ts = parse_ts(t.get("ts_utc") or "")
-            if not ts:
-                continue
-            if cutoff and ts < cutoff:
-                continue
-            ftr.append(t)
-        # net USDC = sells - buys for that window
-        net = 0.0
-        for t in ftr:
-            side = (t.get("side") or "").upper()
-            qty = float(t.get("qty") or 0.0)
-            price = float(t.get("price") or 0.0)
-            usdc = qty * price
-            if side == "SELL":
-                net += usdc
-            elif side == "BUY":
-                net -= usdc
-        return {
-            "usdc": round(net, 6),
-            "eur": round(net * fx, 6) if fx else None,
-            "trades": len(ftr),
-        }
+    execs.sort(key=lambda x: x[0])
+    if not execs:
+        return jsonify({"ok": True, "rows": [], "fx_usdc_eur": fx_usdc_eur()})
 
-    session = bucket(days=None)
-    week = bucket(days=7)
-    month = bucket(days=30)
-    year = bucket(days=365)
+    import datetime as _dt
+    now = _dt.datetime.utcnow().replace(tzinfo=_dt.timezone.utc)
+    def _sum_since(delta):
+        cutoff = int((now - delta).timestamp())
+        return sum(p for ts,p in execs if ts >= cutoff)
 
-    # winrate/profit_factor cannot be derived reliably without closed-trade PnL; keep null
-    return jsonify(
-        ok=True,
-        session=session,
-        week=week,
-        month=month,
-        year=year,
-        trades=session["trades"],
-        winrate=None,
-        profit_factor=None,
-        source=str(trades_path),
-        fx_usdc_eur=fx
-    )
-
+    session = sum(p for _,p in execs)
+    week = _sum_since(_dt.timedelta(days=7))
+    month = _sum_since(_dt.timedelta(days=30))
+    year = _sum_since(_dt.timedelta(days=365))
+    fx = fx_usdc_eur()
+    def _eur(x): return round(x*fx,4) if fx else 0.0
+    return jsonify(_json_safe({
+        "ok": True,
+        "session": {"usdc": round(session,4), "eur": _eur(session)},
+        "week": {"usdc": round(week,4), "eur": _eur(week)},
+        "month": {"usdc": round(month,4), "eur": _eur(month)},
+        "year": {"usdc": round(year,4), "eur": _eur(year)},
+        "fx_usdc_eur": fx,
+        "trades": len(execs),
+    }))
 
 @app.route("/api/action", methods=["POST"])
 @require_basic_auth
@@ -765,88 +778,65 @@ def api_config():
 @app.route("/api/summary")
 @require_basic_auth
 def api_summary():
-    csv_path = find_latest("*_trades.csv")
-    trades, _ = load_trades_csv(csv_path) if csv_path else ([], [])
-    rows, fx = summarize_pnl_by_symbol(trades)
-
-    # hide empty tokens (no trades)
-    rows = [r for r in rows if int(r.get("trades") or 0) > 0]
-
-    total_usdc = 0.0
-    has_pnl = False
-    for r in trades:
-        v = fnum(r.get("pnl"))
-        if v is not None:
-            total_usdc += v
-            has_pnl = True
-    total_usdc = round(total_usdc, 6) if has_pnl else 0.0
-    total_eur = round(usdc_to_eur(total_usdc, fx), 6) if fx is not None else None
-
-    return jsonify({
+    st = api_status().json if hasattr(api_status(), "json") else {}
+    wallet = api_wallet().json if hasattr(api_wallet(), "json") else {}
+    pos = api_position().json if hasattr(api_position(), "json") else {}
+    tr = None
+    try:
+        tr = api_trades()
+        trj = tr.json if hasattr(tr, "json") else {}
+    except Exception:
+        trj = {}
+    return jsonify(_json_safe({
         "ok": True,
-        "fx_usdc_eur": fx,
-        # frontend expects .rows
-        "rows": rows[:60],
-        # backward compat
-        "tokens": rows[:60],
-        "total_usdc": total_usdc,
-        "total_eur": total_eur,
-        "source": str(csv_path) if csv_path else "",
-    })
+        "status": (st or {}).get("status", {}),
+        "wallet": (wallet or {}),
+        "position": (pos or {}),
+        "trades": (trj or {}).get("rows", []),
+        "fx_usdc_eur": fx_usdc_eur(),
+    }))
 
 @app.route("/api/wallet")
 @require_basic_auth
 def api_wallet():
-    snap = load_wallet_snapshot()
-    norm_rows, fx = normalize_wallet(snap.get("data"))
-
-    # UI (static/app.js) expects: rows[{asset, free, locked, total, usdc_value, eur_value}]
+    data = read_runtime_json("wallet.json") or {}
     rows = []
-    for r in norm_rows:
+    fx = fx_usdc_eur()
+    min_usdc = float(request.args.get("min_usdc", 1.0))
+    for r in (data.get("rows") or data.get("assets") or []):
+        if not isinstance(r, dict):
+            continue
+        asset = str(r.get("asset") or r.get("symbol") or "").strip()
+        free = float(r.get("free") or 0.0)
+        locked = float(r.get("locked") or 0.0)
+        total = float(r.get("total") or (free+locked))
+        usdc_val = r.get("usdc") or r.get("value_usdc") or r.get("approx_usdc")
+        eur_val = r.get("eur") or r.get("value_eur") or r.get("approx_eur")
+        try:
+            usdc_val = float(usdc_val) if usdc_val is not None else None
+        except Exception:
+            usdc_val = None
+        try:
+            eur_val = float(eur_val) if eur_val is not None else None
+        except Exception:
+            eur_val = None
+        # If valuation missing, keep None; UI will show --
+        if usdc_val is not None and usdc_val < min_usdc:
+            continue
         rows.append({
-            "asset": r.get("asset"),
-            "free": r.get("free"),
-            "locked": r.get("locked"),
-            "total": r.get("total"),
-            "usdc_value": r.get("value_usdc"),
-            "eur_value": r.get("value_eur"),
+            "asset": asset,
+            "free": free,
+            "locked": locked,
+            "total": total,
+            "usdc": usdc_val,
+            "eur": eur_val if eur_val is not None else (round(usdc_val*fx,4) if (usdc_val is not None and fx) else None),
         })
 
-    # totals
-    t_usdc = 0.0
-    used = False
-    for r in rows:
-        v = r.get("usdc_value")
-        if isinstance(v, (int, float)):
-            t_usdc += float(v)
-            used = True
-    t_usdc = round(t_usdc, 6) if used else None
-    t_eur = round(usdc_to_eur(t_usdc, fx), 6) if (t_usdc is not None and fx is not None) else None
-
-    # Hide dust (UI request): keep only rows whose estimated USDC value is >= 1.
-    filtered = []
-    for r in rows:
-        v = r.get("usdc")
-        try:
-            v_num = float(v)
-        except Exception:
-            continue
-        if v_num >= 1.0:
-            filtered.append(r)
-
-    return jsonify({
-        "ok": True,
-        "file": snap.get("file", ""),
-        "fx_usdc_eur": fx,
-        # primary (frontend)
-        "rows": filtered[:200],
-        "total_usdc": t_usdc,
-        "total_eur": t_eur,
-        # backward compat
-        "assets": filtered[:200],
-        "total_value_usdc": t_usdc,
-        "total_value_eur": t_eur,
-    })
+    # sort by usdc desc
+    rows.sort(key=lambda x: (x["usdc"] if x["usdc"] is not None else -1.0), reverse=True)
+    tot_usdc = sum((x["usdc"] or 0.0) for x in rows if x.get("usdc") is not None)
+    tot_eur = round(tot_usdc*fx,4) if fx else 0.0
+    return jsonify(_json_safe({"ok": True, "rows": rows, "fx_usdc_eur": fx, "total_usdc": round(tot_usdc,4), "total_eur": tot_eur, "file": str(runtime_path("wallet.json"))}))
 
 if __name__ == "__main__":
     # local bind only; nginx will proxy

@@ -1,53 +1,35 @@
-
-# =============================
 # Python
-# =============================
 __pycache__/
-**/__pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-
-# =============================
-# Virtual environments
-# =============================
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.eggs/
 .venv/
 venv/
-env/
 ENV/
-dashboard/.venv/
+env/
 
-# =============================
-# Environment files
-# =============================
-*.env
-.service.env
+# Runtime / bot data (generated)
+data/runtime/
+data/logs/
+archivelog/
+*.log
+*.csv
+
+# Dashboard secrets / local overrides
 dashboard/botdash.env
+.service.env
 
-# =============================
-# Runtime / Generated data
-# =============================
-data/runtime/*.json
-data/runtime/*.tmp
-data/runtime/*.cache
-
-# Logs
-data/logs/*.log
-data/logs/*.csv
-
-# =============================
-# OS / Editor
-# =============================
+# OS / editor
 .DS_Store
 Thumbs.db
-*.swp
-*.swo
-.vscode/
 .idea/
-
-# =============================
-# Archives
-# =============================
-*.zip
-*.tar
-*.gz
+.vscode/
+*.swp
