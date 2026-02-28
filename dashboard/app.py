@@ -220,46 +220,121 @@ def _parse_float(x: Any) -> Optional[float]:
     except Exception:
         return None
 
-def load_trades_csv() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """
-    Scan BOT_LOG_DIR for "*_trades.csv" and load all rows.
-    Returns: (trades_list, meta_dict)
-    trades_list items include: ts_utc, symbol, side, qty, price, pnl
-    """
-    meta: Dict[str, Any] = {"files": [], "rows": 0, "errors": 0}
-    trades: List[Dict[str, Any]] = []
+def _parse_trade_logs(bot_log_dir: Path) -> list[dict]:
+    """Best-effort parser for *_trades.log (fallback when CSV doesn't contain fills)."""
+    out: list[dict] = []
+    if not bot_log_dir or not bot_log_dir.exists():
+        return out
 
-    try:
-        paths = sorted(LOG_DIR.glob("*_trades.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
-    except Exception:
-        paths = []
+    # Common patterns seen in logs: ISO timestamp + messages containing BUY/SELL (+ optional FILLED)
+    iso_re = re.compile(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?)(?:Z|\+00:00)?")
+    side_re = re.compile(r"\b(BUY|SELL)\b", re.IGNORECASE)
+    pnl_re = re.compile(r"\bpnl(?:_usdc)?\b\s*[:=]\s*(-?\d+(?:\.\d+)?)", re.IGNORECASE)
+    qty_re = re.compile(r"\bqty\b\s*[:=]\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
+    price_re = re.compile(r"\bprice\b\s*[:=]\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
 
-    meta["files"] = [str(p) for p in paths[:200]]
-
-    for p in paths:
+    for log_path in sorted(bot_log_dir.glob("*_trades.log")):
+        symbol = log_path.name.split("_trades.log")[0]
         try:
-            with p.open("r", encoding="utf-8", errors="ignore", newline="") as f:
-                r = csv.DictReader(f)
-                for row in r:
-                    if not isinstance(row, dict):
+            with log_path.open("r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    # Keep only lines that look like executions/fills, but stay permissive
+                    s_m = side_re.search(line)
+                    if not s_m:
                         continue
-                    sym = (row.get("symbol") or "").strip().upper()
-                    if not sym:
-                        continue
-                    t = {
-                        "ts_utc": (row.get("ts_utc") or row.get("ts") or row.get("time") or "").strip(),
-                        "symbol": sym,
-                        "side": (row.get("side") or "").strip().upper(),
-                        "qty": _parse_float(row.get("qty")),
-                        "price": _parse_float(row.get("price")),
-                        "pnl": _parse_float(row.get("pnl")),
-                        "_file": str(p),
-                    }
-                    trades.append(t)
-                    meta["rows"] += 1
-        except Exception:
-            meta["errors"] += 1
+                    side = s_m.group(1).upper()
 
+                    # Prefer lines mentioning fill/executed, but don't require it
+                    if ("fill" not in line.lower()) and ("execut" not in line.lower()) and ("filled" not in line.lower()):
+                        continue
+
+                    ts_m = iso_re.search(line)
+                    ts_utc = ts_m.group(1).replace(" ", "T") + "Z" if ts_m else None
+
+                    pnl_m = pnl_re.search(line)
+                    qty_m = qty_re.search(line)
+                    pr_m = price_re.search(line)
+
+                    out.append({
+                        "ts_utc": ts_utc,
+                        "symbol": symbol,
+                        "side": side,
+                        "qty": float(qty_m.group(1)) if qty_m else None,
+                        "price": float(pr_m.group(1)) if pr_m else None,
+                        "pnl": float(pnl_m.group(1)) if pnl_m else None,
+                        "src": str(log_path.name),
+                    })
+        except Exception:
+            continue
+    return out
+
+
+def load_trades_csv() -> tuple[list[dict], dict]:
+    """
+    Load trades from *_trades.csv files under BOT_LOG_DIR.
+
+    Supports two formats:
+    - Format A (legacy): ts_utc,symbol,side,qty,price,pnl
+    - Format B (current bot): utc,event,reason,side,price,bid,ask,rsi,ema9,ema21,vol,mom,range,up,spread,pnl_usdc
+      (symbol inferred from filename when missing)
+    Returns: (trades_list, meta_dict)
+    """
+    trades: list[dict] = []
+    meta: dict = {"files": [], "count": 0}
+
+    if not BOT_LOG_DIR or not BOT_LOG_DIR.exists():
+        return trades, meta
+
+    for csv_path in sorted(BOT_LOG_DIR.glob("*_trades.csv")):
+        meta["files"].append(str(csv_path.name))
+        symbol_from_file = csv_path.name.split("_trades.csv")[0]
+
+        try:
+            with csv_path.open("r", newline="", encoding="utf-8", errors="replace") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # symbol may be missing in some CSV formats
+                    sym = (row.get("symbol") or row.get("sym") or "").strip() or symbol_from_file
+
+                    # timestamp can be ts_utc or utc
+                    ts_utc = (row.get("ts_utc") or row.get("utc") or row.get("timestamp") or "").strip()
+
+                    side = (row.get("side") or "").strip().upper()
+                    if side not in ("BUY", "SELL"):
+                        # ignore decision-only rows
+                        continue
+
+                    def _f(key: str):
+                        v = (row.get(key) or "").strip()
+                        try:
+                            return float(v) if v != "" else None
+                        except Exception:
+                            return None
+
+                    qty = _f("qty") or _f("quantity")
+                    price = _f("price")
+                    pnl = _f("pnl") or _f("pnl_usdc")
+
+                    trades.append({
+                        "ts_utc": ts_utc,
+                        "symbol": sym,
+                        "side": side,
+                        "qty": qty,
+                        "price": price,
+                        "pnl": pnl,
+                        "src": str(csv_path.name),
+                    })
+        except Exception:
+            continue
+
+    # Fallback: parse *_trades.log if CSV has no fills
+    if not trades:
+        trades = _parse_trade_logs(BOT_LOG_DIR)
+
+    # Sort chronologically when possible (ISO strings sort well)
+    trades.sort(key=lambda t: (t.get("ts_utc") or "", t.get("symbol") or ""))
+
+    meta["count"] = len(trades)
     return trades, meta
 
 def summarize_trades_by_symbol(trades: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -473,150 +548,21 @@ def api_token_now():
 def api_wallet():
     file_path, raw = load_wallet_snapshot()
     rows, fx = normalize_wallet(raw)
+
+    # Hide dust to keep the table readable (keep USDC line always)
+    filtered = []
+    for r in rows:
+        if r.get("asset") == "USDC":
+            filtered.append(r)
+            continue
+        v = r.get("value_usdc")
+        if isinstance(v, (int, float)) and v >= 1.0:
+            filtered.append(r)
+
     return jsonify(_json_safe({
         "ok": True,
         "file": file_path,
         "fx_usdc_eur": fx,
-        "rows": rows,
+        "rows": filtered,
     }))
 
-@app.route("/api/trades")
-@require_basic_auth
-def api_trades():
-    trades, meta = load_trades_csv()
-    by_sym = summarize_trades_by_symbol(trades)
-
-    # UI: last tokens traded list. Keep only symbols with trades > 0 and include last_ts period.
-    # Some UIs want "period" field; we provide it.
-    out = []
-    for r in by_sym:
-        out.append({
-            "symbol": r["symbol"],
-            "period": r.get("last_ts") or "",
-            "net_usdc": r.get("net_usdc", 0.0),
-            "net_eur": r.get("net_eur"),
-            "trades": r.get("trades", 0),
-            "first_ts": r.get("first_ts",""),
-            "last_ts": r.get("last_ts",""),
-        })
-
-    return jsonify(_json_safe({"ok": True, "rows": out, "meta": meta}))
-
-@app.route("/api/pnl")
-@require_basic_auth
-def api_pnl():
-    trades, meta = load_trades_csv()
-    fx = get_fx_usdc_eur()
-
-    # windows: session/week/month/year (based on ts_utc if ISO-like)
-    def parse_ts(s: str) -> Optional[datetime]:
-        try:
-            if not s:
-                return None
-            # accept Z
-            s2 = s.replace("Z", "+00:00")
-            return datetime.fromisoformat(s2).astimezone(timezone.utc)
-        except Exception:
-            return None
-
-    now = datetime.now(timezone.utc)
-    windows = {
-        "session": now - timedelta(days=3650),  # best effort: all
-        "week": now - timedelta(days=7),
-        "month": now - timedelta(days=31),
-        "year": now - timedelta(days=366),
-    }
-
-    pnl_vals = []
-    by_win = {k: {"pnl_usdc": 0.0, "trades": 0, "wins": 0, "losses": 0, "profit": 0.0, "loss": 0.0} for k in windows}
-
-    for t in trades:
-        pnl = _parse_float(t.get("pnl"))
-        if pnl is None:
-            continue
-        ts = parse_ts(str(t.get("ts_utc") or ""))
-        for k, start in windows.items():
-            if ts is None or ts >= start:
-                a = by_win[k]
-                a["pnl_usdc"] += pnl
-                a["trades"] += 1
-                if pnl > 0:
-                    a["wins"] += 1
-                    a["profit"] += pnl
-                elif pnl < 0:
-                    a["losses"] += 1
-                    a["loss"] += abs(pnl)
-
-    def mk(a):
-        trades_n = a["trades"]
-        winrate = (a["wins"] / trades_n * 100.0) if trades_n else None
-        pf = (a["profit"] / a["loss"]) if a["loss"] > 0 else (None if a["profit"] == 0 else float("inf"))
-        pnl_usdc = a["pnl_usdc"]
-        return {
-            "pnl_usdc": round(pnl_usdc, 6),
-            "pnl_eur": round(usdc_to_eur(pnl_usdc, fx), 6) if fx is not None else None,
-            "trades": trades_n,
-            "winrate": round(winrate, 1) if winrate is not None else None,
-            "profit_factor": (round(pf, 3) if pf not in (None, float("inf")) else pf),
-        }
-
-    return jsonify(_json_safe({
-        "ok": True,
-        "fx_usdc_eur": fx,
-        "session": mk(by_win["session"]),
-        "week": mk(by_win["week"]),
-        "month": mk(by_win["month"]),
-        "year": mk(by_win["year"]),
-        "meta": meta,
-    }))
-
-@app.route("/api/summary")
-@require_basic_auth
-def api_summary():
-    token = {}
-    try:
-        symbol, profile, dry_run = detect_symbol_profile()
-        token = {"symbol": symbol, "profile": profile, "dry_run": dry_run}
-    except Exception:
-        token = {"symbol": "", "profile": "", "dry_run": ""}
-
-    wallet = api_wallet().get_json(silent=True) or {}
-    trades = api_trades().get_json(silent=True) or {}
-    pnl = api_pnl().get_json(silent=True) or {}
-    position = read_runtime_json("position.json")
-
-    return jsonify(_json_safe({
-        "ok": True,
-        "ts_utc": utc_now_str(),
-        "token": token,
-        "wallet": wallet,
-        "trades": trades,
-        "pnl": pnl,
-        "position": position,
-    }))
-
-@app.route("/api/log_list")
-@require_basic_auth
-def api_log_list():
-    limit = int(request.args.get("n", "40") or "40")
-    return jsonify({"ok": True, "files": list_recent_logs(limit=limit)})
-
-@app.route("/api/log_tail")
-@require_basic_auth
-def api_log_tail():
-    name = (request.args.get("name") or "").strip()
-    n = int(request.args.get("n", "200") or "200")
-    if not name:
-        return jsonify({"ok": False, "error": "missing name", "lines": []})
-    p = (LOG_DIR / name)
-    if not p.exists():
-        return jsonify({"ok": False, "error": "not found", "lines": []})
-    lines = tail_file(p, n=n)
-    return jsonify({"ok": True, "name": p.name, "lines": lines})
-
-# -----------------------------
-# Main
-# -----------------------------
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=DASH_PORT, debug=False)
