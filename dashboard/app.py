@@ -507,19 +507,6 @@ def api_token_now():
     symbol, profile, dry_run = detect_symbol_profile()
     return jsonify({"ok": True, "token": {"symbol": symbol, "profile": profile, "dry_run": dry_run}})
 
-mbol,
-        "profile": profile,
-        "dry_run": dry_run,
-        "system": {
-            "uptime": up_out if up_ok else "",
-            "disk": df_out if df_ok else "",
-            "mem": mem_out if mem_ok else "",
-        },
-        "units": units_list,
-        "units_map": units,
-        "indicators": indicators,
-        "position": pos,
-    })
 
 @app.route("/api/stats")
 @require_basic_auth
