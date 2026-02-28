@@ -7,7 +7,7 @@ import time
 import subprocess
 import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from functools import wraps
 from pathlib import Path
 
@@ -492,19 +492,6 @@ def api_token_now():
     symbol, profile, dry_run = detect_symbol_profile()
     return jsonify({"ok": True, "token": {"symbol": symbol, "profile": profile, "dry_run": dry_run}})
 
-mbol,
-        "profile": profile,
-        "dry_run": dry_run,
-        "system": {
-            "uptime": up_out if up_ok else "",
-            "disk": df_out if df_ok else "",
-            "mem": mem_out if mem_ok else "",
-        },
-        "units": units_list,
-        "units_map": units,
-        "indicators": indicators,
-        "position": pos,
-    })
 
 @app.route("/api/stats")
 @require_basic_auth
@@ -600,7 +587,7 @@ def api_trades():
     trades_path = find_latest(LOG_DIR, "*_trades.csv")
     if not trades_path:
         return jsonify(ok=True, tokens=[], source=None)
-    trades = load_trades_csv(trades_path)
+    trades, _cols = load_trades_csv(trades_path)
     # group by symbol, keep most recent 10 symbols by last ts
     by_symbol = {}
     for t in trades:
@@ -647,7 +634,7 @@ def api_pnl():
     if not trades_path:
         return jsonify(ok=True, session=None, week=None, month=None, year=None, trades=0, winrate=None, profit_factor=None, source=None)
 
-    trades = load_trades_csv(trades_path)
+    trades, _cols = load_trades_csv(trades_path)
     fx = get_fx_usdc_eur()
     now = datetime.now(timezone.utc)
 
@@ -833,29 +820,7 @@ def api_wallet():
     t_usdc = round(t_usdc, 6) if used else None
     t_eur = round(usdc_to_eur(t_usdc, fx), 6) if (t_usdc is not None and fx is not None) else None
 
-    
-# hide tiny balances (< 1 USDC equivalent)
-_min_usdc = 1.0
-_filtered = []
-for _r in rows:
-    try:
-        _asset = str(_r.get("asset") or _r.get("coin") or "").upper()
-    except Exception:
-        _asset = ""
-    try:
-        _v = _r.get("value_usdc")
-        if _v is None:
-            _v = _r.get("usdc_value")
-        if _v is None:
-            _v = _r.get("usdc")
-        _v = float(_v or 0.0)
-    except Exception:
-        _v = 0.0
-    if _asset == "USDC" or _v >= _min_usdc:
-        _filtered.append(_r)
-rows = _filtered
-
-return jsonify({
+    return jsonify({
         "ok": True,
         "file": snap.get("file", ""),
         "fx_usdc_eur": fx,
