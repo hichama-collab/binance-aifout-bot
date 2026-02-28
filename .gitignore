@@ -1,23 +1,38 @@
-#!/usr/bin/env bash
-set -euo pipefail
+# ===== Runtime data =====
+data/runtime/
+data/cache/
 
-BRANCH="main"
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ===== Logs =====
+data/logs/*.log
+data/logs/*_trades.csv
+data/logs/*_errors.log
 
-cd "$PROJECT_DIR"
+# ===== Environment / secrets =====
+.service.env
+dashboard/botdash.env
+.env
+.env.*
 
-echo "===== UPDATE START ====="
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.python-version
 
-echo "-- Fetch"
-git fetch origin
+# ===== System / OS =====
+.DS_Store
+Thumbs.db
 
-echo "-- Checkout branch"
-git checkout "$BRANCH"
+# ===== IDE =====
+.vscode/
+.idea/
 
-echo "-- Hard reset to origin"
-git reset --hard "origin/$BRANCH"
+# ===== Local systemd units (server-specific) =====
+*.service
 
-echo "-- Clean untracked (respect .gitignore)"
-git clean -fd
-
-echo "===== UPDATE DONE ====="
+# ===== Temp =====
+*.swp
+*.tmp
