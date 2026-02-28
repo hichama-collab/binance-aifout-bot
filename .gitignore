@@ -19,6 +19,9 @@ env/
 # Runtime / bot data (generated)
 data/runtime/
 archivelog/
+data/
+*.csv
+*.log
 
 # Dashboard secrets / local overrides
 dashboard/botdash.env
