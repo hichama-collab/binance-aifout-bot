@@ -7,7 +7,7 @@ import time
 import subprocess
 import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from functools import wraps
 from pathlib import Path
 
@@ -27,6 +27,9 @@ DASH_PASS = os.getenv("DASH_PASS", "")
 # FX rate: USDC -> EUR (set via env or BOT_RUNTIME_DIR/fx.json)
 FX_USDC_EUR_ENV = os.getenv("FX_USDC_EUR", "").strip()
 
+# in-memory FX cache
+FX_CACHE_TTL_SEC = 300
+_FX_CACHE = {"ts": 0.0, "usdc_eur": None}
 
 # systemd units allowlist (security)
 UNITS = [
@@ -587,36 +590,28 @@ def api_trades():
     trades_path = find_latest(LOG_DIR, "*_trades.csv")
     if not trades_path:
         return jsonify(ok=True, tokens=[], source=None)
-    trades = load_trades_csv(trades_path)
+    trades, _ = load_trades_csv(trades_path)
     # group by symbol, keep most recent 10 symbols by last ts
     by_symbol = {}
     for t in trades:
-        # tolerate both dict rows and list/tuple rows (older CSV parsers)
-        if isinstance(t, dict):
-            row = t
-        elif isinstance(t, (list, tuple)):
-            # best-effort mapping (keeps API resilient if CSV parsing changes)
-            cols_guess = ["ts_utc", "symbol", "side", "qty", "price"]
-            row = {cols_guess[k]: t[k] for k in range(min(len(t), len(cols_guess)))}
-        else:
+        sym = t.get("symbol") or ""
+        if not sym:
             continue
-
-        sym = str(row.get("symbol") or "")
-        side = str(row.get("side") or "")
-
-        # qty / price may come as strings
-        try:
-            qty = float(row.get("qty") or 0.0)
-        except Exception:
-            qty = 0.0
-        try:
-            price = float(row.get("price") or 0.0)
-        except Exception:
-            price = 0.0
-
-        key = sym or "(unknown)"
-        rec = by_token.setdefault(key, {"token": key, "net_usdc": 0.0, "trades": 0, "period": ""})
-        rec["net_usdc"] += (-qty * price) if side.upper().startswith("BUY") else (qty * price)
+        ts = t.get("ts_utc") or ""
+        rec = by_symbol.setdefault(sym, {"symbol": sym, "first_ts": ts, "last_ts": ts, "net_usdc": 0.0, "trades": 0})
+        if ts and (not rec["first_ts"] or ts < rec["first_ts"]):
+            rec["first_ts"] = ts
+        if ts and (not rec["last_ts"] or ts > rec["last_ts"]):
+            rec["last_ts"] = ts
+        side = (t.get("side") or "").upper()
+        qty = float(t.get("qty") or 0.0)
+        price = float(t.get("price") or 0.0)
+        usdc = qty * price
+        # net: sells - buys
+        if side == "SELL":
+            rec["net_usdc"] += usdc
+        elif side == "BUY":
+            rec["net_usdc"] -= usdc
         rec["trades"] += 1
 
     tokens = list(by_symbol.values())
@@ -642,7 +637,7 @@ def api_pnl():
     if not trades_path:
         return jsonify(ok=True, session=None, week=None, month=None, year=None, trades=0, winrate=None, profit_factor=None, source=None)
 
-    trades = load_trades_csv(trades_path)
+    trades, _ = load_trades_csv(trades_path)
     fx = get_fx_usdc_eur()
     now = datetime.now(timezone.utc)
 
