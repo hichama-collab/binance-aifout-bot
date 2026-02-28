@@ -7,7 +7,7 @@ import time
 import subprocess
 import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from functools import wraps
 from pathlib import Path
 
@@ -492,19 +492,6 @@ def api_token_now():
     symbol, profile, dry_run = detect_symbol_profile()
     return jsonify({"ok": True, "token": {"symbol": symbol, "profile": profile, "dry_run": dry_run}})
 
-mbol,
-        "profile": profile,
-        "dry_run": dry_run,
-        "system": {
-            "uptime": up_out if up_ok else "",
-            "disk": df_out if df_ok else "",
-            "mem": mem_out if mem_ok else "",
-        },
-        "units": units_list,
-        "units_map": units,
-        "indicators": indicators,
-        "position": pos,
-    })
 
 @app.route("/api/stats")
 @require_basic_auth
@@ -600,7 +587,7 @@ def api_trades():
     trades_path = find_latest(LOG_DIR, "*_trades.csv")
     if not trades_path:
         return jsonify(ok=True, tokens=[], source=None)
-    trades = load_trades_csv(trades_path)
+    trades, _cols = load_trades_csv(trades_path)
     # group by symbol, keep most recent 10 symbols by last ts
     by_symbol = {}
     for t in trades:
@@ -647,7 +634,7 @@ def api_pnl():
     if not trades_path:
         return jsonify(ok=True, session=None, week=None, month=None, year=None, trades=0, winrate=None, profit_factor=None, source=None)
 
-    trades = load_trades_csv(trades_path)
+    trades, _cols = load_trades_csv(trades_path)
     fx = get_fx_usdc_eur()
     now = datetime.now(timezone.utc)
 
