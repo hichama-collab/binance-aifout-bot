@@ -708,7 +708,7 @@ def main():
             # ===== EXIT =====
             # If position was adopted from wallet (entry=0), treat as untracked.
             # We do not fabricate an entry; we liquidate when sellable, otherwise we clear as dust.
-            if pos.entry <= 0:
+            if (pos is None) or (getattr(pos, "entry", 0) <= 0):
                 exitReason = "WALLET_UNTRACKED"
             else:
                 pos.update(bid, cfg, profile, tick=tick)
