@@ -44,6 +44,8 @@ profiles:
     mom_window_sec: 20
     min_range_entry_pct: 0.0005
     min_range_vs_spread: 1.2
+    min_order_notional_usdc: 10.0
+
   midcap:
     cap_usdc: 10000
     mom_window_sec: 16
@@ -84,6 +86,8 @@ profiles:
     tp_min_pct: 0.004
     maxPosTime: 300
     hardMaxPosTime: 1200
+    min_order_notional_usdc: 10.0
+
   wide_spread:
     cap_usdc: 10000
     mom_window_sec: 20
@@ -124,6 +128,8 @@ profiles:
     tp_min_pct: 0.004
     maxPosTime: 360
     hardMaxPosTime: 1200
+    min_order_notional_usdc: 10.0
+
   fast_momo:
     cap_usdc: 90
     mom_window_sec: 180
@@ -167,7 +173,10 @@ profiles:
     tp_min_pct: 0.004
     maxPosTime: 240
     hardMaxPosTime: 900
+    min_order_notional_usdc: 10.0
+
   cap: 20
+
 strategies:
   momentum: {}
   reversal: {}

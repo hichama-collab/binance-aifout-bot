@@ -13,6 +13,31 @@ from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request, abort
 
+
+def _json_safe(obj):
+    """Make objects JSON-serializable (Path/Decimal/datetime)."""
+    from pathlib import Path
+    from decimal import Decimal
+    from datetime import datetime
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, Decimal):
+        try:
+            return float(obj)
+        except Exception:
+            return str(obj)
+    if isinstance(obj, datetime):
+        try:
+            return obj.isoformat()
+        except Exception:
+            return str(obj)
+    if isinstance(obj, dict):
+        return {str(k): _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 APP_TITLE = "botdash"
 
 # ---- config (env) ----
@@ -779,7 +804,7 @@ def api_summary():
     total_usdc = round(total_usdc, 6) if has_pnl else 0.0
     total_eur = round(usdc_to_eur(total_usdc, fx), 6) if fx is not None else None
 
-    return jsonify({
+    return jsonify(_json_safe({
         "ok": True,
         "fx_usdc_eur": fx,
         # frontend expects .rows
@@ -789,8 +814,7 @@ def api_summary():
         "total_usdc": total_usdc,
         "total_eur": total_eur,
         "source": csv_path,
-    })
-
+    }))
 @app.route("/api/wallet")
 @require_basic_auth
 def api_wallet():
