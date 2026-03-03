@@ -576,10 +576,10 @@ def main():
             symbol, last_env_mtime = _maybe_reexec_on_token_change(symbol, pos, last_env_mtime)
 
             # ===== ENTRY (P algo, MID-based) =====
-            # BUY if (P1 > P3) OR (P1 >= P2 >= P3)
+# BUY if (P1 > P2 > P3 > P4)  (strict)
             buySignal = False
-            if (P1 is not None) and (P2 is not None) and (P3 is not None):
-                buySignal = (P1 > P3) or (P1 >= P2 and P2 >= P3)
+            if (P1 is not None) and (P2 is not None) and (P3 is not None) and (P4 is not None):
+                buySignal = (P1 > P2) and (P2 > P3) and (P3 > P4)
 
             if buySignal:
                 if usdc is None:
