@@ -708,18 +708,18 @@ def main():
             # ===== EXIT =====
             # If position was adopted from wallet (entry=0), treat as untracked.
             # We do not fabricate an entry; we liquidate when sellable, otherwise we clear as dust.
-            if (pos is None) or (getattr(pos, "entry", 0) <= 0):
+            if pos.entry <= 0:
                 exitReason = "WALLET_UNTRACKED"
             else:
                 pos.update(bid, cfg, profile, tick=tick)
                 exitReason = pos.exit_reason(bid, cfg, profile)
 
             # Additional SELL rules (P algo, MID-based)
-            # SELL if (P1 < P3) OR (P2 < P3 AND P2 == P1) OR ((P1 < P2) AND (P2 < entryPrice))
+            # SELL if (P1 < P3) AND (P3 < entryPrice)
             if exitReason is None and (pos is not None) and (pos.entry > 0):
                 sellSignal = False
                 if (P1 is not None) and (P2 is not None) and (P3 is not None):
-                    sellSignal = (P1 < P3) or ((P2 < P3) and (P2 == P1)) or ((P1 < P2) and (P2 < float(pos.entry)))
+                    sellSignal = (P1 < P3) and (P3 < float(pos.entry))
                 if sellSignal:
                     exitReason = f"PSELL P1={P1} P2={P2} P3={P3} P4={P4} entry={pos.entry}"
             
