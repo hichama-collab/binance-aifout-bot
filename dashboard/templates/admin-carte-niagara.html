@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Admin — Carte Niagara Café</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0f0e0c;--surface:#1a1814;--surface2:#222018;
+      --border:#2e2b24;--gold:#c9a84c;--gold-light:#e8c97a;
+      --cream:#f0ead8;--muted:#7a7265;--danger:#b84848;
+      --success:#4a9e70;--text:#e0d8c4;
+    }
+    html,body{background:var(--bg);color:var(--text);font-family:'DM Mono',monospace;font-size:13px;min-height:100vh;-webkit-text-size-adjust:100%}
+
+    .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:54px;position:sticky;top:0;z-index:300}
+    .topbar-left{display:flex;align-items:center;gap:10px}
+    .topbar-title{font-family:'Playfair Display',serif;font-size:17px;color:var(--gold)}
+    .topbar-badge{font-size:9px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);background:var(--border);padding:3px 7px;border-radius:2px}
+    @media(max-width:400px){.topbar-badge{display:none}}
+    .topbar-right{display:flex;gap:8px;align-items:center}
+
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:none;border-radius:3px;cursor:pointer;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:500;transition:all .18s;white-space:nowrap}
+    .btn-gold{background:var(--gold);color:#0f0e0c}
+    .btn-gold:hover{background:var(--gold-light)}
+    .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+    .btn-ghost:hover{color:var(--text);border-color:var(--muted)}
+    .btn-add{background:transparent;color:var(--success);border:1px dashed var(--success);width:100%;justify-content:center;padding:10px;margin-top:10px}
+    .btn-add:hover{background:rgba(74,158,112,.08)}
+
+    .layout{display:grid;grid-template-columns:200px 1fr}
+    @media(max-width:767px){.layout{grid-template-columns:1fr}}
+    .sidebar{background:var(--surface);border-right:1px solid var(--border);padding:18px 0;position:sticky;top:54px;height:calc(100vh - 54px);overflow-y:auto}
+    @media(max-width:767px){.sidebar{display:none}}
+    .sidebar-label{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:var(--muted);padding:0 16px 8px;display:block}
+    .sidebar-group{margin-bottom:18px}
+    .nav-item{display:flex;align-items:center;gap:9px;padding:9px 16px;cursor:pointer;color:var(--muted);font-size:12px;border-left:2px solid transparent;transition:all .15s;user-select:none}
+    .nav-item:hover{color:var(--text);background:var(--surface2)}
+    .nav-item.active{color:var(--gold);border-left-color:var(--gold);background:var(--surface2)}
+    .sidebar-hr{border:none;border-top:1px solid var(--border);margin:6px 16px}
+
+    .main{padding:22px 16px 100px}
+    @media(min-width:768px){.main{padding:28px 32px 32px}}
+    .panel{display:none}
+    .panel.active{display:block}
+
+    .page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+    .page-title{font-family:'Playfair Display',serif;font-size:22px;color:var(--cream)}
+    .page-subtitle{color:var(--muted);margin-top:4px;font-size:11px}
+
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:14px;overflow:hidden}
+    .card-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface2);cursor:pointer;user-select:none}
+    .card-header-left{display:flex;align-items:center;gap:9px}
+    .card-title{font-family:'Playfair Display',serif;font-size:14px;color:var(--gold)}
+    .card-count{font-size:10px;color:var(--muted);background:var(--border);padding:2px 7px;border-radius:10px}
+    .card-toggle{color:var(--muted);font-size:11px;transition:transform .2s;flex-shrink:0}
+    .card.collapsed .card-toggle{transform:rotate(-90deg)}
+    .card-body{padding:16px}
+    .card.collapsed .card-body{display:none}
+
+    .field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+    .field:last-child{margin-bottom:0}
+    .fg2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .fg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    @media(max-width:540px){.fg2,.fg3{grid-template-columns:1fr}}
+    label{font-size:10px;text-transform:uppercase;letter-spacing:.11em;color:var(--muted)}
+    input[type="text"],input[type="number"],textarea{background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:9px 11px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;outline:none;transition:border-color .18s;width:100%;-webkit-appearance:none}
+    input:focus,textarea:focus{border-color:var(--gold)}
+    textarea{resize:vertical;min-height:70px}
+
+    .items-list{display:flex;flex-direction:column;gap:8px}
+    .item-row{display:grid;grid-template-columns:1fr 80px 30px;gap:8px;align-items:start;padding:11px 13px;background:var(--bg);border:1px solid var(--border);border-radius:3px}
+    .item-main{display:flex;flex-direction:column;gap:4px}
+    .ii{background:transparent;border:none;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;outline:none;width:100%;padding:0}
+    .ii.name{font-weight:500}
+    .ii.desc{font-size:11px;color:var(--muted)}
+    .ii.price{text-align:right;color:var(--gold);font-weight:500;font-size:14px}
+    .price-col{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+    .price-unit{font-size:10px;color:var(--muted)}
+    .rm-btn{background:transparent;border:none;color:var(--border);cursor:pointer;font-size:18px;padding:2px;transition:color .15s;line-height:1;align-self:center}
+    .rm-btn:hover{color:var(--danger)}
+
+    /* WINE */
+    .wine-header-row{display:grid;grid-template-columns:1fr 52px 52px 52px 52px 30px;gap:5px;padding:0 10px 6px;margin-bottom:4px}
+    .wh{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;text-align:center}
+    .wh:first-child{text-align:left}
+    .wine-row{display:grid;grid-template-columns:1fr 52px 52px 52px 52px 30px;gap:5px;align-items:center;padding:9px 10px;background:var(--bg);border:1px solid var(--border);border-radius:3px;margin-bottom:6px}
+    .wp{background:transparent;border:none;color:var(--gold);font-family:'DM Mono',monospace;font-size:13px;outline:none;width:100%;padding:0;text-align:center}
+    .wine-name-col{display:flex;flex-direction:column;gap:3px}
+    .wine-bio-row{display:flex;align-items:center;gap:6px}
+    @media(max-width:540px){
+      .wine-header-row,.wine-row{grid-template-columns:1fr 40px 40px 40px 40px 24px}
+      .wp,.wh{font-size:11px}
+    }
+
+    /* FORMULES */
+    .formules-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @media(max-width:460px){.formules-grid{grid-template-columns:1fr}}
+    .fbox{background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:12px}
+    .fbox label{display:block;margin-bottom:6px}
+    .price-row{display:flex;align-items:center;gap:6px}
+    .price-row input{flex:1}
+    .psuf{color:var(--muted);font-size:12px}
+
+    .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+    @media(max-width:540px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+    .sbox{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px 16px}
+    .sval{font-family:'Playfair Display',serif;font-size:26px;color:var(--gold)}
+    .slbl{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.1em}
+
+    .quick-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+
+    /* PREVIEW IFRAME */
+    .preview-wrap{background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-top:16px}
+    .preview-bar{padding:10px 16px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .preview-bar span{font-size:11px;color:var(--muted)}
+    iframe#preview{width:100%;height:500px;border:none;background:#fff}
+    @media(max-width:767px){iframe#preview{height:380px}}
+
+    /* BOTTOM NAV */
+    .bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);z-index:300;padding-bottom:env(safe-area-inset-bottom)}
+    .bottom-nav-scroll{display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .bottom-nav-scroll::-webkit-scrollbar{display:none}
+    .bnav-item{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 13px;cursor:pointer;color:var(--muted);font-size:9px;letter-spacing:.07em;text-transform:uppercase;border-bottom:2px solid transparent;transition:all .15s;user-select:none}
+    .bnav-item.active{color:var(--gold);border-bottom-color:var(--gold)}
+    .bnav-icon{font-size:15px}
+    @media(max-width:767px){.bottom-nav{display:block}}
+
+    #toast{position:fixed;bottom:72px;right:16px;padding:11px 20px;border-radius:4px;font-size:12px;opacity:0;transform:translateY(8px);transition:all .3s;z-index:9999;pointer-events:none;color:#fff;background:var(--success)}
+    #toast.show{opacity:1;transform:translateY(0)}
+    #toast.err{background:var(--danger)}
+    @media(min-width:768px){#toast{bottom:24px;right:24px}}
+
+    ::-webkit-scrollbar{width:4px;height:4px}
+    ::-webkit-scrollbar-track{background:var(--bg)}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="topbar-title">Niagara Café</span>
+    <span class="topbar-badge">Admin carte</span>
+  </div>
+  <div class="topbar-right">
+    <button class="btn btn-ghost" onclick="previewCarte()">👁 Aperçu</button>
+    <button class="btn btn-ghost" onclick="exportCarte()">⬇ Télécharger</button>
+    <button class="btn btn-gold" onclick="saveAll()">✓ Enregistrer</button>
+  </div>
+</div>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="sidebar-group">
+      <span class="sidebar-label">Vue d'ensemble</span>
+      <div class="nav-item active" data-panel="dashboard">◈ &nbsp;Tableau de bord</div>
+    </div>
+    <hr class="sidebar-hr">
+    <div class="sidebar-group">
+      <span class="sidebar-label">Formules & Menu</span>
+      <div class="nav-item" data-panel="formules">◇ &nbsp;Formules / Prix</div>
+      <div class="nav-item" data-panel="entrees">○ &nbsp;Entrées</div>
+      <div class="nav-item" data-panel="plats">○ &nbsp;Plats</div>
+      <div class="nav-item" data-panel="desserts">○ &nbsp;Desserts</div>
+    </div>
+    <hr class="sidebar-hr">
+    <div class="sidebar-group">
+      <span class="sidebar-label">Snacks</span>
+      <div class="nav-item" data-panel="croques">○ &nbsp;Croques</div>
+      <div class="nav-item" data-panel="sandwichs">○ &nbsp;Sandwichs</div>
+      <div class="nav-item" data-panel="omelettes">○ &nbsp;Omelettes</div>
+      <div class="nav-item" data-panel="planches">○ &nbsp;Planches</div>
+      <div class="nav-item" data-panel="salades">○ &nbsp;Salades</div>
+    </div>
+    <hr class="sidebar-hr">
+    <div class="sidebar-group">
+      <span class="sidebar-label">Côté Cave</span>
+      <div class="nav-item" data-panel="vins-rouge">◇ &nbsp;Vins Rouges</div>
+      <div class="nav-item" data-panel="vins-blanc">◇ &nbsp;Vins Blancs</div>
+      <div class="nav-item" data-panel="vins-rose">◇ &nbsp;Vins Rosés</div>
+      <div class="nav-item" data-panel="bulles">◇ &nbsp;Bulles</div>
+    </div>
+  </nav>
+
+  <main class="main">
+
+    <!-- DASHBOARD -->
+    <div id="panel-dashboard" class="panel active">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Tableau de bord</div>
+          <div class="page-subtitle">Niagara Café — 20 rue de l'Hôtel de Ville, 92400 Courbevoie</div>
+        </div>
+        <button class="btn btn-gold" onclick="saveAll()">✓ Enregistrer</button>
+      </div>
+      <div class="stats-grid">
+        <div class="sbox"><div class="sval" id="s-formules">5</div><div class="slbl">Formules prix</div></div>
+        <div class="sbox"><div class="sval" id="s-plats">0</div><div class="slbl">Plats menu</div></div>
+        <div class="sbox"><div class="sval" id="s-snacks">0</div><div class="slbl">Snacks</div></div>
+        <div class="sbox"><div class="sval" id="s-vins">0</div><div class="slbl">Références vins</div></div>
+      </div>
+      <div class="quick-links">
+        <button class="btn btn-ghost" onclick="goPanel('formules')">→ Formules</button>
+        <button class="btn btn-ghost" onclick="goPanel('entrees')">→ Entrées</button>
+        <button class="btn btn-ghost" onclick="goPanel('plats')">→ Plats</button>
+        <button class="btn btn-ghost" onclick="goPanel('croques')">→ Snacks</button>
+        <button class="btn btn-ghost" onclick="goPanel('vins-rouge')">→ Vins rouges</button>
+      </div>
+      <div class="preview-wrap" style="margin-top:20px">
+        <div class="preview-bar">
+          <span>Aperçu — la-carte.html</span>
+          <button class="btn btn-ghost" style="padding:4px 10px;font-size:10px" onclick="previewCarte()">Rafraîchir</button>
+        </div>
+        <iframe id="preview" src="la-carte.html"></iframe>
+      </div>
+    </div>
+
+    <!-- FORMULES -->
+    <div id="panel-formules" class="panel">
+      <div class="page-header"><div><div class="page-title">Formules & Prix</div><div class="page-subtitle">Mis à jour sur la-carte.html à l'enregistrement</div></div></div>
+      <div class="card">
+        <div class="card-header" onclick="toggleCard(this)">
+          <div class="card-header-left"><span class="card-title">Tarifs</span></div>
+          <span class="card-toggle">▼</span>
+        </div>
+        <div class="card-body">
+          <div class="formules-grid">
+            <div class="fbox"><label>Entrée + Plat &nbsp;ou&nbsp; Plat + Dessert</label><div class="price-row"><input type="number" id="f-ep" value="20" step="1" min="0"><span class="psuf">€</span></div></div>
+            <div class="fbox"><label>Entrée + Plat + Dessert</label><div class="price-row"><input type="number" id="f-epd" value="24" step="1" min="0"><span class="psuf">€</span></div></div>
+            <div class="fbox"><label>Entrée seule</label><div class="price-row"><input type="number" id="f-e" value="6.50" step="0.50" min="0"><span class="psuf">€</span></div></div>
+            <div class="fbox"><label>Plat seul</label><div class="price-row"><input type="number" id="f-p" value="16" step="1" min="0"><span class="psuf">€</span></div></div>
+            <div class="fbox"><label>Dessert seul</label><div class="price-row"><input type="number" id="f-d" value="6.50" step="0.50" min="0"><span class="psuf">€</span></div></div>
+            <div class="fbox"><label>Menu Enfant</label><div class="price-row"><input type="number" id="f-enfant" value="12" step="1" min="0"><span class="psuf">€</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANELS PLATS SIMPLES -->
+    <div id="panel-entrees" class="panel">
+      <div class="page-header"><div><div class="page-title">Entrées</div><div class="page-subtitle">Entrées proposées dans la formule</div></div></div>
+      <div class="card"><div class="card-header" onclick="toggleCard(this)"><div class="card-header-left"><span class="card-title">Liste</span><span class="card-count" id="cnt-entrees">0</span></div><span class="card-toggle">▼</span></div>
+      <div class="card-body"><div class="items-list" id="list-entrees"></div><button class="btn btn-add" onclick="addItem('entrees')">+ Ajouter une entrée</button></div></div>
+    </div>
+
+    <div id="panel-plats" class="panel">
+      <div class="page-header"><div><div class="page-title">Plats principaux</div></div></div>
+      <div class="card"><div class="card-header" onclick="toggleCard(this)"><div class="card-header-left"><span class="card-title">Liste</span><span class="card-count" id="cnt-plats">0</span></div><span class="card-toggle">▼</span></div>
+      <div class="card-body"><div class="items-list" id="list-plats"></div><button class="btn btn-add" onclick="addItem('plats')">+ Ajouter un plat</button></div></div>
+    </div>
+
+    <div id="panel-desserts" class="panel">
+      <div class="page-header"><div><div class="page-title">Desserts</div></div></div>
+      <div class="card"><div class="card-header" onclick="toggleCard(this)"><div class="card-header-left"><span class="card-title">Liste</span><span class="card-count" id="cnt-desserts">0</span></div><span class="card-toggle">▼</span></div>
+      <div class="card-body"><div class="items-list" id="list-desserts"></div><button class="btn btn-add" onclick="addItem('desserts')">+ Ajouter un dessert</button></div></div>
+    </div>
+
+    <div id="panel-croques" class="panel">
+      <div class="page-header"><div><div class="page-title">Croques Toasties</div></div></div>
+      <div class="card"><div class="card-header" onclick="toggleCard(this)"><div class="card-header-left"><span class="card-title">Liste</span><span class="card-count" id="cnt-croques">0</span></div><span class="card-toggle">▼</span></div>
+      <div class="card-body"><div class="items-list" id="list-croques"></div><button class="btn btn-add" onclick="addItem('croques')">+ Ajouter</button></div></div>
+    </div>
+
+    <div id="panel-sandwichs" class="panel">
+      <div class="page-header"><div><div class="page-title">Sandwichs</div></div></div>
+      <div class="card"><div class="card-header" onclick="toggleCard(this)"><div class="card-header-left"><span class="card-title">Liste</span><span class="card-count" id="cnt-sandwichs">0</span></div><span class="card-toggle">▼</span></div>
+      <div class="card-body"><div class="items-list" id="list-sandwichs"></div><button class="btn btn-add" onclick="addItem('sandwichs')">+ Ajouter</button></div></div>
+    </div>
+
+    <div id="panel-omelettes" class="panel">
+      <div class="page-header"><div><div class="page-title">Omelettes</div></div></div>
+      <div class="card"><div class="card-header" onclick="toggleCard(this)"><div class="card-header-left"><span class="card-title">Liste</span><span class="card-count" id="cnt-omelettes">0</span></div><span class="card-toggle">▼</span></div>
+      <div class="card-body"><div class="items-list" id="list-omelettes"></div><button class="btn btn-add" onclick="addItem('omelettes')">+ Ajouter</button></div></div>
+    </div>
+
+    <div id="panel-planches" class="panel">
+      <div class="page-header"><div><div class="page-title">Planches à partager</div></div></div>
+      <div class="card"><div class="card-header" onclick="toggleCard(this)"><div class="card-header-left"><span class="card-title">Liste</span><span class="card-count" id="cnt-planches">0</span></div><span class="card-toggle">▼</span></div>
+      <div class="card-body"><div class="items-list" id="list-planches"></div><button class="btn btn-add" onclick="addItem('planches')">+ Ajouter</button></div></div>
+    </div>
+
+    <div id="panel-salades" class="panel">
+      <div class="page-header"><div><div class="page-title">Salades façon Plats</div></div></div>
+      <div class="card"><div class="card-header" onclick="toggleCard(this)"><div class="card-header-left"><span class="card-title">Liste</span><span class="card-count" id="cnt-salades">0</span></div><span class="card-toggle">▼</span></div>
+      <div class="card-body"><div class="items-list" id="list-salades"></div><button class="btn btn-add" onclick="addItem('salades')">+ Ajouter</button></div></div>
+    </div>
+
+    <!-- VINS PANELS -->
+    <div id="panel-vins-rouge" class="panel">
+      <div class="page-header"><div><div class="page-title">Vins Rouges</div><div class="page-subtitle">15cl · 25cl · 50cl · 75cl</div></div></div>
+      <div class="card"><div class="card-header" onclick="toggleCard(this)"><div class="card-header-left"><span class="card-title">Références</span><span class="card-count" id="cnt-vins-rouge">0</span></div><span class="card-toggle">▼</span></div>
+      <div class="card-body">
+        <div class="wine-header-row"><span class="wh">Appellation</span><span class="wh">15cl</span><span class="wh">25cl</span><span class="wh">50cl</span><span class="wh">75cl</span><span></span></div>
+        <div id="list-vins-rouge"></div>
+        <button class="btn btn-add" onclick="addWine('rouge')">+ Ajouter un vin rouge</button>
+      </div></div>
+    </div>
+
+    <div id="panel-vins-blanc" class="panel">
+      <div class="page-header"><div><div class="page-title">Vins Blancs</div><div class="page-subtitle">15cl · 25cl · 50cl · 75cl</div></div></div>
+      <div class="card"><div class="card-header" onclick="toggleCard(this)"><div class="card-header-left"><span class="card-title">Références</span><span class="card-count" id="cnt-vins-blanc">0</span></div><span class="card-toggle">▼</span></div>
+      <div class="card-body">
+        <div class="wine-header-row"><span class="wh">Appellation</span><span class="wh">15cl</span><span class="wh">25cl</span><span class="wh">50cl</span><span class="wh">75cl</span><span></span></div>
+        <div id="list-vins-blanc"></div>
+        <button class="btn btn-add" onclick="addWine('blanc')">+ Ajouter un vin blanc</button>
+      </div></div>
+    </div>
+
+    <div id="panel-vins-rose" class="panel">
+      <div class="page-header"><div><div class="page-title">Vins Rosés</div><div class="page-subtitle">15cl · 25cl · 50cl · 75cl</div></div></div>
+      <div class="card"><div class="card-header" onclick="toggleCard(this)"><div class="card-header-left"><span class="card-title">Références</span><span class="card-count" id="cnt-vins-rose">0</span></div><span class="card-toggle">▼</span></div>
+      <div class="card-body">
+        <div class="wine-header-row"><span class="wh">Appellation</span><span class="wh">15cl</span><span class="wh">25cl</span><span class="wh">50cl</span><span class="wh">75cl</span><span></span></div>
+        <div id="list-vins-rose"></div>
+        <button class="btn btn-add" onclick="addWine('rose')">+ Ajouter un vin rosé</button>
+      </div></div>
+    </div>
+
+    <div id="panel-bulles" class="panel">
+      <div class="page-header"><div><div class="page-title">Bulles & Champagne</div><div class="page-subtitle">12cl · 75cl</div></div></div>
+      <div class="card"><div class="card-header" onclick="toggleCard(this)"><div class="card-header-left"><span class="card-title">Références</span><span class="card-count" id="cnt-bulles">0</span></div><span class="card-toggle">▼</span></div>
+      <div class="card-body">
+        <div class="wine-header-row"><span class="wh">Appellation</span><span class="wh">12cl</span><span class="wh" style="opacity:.3">—</span><span class="wh" style="opacity:.3">—</span><span class="wh">75cl</span><span></span></div>
+        <div id="list-bulles"></div>
+        <button class="btn btn-add" onclick="addWine('bulle')">+ Ajouter</button>
+      </div></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- BOTTOM NAV mobile -->
+<nav class="bottom-nav">
+  <div class="bottom-nav-scroll">
+    <div class="bnav-item active" data-panel="dashboard"><span class="bnav-icon">◈</span>Accueil</div>
+    <div class="bnav-item" data-panel="formules"><span class="bnav-icon">◇</span>Formules</div>
+    <div class="bnav-item" data-panel="entrees"><span class="bnav-icon">○</span>Entrées</div>
+    <div class="bnav-item" data-panel="plats"><span class="bnav-icon">○</span>Plats</div>
+    <div class="bnav-item" data-panel="desserts"><span class="bnav-icon">○</span>Desserts</div>
+    <div class="bnav-item" data-panel="croques"><span class="bnav-icon">○</span>Croques</div>
+    <div class="bnav-item" data-panel="sandwichs"><span class="bnav-icon">○</span>Sandwichs</div>
+    <div class="bnav-item" data-panel="omelettes"><span class="bnav-icon">○</span>Omelettes</div>
+    <div class="bnav-item" data-panel="planches"><span class="bnav-icon">○</span>Planches</div>
+    <div class="bnav-item" data-panel="salades"><span class="bnav-icon">○</span>Salades</div>
+    <div class="bnav-item" data-panel="vins-rouge"><span class="bnav-icon">◇</span>Rouges</div>
+    <div class="bnav-item" data-panel="vins-blanc"><span class="bnav-icon">◇</span>Blancs</div>
+    <div class="bnav-item" data-panel="vins-rose"><span class="bnav-icon">◇</span>Rosés</div>
+    <div class="bnav-item" data-panel="bulles"><span class="bnav-icon">◇</span>Bulles</div>
+  </div>
+</nav>
+
+<div id="toast"></div>
+
+<script>
+// ─── DATA (initialisé depuis la-carte.html) ───
+const DATA = {
+  entrees:[
+    {name:"Le classique œuf dur mayonnaise maison bien moutardée",desc:"Classic hard-boiled egg with homemade mustard mayonnaise",price:""},
+    {name:"Velouté de butternut, croûtons grillés",desc:"Butternut squash soup with toasted croutons",price:""},
+    {name:"Croustillant de chèvre chaud",desc:"Warm goat cheese crisp",price:""},
+  ],
+  plats:[
+    {name:"Paleron de bœuf aux légumes",desc:"Beef chuck roast with vegetables",price:""},
+    {name:"Pavé de saumon sauce au beurre blanc, riz pilaf",desc:"Thick salmon steak, white butter sauce, pilaf rice",price:""},
+    {name:"Poulet rôti jus de cuisson, purée de pommes de terre",desc:"Roast chicken with cooking juices, mashed potatoes",price:""},
+  ],
+  desserts:[
+    {name:"Riz au lait aux framboises du Mexique [Spécialité de la Maison]",desc:"Raspberry rice pudding",price:""},
+    {name:"Pain perdu au caramel",desc:"French toast with caramel",price:""},
+    {name:"Mousse au chocolat",desc:"Chocolate mousse",price:""},
+  ],
+  croques:[
+    {name:"Croque-Monsieur",desc:"Toasted ham and cheese sandwich",price:"11.0"},
+    {name:"Croque-Madame",desc:"Toasted ham and cheese, fried egg sandwich",price:"12.0"},
+    {name:"Croque Saumon",desc:"Toasted salmon sandwich",price:"13.0"},
+    {name:"Croque Poulet",desc:"Toasted chicken sandwich",price:"12.5"},
+    {name:"Croque Végétarien",desc:"Tomate concassée, chèvre",price:"10.0"},
+  ],
+  sandwichs:[
+    {name:"Merguez (2 pièces)",desc:"Frites et salade",price:"10.0"},
+    {name:"Poulet",desc:"Baguette, frites, salade, parmesan, pistou",price:"7.0"},
+    {name:"Jambon beurre",desc:"Ham and butter",price:"5.0"},
+    {name:"Jambon Cantal",desc:"Ham and Cantal cheese",price:"6.0"},
+    {name:"Saucisson beurre",desc:"Dry sausage and butter",price:"5.0"},
+    {name:"Jambon de pays, parmesan, salade, pistou",desc:"Country ham, parmesan, salad, pesto",price:"5.8"},
+    {name:"Rillettes cornichons",desc:"Rillettes and gherkins",price:"5.0"},
+    {name:"Pâté cornichons",desc:"Pâté and gherkins",price:"5.0"},
+    {name:"Paleron de bœuf",desc:"Oignons confits, frites",price:"9.0"},
+  ],
+  omelettes:[
+    {name:"Nature",desc:"Plain omelette",price:"10.0"},
+    {name:"Fromage",desc:"Cheese omelette",price:"11.5"},
+    {name:"Jambon ou Champignons ou Lardons",desc:"Ham or Mushrooms or Bacon omelette",price:"12.0"},
+    {name:"Mixte fromage et jambon",desc:"Mixed omelette with ham and cheese",price:"13.0"},
+  ],
+  planches:[
+    {name:"Fermière",desc:"Jambon de Paris, jambon de pays, rosette, chorizo, rillettes, pâté, Brie de Meaux, Camembert, chèvre, Cantal, cornichons, beurre",price:"18.5"},
+    {name:"Campagnarde",desc:"Jambon de Paris, jambon de pays, rosette, chorizo, rillettes, pâté, cornichons, beurre",price:"16.0"},
+  ],
+  salades:[
+    {name:"Niagara",desc:"Mélange de salade, tomates cerises, noix de Saint-Jacques, saumon, crevettes, avocat, champignons, pommes Charlotte, endives",price:"19.0"},
+    {name:"César",desc:"Salade romaine, tomates cerises, poulet pané, œuf dur, croûtons, copeaux de parmesan, vinaigrette César et pistou",price:"16.0"},
+  ],
+};
+
+const VINS = {
+  rouge:[
+    {region:"VALLÉE DU RHÔNE",name:"Côtes du Rhône AOP Les 3 Garçons",bio:true,desc:"Gourmand, fruité et souple",p15:"5.0",p25:"9.0",p50:"15.0",p75:"23.0"},
+    {region:"VALLÉE DU RHÔNE",name:"Crozes-Hermitage AOP E. Guigal",bio:false,desc:"Plein et enveloppé, nez de poivre et de fruits noirs",p15:"—",p25:"—",p50:"—",p75:"38.0"},
+    {region:"VALLÉE DU RHÔNE",name:"Côtes du Rhône AOP Belleruche",bio:false,desc:"Nez aux arômes de fruits rouges",p15:"6.0",p25:"12.0",p50:"16.0",p75:"27.0"},
+    {region:"VAL DE LOIRE",name:"Bourgueil AOP Prestige & Tradition",bio:false,desc:"Frais et croquant, nez de bois de ronce et de framboise",p15:"5.0",p25:"9.0",p50:"18.0",p75:"25.0"},
+    {region:"VAL DE LOIRE",name:"Saumur-Champigny AOP Les Chanteraines",bio:false,desc:"Souple et frais, nez de framboise",p15:"6.0",p25:"11.0",p50:"18.0",p75:"27.0"},
+    {region:"VAL DE LOIRE",name:"Chinon AOP Baudry-Dutour, Amarante",bio:false,desc:"Robe rouge grenat, nez gourmand de fruits rouges",p15:"8.0",p25:"14.0",p50:"21.0",p75:"29.0"},
+    {region:"GRANDE BOURGOGNE",name:"Brouilly AOP Château des Tours",bio:false,desc:"Souple, frais et juteux, chair de cerise noire et de myrtille",p15:"7.0",p25:"12.0",p50:"20.0",p75:"28.0"},
+    {region:"GRANDE BOURGOGNE",name:"Bourgogne Côte Chalonnaise AOP Millebuis, Pinot Noir",bio:false,desc:"Tanins soyeux, nez de griotte et de groseille",p15:"8.0",p25:"14.0",p50:"21.0",p75:"29.0"},
+    {region:"GRANDE BOURGOGNE",name:"Bourgogne Hautes Côtes de Nuits AOP Domaine Pierre Laurent",bio:false,desc:"",p15:"—",p25:"—",p50:"—",p75:"42.0"},
+    {region:"GRANDE BOURGOGNE",name:"Chassagne-Montrachet AOP Maison Louis Latour",bio:false,desc:"",p15:"—",p25:"—",p50:"—",p75:"78.0"},
+    {region:"BORDELAIS",name:"Bordeaux AOP Château La Gabarre",bio:false,desc:"Joli fruit, petits tanins frais",p15:"4.5",p25:"8.0",p50:"14.0",p75:"21.0"},
+    {region:"BORDELAIS",name:"Bordeaux-Supérieur AOC Le B par Maucaillou",bio:false,desc:"",p15:"5.5",p25:"10.0",p50:"17.0",p75:"25.0"},
+    {region:"BORDELAIS",name:"Lussac-Saint-Emilion AOP Château La Claymore",bio:false,desc:"",p15:"8.0",p25:"14.0",p50:"21.0",p75:"29.0"},
+    {region:"BORDELAIS",name:"Graves AOP Château Maderot",bio:false,desc:"",p15:"—",p25:"—",p50:"—",p75:"38.0"},
+    {region:"BORDELAIS",name:"Saint-Estèphe AOP Château Rocher Coutelin",bio:false,desc:"",p15:"—",p25:"—",p50:"—",p75:"40.0"},
+  ],
+  blanc:[
+    {region:"",name:"IGP Pays d'Oc Sauvignon, Saint-Clair",bio:false,desc:"Sec et frais, notes citronnées",p15:"4.5",p25:"8.0",p50:"14.0",p75:"20.0"},
+    {region:"",name:"IGP Pays d'Oc Chardonnay, Le Sudiste",bio:false,desc:"Frais et gourmand, nez de tilleul",p15:"5.0",p25:"9.0",p50:"15.0",p75:"21.5"},
+    {region:"",name:"IGP Côtes de Gascogne Elixir de Joy (moelleux)",bio:false,desc:"Intense, tonique, au nez d'agrumes et de fruits exotiques",p15:"5.5",p25:"10.0",p50:"18.0",p75:"25.0"},
+    {region:"",name:"Alsace AOP Riesling, Hans Schaeffer",bio:false,desc:"Nez floral, souple et frais en bouche",p15:"5.0",p25:"9.0",p50:"16.0",p75:"23.0"},
+    {region:"",name:"Chablis AOP Famille Savary",bio:false,desc:"Frais et minéral, notes de pomme, de silex et d'agrumes",p15:"8.0",p25:"16.0",p50:"24.0",p75:"38.0"},
+    {region:"",name:"Sancerre AOP Les Broux",bio:false,desc:"Droit, frais et désaltérant",p15:"7.5",p25:"15.0",p50:"22.0",p75:"34.0"},
+    {region:"",name:"Pouilly Fumé AOP Les Clairières",bio:false,desc:"Belle fraîcheur minérale et racée",p15:"7.8",p25:"16.0",p50:"23.0",p75:"36.0"},
+  ],
+  rose:[
+    {region:"",name:"IGP Alpilles Aimée des Alpilles",bio:false,desc:"Rosé pâle, joliment fruité, notes de groseille",p15:"4.5",p25:"8.0",p50:"14.0",p75:"20.0"},
+    {region:"",name:"IGP Méditerranée La Demoiselle sans Gêne",bio:true,desc:"Espiègle et gourmand, bien sec et fruité",p15:"5.5",p25:"10.0",p50:"17.0",p75:"25.0"},
+    {region:"",name:"IGP Pays d'Oc Gris blanc",bio:false,desc:"Arômes très friands de petits fruits rouges",p15:"6.0",p25:"12.0",p50:"18.0",p75:"27.0"},
+    {region:"",name:"Côtes de Provence AOP Minuty Prestige",bio:false,desc:"Très pâle, nez intense d'agrumes, de fleurs et de melon",p15:"8.0",p25:"16.0",p50:"24.0",p75:"38.0"},
+  ],
+  bulle:[
+    {region:"",name:"Champagne AOP Marié-Rasselet, Cuvée Réserve, Brut",bio:false,desc:"33% Pinot Meunier; 33% Pinot Noir; 33% Chardonnay",p15:"9.0",p25:"—",p50:"—",p75:"50.0"},
+    {region:"",name:"Champagne AOP Marié-Rasselet, Cuvée Louis, Blanc de Blancs",bio:false,desc:"Vinifié en fût de chêne et d'acacia pendant 6 mois",p15:"—",p25:"—",p50:"—",p75:"70.0"},
+    {region:"",name:"Mousseux Café de Paris – Héritage – Blanc de blancs Brut",bio:false,desc:"",p15:"5.0",p25:"—",p50:"—",p75:"25.0"},
+  ],
+};
+
+// ─── NAVIGATION ───
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('[data-panel]').forEach(n => n.classList.remove('active'));
+  const panel = document.getElementById('panel-' + id);
+  if (panel) panel.classList.add('active');
+  document.querySelectorAll('[data-panel="' + id + '"]').forEach(el => el.classList.add('active'));
+  updateStats();
+  window.scrollTo({ top: 0 });
+}
+function goPanel(id) { showPanel(id); }
+document.querySelectorAll('[data-panel]').forEach(el => el.addEventListener('click', () => showPanel(el.dataset.panel)));
+
+// ─── ITEMS ───
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+function renderList(key) {
+  const list = document.getElementById('list-' + key);
+  if (!list) return;
+  list.innerHTML = '';
+  (DATA[key]||[]).forEach((item, i) => {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+    row.innerHTML = `
+      <div class="item-main">
+        <input class="ii name" type="text" value="${esc(item.name)}" placeholder="Nom" oninput="DATA['${key}'][${i}].name=this.value;updateStats()">
+        <input class="ii desc" type="text" value="${esc(item.desc)}" placeholder="Description / traduction…" oninput="DATA['${key}'][${i}].desc=this.value">
+      </div>
+      <div class="price-col">
+        <input class="ii price" type="number" value="${item.price||''}" step="0.5" min="0" placeholder="—" oninput="DATA['${key}'][${i}].price=this.value">
+        <span class="price-unit">€</span>
+      </div>
+      <button class="rm-btn" onclick="removeItem('${key}',${i})">×</button>`;
+    list.appendChild(row);
+  });
+  const cnt = document.getElementById('cnt-' + key);
+  if (cnt) cnt.textContent = (DATA[key]||[]).length;
+}
+
+function addItem(key) {
+  if (!DATA[key]) DATA[key] = [];
+  DATA[key].push({name:'',desc:'',price:''});
+  renderList(key);
+  const rows = document.querySelectorAll('#list-'+key+' .item-row');
+  if (rows.length) { const inp = rows[rows.length-1].querySelector('.ii.name'); if(inp){inp.focus();inp.scrollIntoView({behavior:'smooth',block:'center'});} }
+}
+function removeItem(key, i) { DATA[key].splice(i,1); renderList(key); updateStats(); }
+
+// ─── VINS ───
+function renderWines(type) {
+  const container = document.getElementById('list-vins-' + type) || document.getElementById('list-' + type + 's') || document.getElementById('list-' + (type==='bulle'?'bulles':'vins-'+type));
+  const listId = type === 'bulle' ? 'list-bulles' : 'list-vins-' + type;
+  const list = document.getElementById(listId);
+  if (!list) return;
+  list.innerHTML = '';
+  (VINS[type]||[]).forEach((w, i) => {
+    const row = document.createElement('div');
+    row.className = 'wine-row';
+    row.innerHTML = `
+      <div class="wine-name-col">
+        <input class="ii name" type="text" value="${esc(w.name)}" placeholder="Appellation" style="font-size:12px" oninput="VINS['${type}'][${i}].name=this.value">
+        <div class="wine-bio-row">
+          <input class="ii desc" type="text" value="${esc(w.desc)}" placeholder="Description…" style="font-size:11px;color:var(--muted)" oninput="VINS['${type}'][${i}].desc=this.value">
+          <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted);white-space:nowrap;cursor:pointer">
+            <input type="checkbox" ${w.bio?'checked':''} style="accent-color:var(--gold)" onchange="VINS['${type}'][${i}].bio=this.checked"> Bio
+          </label>
+        </div>
+        <input class="ii" type="text" value="${esc(w.region)}" placeholder="Région" style="font-size:10px;color:var(--muted)" oninput="VINS['${type}'][${i}].region=this.value">
+      </div>
+      <input class="wp" type="text" value="${w.p15}" placeholder="—" oninput="VINS['${type}'][${i}].p15=this.value">
+      <input class="wp" type="text" value="${w.p25}" placeholder="—" oninput="VINS['${type}'][${i}].p25=this.value">
+      <input class="wp" type="text" value="${w.p50}" placeholder="—" oninput="VINS['${type}'][${i}].p50=this.value">
+      <input class="wp" type="text" value="${w.p75}" placeholder="—" oninput="VINS['${type}'][${i}].p75=this.value">
+      <button class="rm-btn" onclick="removeWine('${type}',${i})">×</button>`;
+    list.appendChild(row);
+  });
+  const cnt = document.getElementById('cnt-vins-' + type) || document.getElementById('cnt-' + (type==='bulle'?'bulles':'vins-'+type));
+  if (cnt) cnt.textContent = (VINS[type]||[]).length;
+}
+
+function addWine(type) { VINS[type].push({region:'',name:'',bio:false,desc:'',p15:'',p25:'',p50:'',p75:''}); renderWines(type); updateStats(); }
+function removeWine(type,i) { VINS[type].splice(i,1); renderWines(type); updateStats(); }
+
+// ─── STATS ───
+function updateStats() {
+  const platCount = (DATA.entrees||[]).length+(DATA.plats||[]).length+(DATA.desserts||[]).length;
+  const snackCount = (DATA.croques||[]).length+(DATA.sandwichs||[]).length+(DATA.omelettes||[]).length+(DATA.planches||[]).length+(DATA.salades||[]).length;
+  const vinCount = (VINS.rouge||[]).length+(VINS.blanc||[]).length+(VINS.rose||[]).length+(VINS.bulle||[]).length;
+  document.getElementById('s-plats').textContent = platCount;
+  document.getElementById('s-snacks').textContent = snackCount;
+  document.getElementById('s-vins').textContent = vinCount;
+  Object.keys(DATA).forEach(k => { const el = document.getElementById('cnt-'+k); if(el) el.textContent=(DATA[k]||[]).length; });
+  ['rouge','blanc','rose','bulle'].forEach(t => {
+    const el = document.getElementById(t==='bulle'?'cnt-bulles':'cnt-vins-'+t);
+    if(el) el.textContent=(VINS[t]||[]).length;
+  });
+}
+
+function toggleCard(h) { h.closest('.card').classList.toggle('collapsed'); }
+
+// ─── GENERATE la-carte.html ───
+function generateCarte() {
+  const f = {
+    ep:     document.getElementById('f-ep')?.value || '20',
+    epd:    document.getElementById('f-epd')?.value || '24',
+    e:      document.getElementById('f-e')?.value || '6.50',
+    p:      document.getElementById('f-p')?.value || '16',
+    d:      document.getElementById('f-d')?.value || '6.50',
+    enfant: document.getElementById('f-enfant')?.value || '12',
+  };
+
+  function fmt(v) { return v ? String(v).replace('.',',') : ''; }
+  function fmtPrice(v) { const n=parseFloat(v); return isNaN(n)?'':n%1===0?n+'€':n.toFixed(2).replace('.',',')+'€'; }
+
+  function menuItems(arr, showPrice=true) {
+    return (arr||[]).filter(i=>i.name).map(i => `
+            <div class="fcg-item">
+              <div class="fcg-item-name">${i.name}${i.desc?`<span class="fcg-item-desc"> — ${i.desc}</span>`:''}${showPrice&&i.price?`</div><div class="fcg-item-price">${fmt(i.price)}</div`:'</div'}>
+            </div>`).join('');
+  }
+
+  function platRows(arr) {
+    return (arr||[]).filter(i=>i.name).map(i => `
+        <div class="plat-row"><div class="plat-left"><div class="plat-name">${i.name}</div>${i.desc?`<div class="plat-desc">${i.desc}</div>`:''}</div>${i.price?`<div class="plat-price">${fmt(i.price)}</div>`:''}</div>`).join('');
+  }
+
+  function wineRows(arr) {
+    return (arr||[]).filter(w=>w.name).map(w => {
+      const bio = w.bio ? '<span class="bio-tag">Bio</span>' : '';
+      const desc = w.desc ? `<span class="wine-desc">${w.desc}</span>` : '';
+      function wp(v) { return v&&v!=='—'?`<td class="wine-price-val">${fmt(v)}</td>`:`<td class="wine-price-empty">—</td>`; }
+      return `<tr><td><span class="wine-name">${w.name}</span>${bio}${desc}</td>${wp(w.p15)}${wp(w.p25)}${wp(w.p50)}${wp(w.p75)}</tr>`;
+    }).join('');
+  }
+
+  // Region separators for red wines
+  function wineRowsWithRegions(arr) {
+    let out = ''; let lastRegion = null;
+    (arr||[]).filter(w=>w.name).forEach(w => {
+      if (w.region && w.region !== lastRegion) {
+        out += `<tr><td colspan="5" style="padding:6px 10px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;background:var(--cream)">${w.region}</td></tr>`;
+        lastRegion = w.region;
+      }
+      const bio = w.bio ? '<span class="bio-tag">Bio</span>' : '';
+      const desc = w.desc ? `<span class="wine-desc">${w.desc}</span>` : '';
+      function wp(v) { return v&&v!=='—'?`<td class="wine-price-val">${fmt(v)}</td>`:`<td class="wine-price-empty">—</td>`; }
+      out += `<tr><td><span class="wine-name">${w.name}</span>${bio}${desc}</td>${wp(w.p15)}${wp(w.p25)}${wp(w.p50)}${wp(w.p75)}</tr>`;
+    });
+    return out;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>La Carte — Niagara Café, Bar Restaurant Brasserie à Courbevoie</title>
+  <meta name="description" content="Découvrez la carte du Niagara Café à Courbevoie. Formules, plats, snacks, vins et champagnes. Bar - Restaurant - Brasserie, 20 rue de l'Hôtel de Ville.">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--ink:#1a1714;--paper:#faf8f3;--cream:#f2ede0;--gold:#b8924a;--gold-light:#d4ac6a;--muted:#8a7e6e;--rule:#d8d0be;--text:#2e2820}
+    html{scroll-behavior:smooth}
+    body{background:var(--paper);color:var(--text);font-family:'Jost',sans-serif;font-weight:300;font-size:15px;line-height:1.6}
+    .site-header{background:var(--ink);padding:40px 24px 32px;text-align:center}
+    .site-header::after{content:'';display:block;width:60px;height:2px;background:var(--gold);margin:20px auto 0}
+    .logo-circle{width:80px;height:80px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-family:'Playfair Display',serif;font-size:28px;font-style:italic;color:var(--ink);letter-spacing:-1px;box-shadow:0 0 0 3px var(--gold)}
+    .header-name{font-family:'Jost',sans-serif;font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.35em;color:var(--gold);margin-bottom:6px}
+    .header-tagline{font-family:'Playfair Display',serif;font-size:28px;color:#fff;font-weight:400;line-height:1.2}
+    .header-sub{font-size:12px;color:rgba(255,255,255,.45);letter-spacing:.1em;text-transform:uppercase;margin-top:8px}
+    .nav-sticky{background:var(--ink);position:sticky;top:0;z-index:100;border-bottom:1px solid rgba(255,255,255,.08)}
+    .nav-tabs{display:flex;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+    .nav-tabs::-webkit-scrollbar{display:none}
+    .nav-tab{flex:0 0 auto;padding:14px 20px;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.45);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;user-select:none;font-weight:400}
+    .nav-tab:hover{color:rgba(255,255,255,.75)}
+    .nav-tab.active{color:var(--gold-light);border-bottom-color:var(--gold)}
+    .carte-main{max-width:900px;margin:0 auto;padding:0 16px 60px}
+    .carte-section{display:none;padding-top:40px}
+    .carte-section.active{display:block}
+    .section-title{font-family:'Playfair Display',serif;font-size:32px;font-style:italic;color:var(--ink);text-align:center;margin-bottom:4px}
+    .section-subtitle{font-size:11px;text-transform:uppercase;letter-spacing:.2em;color:var(--muted);text-align:center;margin-bottom:32px}
+    .section-rule{display:flex;align-items:center;gap:14px;margin-bottom:32px}
+    .section-rule::before,.section-rule::after{content:'';flex:1;height:1px;background:var(--rule)}
+    .section-rule-diamond{color:var(--gold);font-size:10px}
+    .formule-box{border:1px solid var(--rule);border-top:3px solid var(--gold);background:var(--cream);padding:28px 32px;margin-bottom:32px;text-align:center}
+    .formule-title{font-family:'Playfair Display',serif;font-size:22px;font-style:italic;color:var(--ink);margin-bottom:4px}
+    .formule-subtitle{font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--muted);margin-bottom:20px}
+    .formule-prices{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+    .fprice{background:var(--ink);color:#fff;padding:10px 18px;font-size:13px;line-height:1.3;text-align:center}
+    .fprice .amount{display:block;font-family:'Playfair Display',serif;font-size:22px;color:var(--gold-light)}
+    .fprice .label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.55)}
+    .formule-choices{margin-top:20px;text-align:left}
+    .formule-choice-group{margin-bottom:14px}
+    .fcg-title{font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:var(--gold);font-weight:500;margin-bottom:6px}
+    .fcg-items{display:flex;flex-direction:column;gap:3px}
+    .fcg-item{font-size:14px;color:var(--text);padding:4px 0;border-bottom:1px dotted var(--rule);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+    .fcg-item:last-child{border-bottom:none}
+    .fcg-item-name{flex:1}
+    .fcg-item-desc{font-size:12px;color:var(--muted);font-style:italic}
+    .fcg-item-price{color:var(--gold);font-size:13px;font-weight:500;flex-shrink:0}
+    .enfant-box{background:var(--cream);border:1px solid var(--rule);padding:20px 24px;margin-top:24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+    .enfant-price{font-family:'Playfair Display',serif;font-size:36px;color:var(--gold);flex-shrink:0}
+    .enfant-desc{font-size:13px;color:var(--text);line-height:1.7}
+    .enfant-title{font-weight:500;font-size:15px;margin-bottom:2px}
+    .plats-group{margin-bottom:32px}
+    .plats-group-title{font-size:10px;text-transform:uppercase;letter-spacing:.2em;color:var(--gold);font-weight:500;border-bottom:1px solid var(--rule);padding-bottom:8px;margin-bottom:12px}
+    .plat-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 0;border-bottom:1px dotted var(--rule)}
+    .plat-row:last-child{border-bottom:none}
+    .plat-left{flex:1;min-width:0}
+    .plat-name{font-size:15px;font-weight:400;color:var(--ink)}
+    .plat-desc{font-size:12px;color:var(--muted);font-style:italic;margin-top:1px}
+    .plat-price{font-family:'Playfair Display',serif;font-size:16px;color:var(--gold);flex-shrink:0;font-style:italic}
+    .wine-table{width:100%;border-collapse:collapse;margin-bottom:8px}
+    .wine-table thead tr{background:var(--ink)}
+    .wine-table thead th{font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.55);font-weight:400;padding:8px 10px;text-align:right}
+    .wine-table thead th:first-child{text-align:left}
+    .wine-table tbody tr{border-bottom:1px solid var(--rule)}
+    .wine-table tbody tr:last-child{border-bottom:none}
+    .wine-table tbody tr:hover{background:var(--cream)}
+    .wine-table td{padding:10px;font-size:14px;text-align:right;color:var(--text);vertical-align:top}
+    .wine-table td:first-child{text-align:left}
+    .wine-name{font-weight:400}
+    .wine-desc{font-size:11px;color:var(--muted);font-style:italic;display:block;margin-top:2px}
+    .wine-price-val{color:var(--gold);font-size:15px}
+    .wine-price-empty{color:var(--rule)}
+    .bio-tag{display:inline-block;background:#4a7c4e;color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;text-transform:uppercase;letter-spacing:.08em;margin-left:5px;font-style:normal;vertical-align:middle}
+    .carte-note{text-align:center;font-size:11px;color:var(--muted);margin-top:40px;padding-top:24px;border-top:1px solid var(--rule);font-style:italic}
+    .site-footer{background:var(--ink);color:rgba(255,255,255,.5);text-align:center;padding:32px 16px;font-size:12px;letter-spacing:.05em}
+    .site-footer strong{color:rgba(255,255,255,.85)}
+    .site-footer a{color:var(--gold-light);text-decoration:none}
+    @media(max-width:600px){.wine-table td,.wine-table thead th{padding:7px 6px;font-size:13px}}
+  </style>
+</head>
+<body>
+<header class="site-header">
+  <div class="logo-circle">𝒩</div>
+  <div class="header-name">Niagara Café</div>
+  <div class="header-tagline">La Carte</div>
+  <div class="header-sub">Bar · Restaurant · Brasserie — Courbevoie</div>
+</header>
+<nav class="nav-sticky">
+  <div class="nav-tabs">
+    <div class="nav-tab active" onclick="showSection('formules',this)">Formules</div>
+    <div class="nav-tab" onclick="showSection('snacks',this)">Snacks</div>
+    <div class="nav-tab" onclick="showSection('salades',this)">Salades</div>
+    <div class="nav-tab" onclick="showSection('vins-rouges',this)">Vins Rouges</div>
+    <div class="nav-tab" onclick="showSection('vins-blancs',this)">Vins Blancs</div>
+    <div class="nav-tab" onclick="showSection('vins-roses',this)">Vins Rosés</div>
+    <div class="nav-tab" onclick="showSection('bulles',this)">Bulles</div>
+  </div>
+</nav>
+<main class="carte-main">
+  <section id="section-formules" class="carte-section active">
+    <p class="section-title" style="margin-top:8px">Nos Formules</p>
+    <p class="section-subtitle">Menus · Tous les jours, midi et soir</p>
+    <div class="formule-box">
+      <div class="formule-title">Menu du jour</div>
+      <div class="formule-subtitle">Every day, for lunch or dinner</div>
+      <div class="formule-prices">
+        <div class="fprice"><span class="amount">${fmtPrice(f.ep)}</span><span class="label">Entrée + Plat<br>ou Plat + Dessert</span></div>
+        <div class="fprice"><span class="amount">${fmtPrice(f.epd)}</span><span class="label">Entrée + Plat<br>+ Dessert</span></div>
+        <div class="fprice"><span class="amount">${fmtPrice(f.e)}</span><span class="label">Entrée seule</span></div>
+        <div class="fprice"><span class="amount">${fmtPrice(f.p)}</span><span class="label">Plat seul</span></div>
+        <div class="fprice"><span class="amount">${fmtPrice(f.d)}</span><span class="label">Dessert seul</span></div>
+      </div>
+      <div class="formule-choices">
+        <div class="formule-choice-group">
+          <div class="fcg-title">Entrée au choix · Your choice of starter</div>
+          <div class="fcg-items">${menuItems(DATA.entrees,false)}</div>
+        </div>
+        <div class="formule-choice-group">
+          <div class="fcg-title">Plat au choix · Your choice of main course</div>
+          <div class="fcg-items">${menuItems(DATA.plats,false)}</div>
+        </div>
+        <div class="formule-choice-group">
+          <div class="fcg-title">Dessert au choix · Your choice of dessert</div>
+          <div class="fcg-items">${menuItems(DATA.desserts,false)}</div>
+        </div>
+      </div>
+    </div>
+    <div class="enfant-box">
+      <div class="enfant-price">${fmtPrice(f.enfant)}</div>
+      <div class="enfant-desc"><div class="enfant-title">Menu Enfant</div>Steak haché ou Burger ou Jambon ou Blanc de poulet pané ou Poisson<br>accompagné de pâtes ou de frites maison<br>+ Coupe glace vanille ou chocolat (1 boule) + Une boisson 25cl</div>
+    </div>
+    <div class="carte-note">Prix nets en euros, taxes et service compris · La liste des allergènes disponible sur demande</div>
+  </section>
+
+  <section id="section-snacks" class="carte-section">
+    <p class="section-title">Snacks</p>
+    <p class="section-subtitle">Servis avec salade et frites maison</p>
+    <div class="plats-group"><div class="plats-group-title">Croques Toasties</div>${platRows(DATA.croques)}</div>
+    <div class="plats-group"><div class="plats-group-title">Sandwiches</div>${platRows(DATA.sandwichs)}</div>
+    <div class="plats-group"><div class="plats-group-title">Omelettes · Servies avec salade et frites maison</div>${platRows(DATA.omelettes)}</div>
+    <div class="plats-group"><div class="plats-group-title">Planches à partager · Boards</div>${platRows(DATA.planches)}</div>
+    <div class="carte-note">Prix nets en euros, taxes et service compris · La liste des allergènes disponible sur demande</div>
+  </section>
+
+  <section id="section-salades" class="carte-section">
+    <p class="section-title" style="font-style:italic">Salades façon Plats</p>
+    <p class="section-subtitle">Large Salads</p>
+    ${(DATA.salades||[]).filter(i=>i.name).map(i=>`
+    <div class="plat-row" style="padding:14px 0;align-items:flex-start">
+      <div class="plat-left"><div class="plat-name" style="font-size:17px">${i.name}</div>${i.desc?`<div class="plat-desc" style="font-size:13px;line-height:1.6">${i.desc}</div>`:''}</div>
+      ${i.price?`<div class="plat-price" style="font-size:20px">${fmt(i.price)}</div>`:''}
+    </div>`).join('')}
+    <div class="carte-note">Prix nets en euros, taxes et service compris · La liste des allergènes disponible sur demande</div>
+  </section>
+
+  <section id="section-vins-rouges" class="carte-section">
+    <p class="section-title">Vins Rouges</p><p class="section-subtitle">Red Wines</p>
+    <div class="section-rule"><span class="section-rule-diamond">◆</span></div>
+    <table class="wine-table"><thead><tr><th>Appellation</th><th>15cl</th><th>25cl</th><th>50cl</th><th>75cl</th></tr></thead>
+    <tbody>${wineRowsWithRegions(VINS.rouge)}</tbody></table>
+    <div class="carte-note">Prix nets en euros, taxes et service compris · La liste des allergènes disponible sur demande</div>
+  </section>
+
+  <section id="section-vins-blancs" class="carte-section">
+    <p class="section-title">Vins Blancs</p><p class="section-subtitle">White Wines</p>
+    <div class="section-rule"><span class="section-rule-diamond">◆</span></div>
+    <table class="wine-table"><thead><tr><th>Appellation</th><th>15cl</th><th>25cl</th><th>50cl</th><th>75cl</th></tr></thead>
+    <tbody>${wineRows(VINS.blanc)}</tbody></table>
+    <div class="carte-note">Prix nets en euros, taxes et service compris · La liste des allergènes disponible sur demande</div>
+  </section>
+
+  <section id="section-vins-roses" class="carte-section">
+    <p class="section-title">Vins Rosés</p><p class="section-subtitle">Rosé Wines</p>
+    <div class="section-rule"><span class="section-rule-diamond">◆</span></div>
+    <table class="wine-table"><thead><tr><th>Appellation</th><th>15cl</th><th>25cl</th><th>50cl</th><th>75cl</th></tr></thead>
+    <tbody>${wineRows(VINS.rose)}</tbody></table>
+    <div class="carte-note">Prix nets en euros, taxes et service compris · La liste des allergènes disponible sur demande</div>
+  </section>
+
+  <section id="section-bulles" class="carte-section">
+    <p class="section-title">Les Bulles</p><p class="section-subtitle">Bubbles &amp; Champagne</p>
+    <div class="section-rule"><span class="section-rule-diamond">◆</span></div>
+    <table class="wine-table"><thead><tr><th>Appellation</th><th>12cl</th><th></th><th></th><th>75cl</th></tr></thead>
+    <tbody>${wineRows(VINS.bulle)}</tbody></table>
+    <div class="carte-note">Prix nets en euros, taxes et service compris · La liste des allergènes disponible sur demande</div>
+  </section>
+</main>
+<footer class="site-footer">
+  <strong>Niagara Café</strong> — Bar · Restaurant · Brasserie<br>
+  20 rue de l'Hôtel de Ville · 92400 Courbevoie<br>
+  <a href="tel:0147889789">01 47 88 97 89</a> · <a href="tel:0671164059">06 71 16 40 59</a>
+</footer>
+<script>
+function showSection(id,tab){
+  document.querySelectorAll('.carte-section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('section-'+id).classList.add('active');
+  if(tab){tab.classList.add('active');tab.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});}
+  window.scrollTo({top:0});
+}
+<\/script>
+</body>
+</html>`;
+}
+
+// ─── SAVE / EXPORT ───
+function saveAll() {
+  exportCarte();
+  showToast('✓ la-carte.html téléchargée — uploadez-la sur votre serveur', 'ok');
+}
+
+function exportCarte() {
+  const html = generateCarte();
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'la-carte.html';
+  a.click();
+}
+
+function previewCarte() {
+  const html = generateCarte();
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const iframe = document.getElementById('preview');
+  if (iframe) iframe.src = url;
+  showToast('Aperçu rafraîchi', 'ok');
+}
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = (type === 'err' ? 'err' : '') + ' show';
+  clearTimeout(t._to);
+  t._to = setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+// ─── INIT ───
+Object.keys(DATA).forEach(renderList);
+['rouge','blanc','rose','bulle'].forEach(renderWines);
+updateStats();
+</script>
+</body>
+</html>
