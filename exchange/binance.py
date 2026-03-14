@@ -33,6 +33,17 @@ class Binance:
     def backoff(self, attempt: int) -> None:
         time.sleep(self.httpBackoff * (2 ** (attempt - 1)))
 
+    def _http_error_message(self, e: HTTPError, method: str, path: str) -> str:
+        response = getattr(e, "response", None)
+        code = response.status_code if response is not None else 0
+        body = ""
+        if response is not None:
+            try:
+                body = response.text.strip()
+            except Exception:
+                body = ""
+        return f"{method} {path} HTTP {code} body={body}"
+
     def get(self, path: str, params=None, signed: bool=False):
         if params is None:
             params = {}
@@ -66,7 +77,7 @@ class Binance:
                 if code in (429, 500, 502, 503, 504) and attempt < self.httpRetries:
                     self.backoff(attempt)
                     continue
-                raise
+                raise RuntimeError(self._http_error_message(e, "GET", path)) from e
 
             except (ReadTimeout, ConnectionError):
                 if attempt == self.httpRetries:
@@ -98,7 +109,7 @@ class Binance:
                 if code in (429, 500, 502, 503, 504) and attempt < self.httpRetries:
                     self.backoff(attempt)
                     continue
-                raise
+                raise RuntimeError(self._http_error_message(e, "POST", path)) from e
 
             except (ReadTimeout, ConnectionError):
                 if attempt == self.httpRetries:
@@ -130,7 +141,7 @@ class Binance:
                 if code in (429, 500, 502, 503, 504) and attempt < self.httpRetries:
                     self.backoff(attempt)
                     continue
-                raise
+                raise RuntimeError(self._http_error_message(e, "DELETE", path)) from e
 
             except (ReadTimeout, ConnectionError):
                 if attempt == self.httpRetries:

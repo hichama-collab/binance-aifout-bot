@@ -526,6 +526,7 @@ def main():
 
             
             spread = (ask - bid) / bid if bid > 0 else 1.0
+            spreadLimit = float(getattr(profile, "spreadMax", 1.0) or 1.0)
             momModeInstant = bool(getattr(cfg, 'momUseInstant', False))
             if momModeInstant:
                 momOk, momPct, upRatio = instant_momentum_ok(
@@ -583,6 +584,25 @@ def main():
                 buySignal = (P1 > P2) and (P2 > P3) and (P3 > P4)
 
             if buySignal:
+                if spread > spreadLimit:
+                    maybe_hold(
+                        now,
+                        'HOLD_SPREAD',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
                 if usdc is None:
                     maybe_hold(
                         now,
