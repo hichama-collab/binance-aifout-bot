@@ -167,8 +167,7 @@ from execution.orders import placeLimit, waitFillOrCancel
 from state.wallet_sync import walletSyncEvery
 from state.position import Position
 
-from indicators.basic import computeSignals, fmt
-from strategy.factory import getStrategy
+from indicators.basic import fmt
 
 
 def round_step(qty: float, step: float) -> float:
@@ -324,8 +323,6 @@ def main():
     poll = float(getattr(cfg, 'idleSleep', getattr(cfg, 'poll', 0.2)))  # legacy alias
     cfg = applyRiskConfig(cfg)
     profile = pickProfile()
-    strat = getStrategy(cfg, profile)
-
     vpnCheckOrDie(cfg.ipFile, cfg.ipCheckTimeout)
 
     bx = Binance(
@@ -397,6 +394,7 @@ def main():
 
     stream.start()
     lastChk = 0.0
+    lastTickSeq = 0
 
     lastHoldCsv = 0.0
     holdCsvEvery = float(getattr(cfg, 'holdCsvEvery', 60))
@@ -408,10 +406,13 @@ def main():
         momPct,
         momRangePct,
         upRatio,
-        rsi,
-        ema1_ok,
-        ema5_ok,
-        vol_ok,
+        bid,
+        ask,
+        mid,
+        p1,
+        p2,
+        p3,
+        p4,
     ):
         nonlocal lastHoldCsv
         if (now - lastHoldCsv) < holdCsvEvery:
@@ -433,10 +434,20 @@ def main():
                 'mom_pct': float(momPct)*100.0,
                 'mom_range_pct': float(momRangePct)*100.0,
                 'up_ratio': float(upRatio)*100.0,
-                'rsi': float(rsi) if rsi is not None else '',
-                'ema1_ok': int(bool(ema1_ok)),
-                'ema5_ok': int(bool(ema5_ok)),
-                'vol_ok': int(bool(vol_ok)),
+                'rsi': '',
+                'ema1_ok': '',
+                'ema5_ok': '',
+                'vol_ok': '',
+                'bid': float(bid),
+                'ask': float(ask),
+                'mid': float(mid),
+                'entry_price': '',
+                'p1': '' if p1 is None else float(p1),
+                'p2': '' if p2 is None else float(p2),
+                'p3': '' if p3 is None else float(p3),
+                'p4': '' if p4 is None else float(p4),
+                'entry_vs_mid_pct': '',
+                'mid_vs_entry_pct': '',
             })
         except Exception:
             pass
@@ -444,12 +455,12 @@ def main():
             logTrade(
                 f"DECIDE_HOLD reason={reason} spread={spread*100:.4f}% mom={momPct*100:.4f}% "
                 f"range={momRangePct*100:.4f}% up={upRatio*100:.2f}% "
-                f"rsi={float(rsi) if rsi is not None else 'NA'}"
+                f"mid={mid:.8f} P1={p1} P2={p2} P3={p3} P4={p4}"
             )
             print(
                 f"DECIDE_HOLD reason={reason} spread={spread*100:.4f}% mom={momPct*100:.4f}% "
                 f"range={momRangePct*100:.4f}% up={upRatio*100:.2f}% "
-                f"rsi={float(rsi) if rsi is not None else 'NA'}"
+                f"mid={mid:.8f} P1={p1} P2={p2} P3={p3} P4={p4}"
             )
         except Exception:
             pass
@@ -459,19 +470,21 @@ def main():
         try:
             now = time.time()
             
-            bid, ask = stream.bestBidAsk()
+            bid, ask, tick_ts, tick_seq = stream.snapshot()
             if bid <= 0 or ask <= 0:
                 time.sleep(cfg.idleSleep)
                 continue
-            
-            # update ticks buffer (MID)
+
             mid = (float(bid) + float(ask)) / 2.0
-            ticks.append((now, float(mid)))
-            # prune: keep last max(window, 40s)
-            keep_sec = max(momWindowSec, float(getattr(cfg, "ticksKeepMinSec", 40.0)))
-            cutoff = now - keep_sec
-            while ticks and ticks[0][0] < cutoff:
-                ticks.pop(0)
+            has_new_tick = tick_seq != lastTickSeq
+            if has_new_tick:
+                lastTickSeq = tick_seq
+                ticks.append((float(tick_ts or now), float(mid)))
+                # prune: keep last max(window, 40s)
+                keep_sec = max(momWindowSec, float(getattr(cfg, "ticksKeepMinSec", 40.0)))
+                cutoff = now - keep_sec
+                while ticks and ticks[0][0] < cutoff:
+                    ticks.pop(0)
             
             # cooldown log so it doesn't look frozen
             if now < cooldownUntil:
@@ -512,13 +525,6 @@ def main():
                         pass
 
             
-            # compute signals (kept as filter, not the trigger)
-            try:
-                s1, s5 = computeSignals(bx, symbol, profile)
-            except Exception:
-                time.sleep(cfg.idleSleep)
-                continue
-            
             spread = (ask - bid) / bid if bid > 0 else 1.0
             momModeInstant = bool(getattr(cfg, 'momUseInstant', False))
             if momModeInstant:
@@ -553,15 +559,10 @@ def main():
             P3 = _get_p(ticks, 3)
             P4 = _get_p(ticks, 4)
 
-            p1p4Ok = p1p4_ok(ticks, lookback=4)
-            ind = strat.compute(s1, s5, momOk, momPct, upRatio, spread, p1p4Ok)
-            
             if now - lastChk >= cfg.chkEvery:
                 lastChk = now
                 chk_msg = (
-                    f"CHK EMA1m:{'OK' if s1.ema_ok else 'NO'} EMA5m:{'OK' if s5.ema_ok else 'NO'} "
-                    f"RSI:{fmt(s1.rsi)} VOL:{'OK' if s1.vol_ok else 'NO'} "
-                    f"MOM:{fmt(momPct*100, Decimal('0.01'))}% "
+                    f"CHK MOM:{fmt(momPct*100, Decimal('0.01'))}% "
                     f"RANGE:{fmt(momRangePct*100, Decimal('0.01'))}% "
                     f"UP:{fmt(upRatio*100, Decimal('0.01'))}% "
                     f"SPREAD:{fmt(spread*100)}% BID:{fmt(bid)} ASK:{fmt(ask)} MID:{fmt(mid)} "
@@ -578,7 +579,7 @@ def main():
             # ===== ENTRY (P algo, MID-based) =====
 # BUY if (P1 > P2 > P3 > P4)  (strict)
             buySignal = False
-            if (P1 is not None) and (P2 is not None) and (P3 is not None) and (P4 is not None):
+            if has_new_tick and (P1 is not None) and (P2 is not None) and (P3 is not None) and (P4 is not None):
                 buySignal = (P1 > P2) and (P2 > P3) and (P3 > P4)
 
             if buySignal:
@@ -590,10 +591,13 @@ def main():
                         momPct,
                         momRangePct,
                         upRatio,
-                        s1.rsi,
-                        s1.ema_ok,
-                        s5.ema_ok,
-                        s1.vol_ok,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
                     )
                     time.sleep(cfg.idleSleep)
                     continue
@@ -606,10 +610,13 @@ def main():
                         momPct,
                         momRangePct,
                         upRatio,
-                        s1.rsi,
-                        s1.ema_ok,
-                        s5.ema_ok,
-                        s1.vol_ok,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
                     )
                     time.sleep(cfg.idleSleep)
                     continue
@@ -627,10 +634,13 @@ def main():
                         momPct,
                         momRangePct,
                         upRatio,
-                        s1.rsi,
-                        s1.ema_ok,
-                        s5.ema_ok,
-                        s1.vol_ok,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
                     )
                     time.sleep(cfg.idleSleep)
                     continue
@@ -683,6 +693,7 @@ def main():
 
                 print("BUY_FILLED", getattr(pos, 'qty', ''), "@", fmt(getattr(pos, 'entry', 0.0)), "STOP", fmt(getattr(pos, 'stop', 0.0)))
                 logTrade(f"BUY symbol={symbol} qty={getattr(pos,'qty','')} entry={getattr(pos,'entry','')} P1={P1} P2={P2} P3={P3} P4={P4}")
+                entry_vs_mid_pct = ((float(getattr(pos, 'entry', 0.0)) - float(mid)) / float(mid) * 100.0) if mid > 0 else ""
                 logCsv({
                     "ts_utc": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
                     "symbol": symbol,
@@ -697,14 +708,28 @@ def main():
                     "mom_pct": float(momPct) * 100.0,
                     "mom_range_pct": float(momRangePct) * 100.0,
                     "up_ratio": float(upRatio) * 100.0,
-                    "rsi": float(s1.rsi),
-                    "ema1_ok": int(bool(s1.ema_ok)),
-                    "ema5_ok": int(bool(s5.ema_ok)),
-                    "vol_ok": int(bool(s1.vol_ok)),
+                    "rsi": "",
+                    "ema1_ok": "",
+                    "ema5_ok": "",
+                    "vol_ok": "",
                     "spread_pct": float(spread) * 100.0,
+                    "bid": float(bid),
+                    "ask": float(ask),
+                    "mid": float(mid),
+                    "entry_price": float(getattr(pos, 'entry', 0.0)),
+                    "p1": "" if P1 is None else float(P1),
+                    "p2": "" if P2 is None else float(P2),
+                    "p3": "" if P3 is None else float(P3),
+                    "p4": "" if P4 is None else float(P4),
+                    "entry_vs_mid_pct": entry_vs_mid_pct,
+                    "mid_vs_entry_pct": "",
                 })
                 continue
             
+            if pos is None:
+                time.sleep(cfg.idleSleep)
+                continue
+
             # ===== EXIT =====
             # If position was adopted from wallet (entry=0), treat as untracked.
             # We do not fabricate an entry; we liquidate when sellable, otherwise we clear as dust.
@@ -718,7 +743,7 @@ def main():
             # SELL if (P1 < P3) AND (P3 < entryPrice)
             if exitReason is None and (pos is not None) and (pos.entry > 0):
                 sellSignal = False
-                if (P1 is not None) and (P2 is not None) and (P3 is not None):
+                if has_new_tick and (P1 is not None) and (P2 is not None) and (P3 is not None):
                     sellSignal = (P1 < P3) and (P3 < float(pos.entry))
                 if sellSignal:
                     exitReason = f"PSELL P1={P1} P2={P2} P3={P3} P4={P4} entry={pos.entry}"
@@ -797,6 +822,7 @@ def main():
             quoteQty = float(info.get("cummulativeQuoteQty", execQty * sellPx))
             exitPx = quoteQty / execQty if execQty > 0 else sellPx
             pnl = (exitPx - pos.entry) * sellQty
+            mid_vs_entry_pct = ((float(mid) - float(pos.entry)) / float(pos.entry) * 100.0) if pos.entry > 0 else ""
             
             print("SELL_FILLED", sellQty, "@", fmt(exitPx), "PNL", fmt(pnl, Decimal('0.0001')), exitReason)
             logTrade(f"SELL symbol={symbol} qty={sellQty} exit={exitPx} pnl={pnl} reason={exitReason} profile={profile.name}")
@@ -811,6 +837,24 @@ def main():
                 "pnl": pnl,
                 "profile": profile.name,
                 "dry_run": int(getattr(cfg, "dryRun", False)),
+                "spread_pct": float(spread) * 100.0,
+                "mom_pct": float(momPct) * 100.0,
+                "mom_range_pct": float(momRangePct) * 100.0,
+                "up_ratio": float(upRatio) * 100.0,
+                "rsi": "",
+                "ema1_ok": "",
+                "ema5_ok": "",
+                "vol_ok": "",
+                "bid": float(bid),
+                "ask": float(ask),
+                "mid": float(mid),
+                "entry_price": float(pos.entry),
+                "p1": "" if P1 is None else float(P1),
+                "p2": "" if P2 is None else float(P2),
+                "p3": "" if P3 is None else float(P3),
+                "p4": "" if P4 is None else float(P4),
+                "entry_vs_mid_pct": "",
+                "mid_vs_entry_pct": mid_vs_entry_pct,
             })
             
             # cooldown and reset

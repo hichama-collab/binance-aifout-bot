@@ -68,7 +68,8 @@ def tradeCsvLogger(cfg, symbol: str | None = None):
         cols = [
             "ts_utc","symbol","event","side","qty","price","reason","pnl",
             "profile","dry_run","spread_pct","mom_pct","mom_range_pct","up_ratio","rsi",
-            "ema1_ok","ema5_ok","vol_ok"
+            "ema1_ok","ema5_ok","vol_ok","bid","ask","mid","entry_price",
+            "p1","p2","p3","p4","entry_vs_mid_pct","mid_vs_entry_pct"
         ]
         csvFile.parent.mkdir(parents=True, exist_ok=True)
         write_header = (not csvFile.exists()) or csvFile.stat().st_size == 0
@@ -89,7 +90,8 @@ def ensureCsvHeader(cfg, symbol: str | None = None):
     cols = [
         "ts_utc","symbol","event","side","qty","price","reason","pnl",
         "profile","dry_run","spread_pct","mom_pct","mom_range_pct","up_ratio","rsi",
-        "ema1_ok","ema5_ok","vol_ok"
+        "ema1_ok","ema5_ok","vol_ok","bid","ask","mid","entry_price",
+        "p1","p2","p3","p4","entry_vs_mid_pct","mid_vs_entry_pct"
     ]
     logDir = _log_dir(cfg)
     csvFile = logDir / _prefixed("trades.csv", symbol)

@@ -12,6 +12,7 @@ class Stream:
         self.bestBid = 0.0
         self.bestAsk = 0.0
         self.lastUpdate = 0.0
+        self.tickSeq = 0
 
         # URL FIXEE (ne jamais utiliser cfg ici)
         self.url = f"wss://stream.binance.com:9443/ws/{self.symbol}@bookTicker"
@@ -39,6 +40,7 @@ class Stream:
                 self.bestBid = bid
                 self.bestAsk = ask
                 self.lastUpdate = now
+                self.tickSeq += 1
         except Exception:
             # keep last good values
             return
@@ -93,3 +95,17 @@ class Stream:
         if (now - lu) > stale_sec:
             return 0.0, 0.0
         return b, a
+
+    def snapshot(self):
+        stale_sec = float(getattr(self.cfg, "wsStaleSec", 3.0))
+        now = time.time()
+        with self._lock:
+            b = self.bestBid
+            a = self.bestAsk
+            lu = self.lastUpdate
+            seq = self.tickSeq
+        if b <= 0 or a <= 0 or lu <= 0:
+            return 0.0, 0.0, 0.0, 0
+        if (now - lu) > stale_sec:
+            return 0.0, 0.0, 0.0, 0
+        return b, a, lu, seq
