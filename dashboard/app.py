@@ -4,12 +4,15 @@ import re
 import csv
 import json
 import time
+import hmac
+import hashlib
 import subprocess
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone, timedelta
 from functools import wraps
 from pathlib import Path
+from urllib.parse import urlencode
 
 from flask import Flask, Response, jsonify, render_template, request, abort
 
@@ -51,6 +54,8 @@ DASH_PASS = os.getenv("DASH_PASS", "")
 
 # FX rate: USDC -> EUR (set via env or BOT_RUNTIME_DIR/fx.json)
 FX_USDC_EUR_ENV = os.getenv("FX_USDC_EUR", "").strip()
+WALLET_SNAPSHOT_MAX_AGE_SEC = float(os.getenv("WALLET_SNAPSHOT_MAX_AGE_SEC", "120"))
+LIVE_WALLET_CACHE_TTL_SEC = float(os.getenv("LIVE_WALLET_CACHE_TTL_SEC", "10"))
 
 
 # systemd units allowlist (security)
@@ -63,6 +68,7 @@ UNITS = [
 MAX_TAIL_LINES = 600
 
 app = Flask(__name__)
+_LIVE_WALLET_CACHE = {"ts": 0.0, "data": None}
 
 # ---- auth ----
 def _unauthorized():
@@ -134,6 +140,88 @@ def safe_read_json(path: Path):
     try:
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
+    except Exception:
+        return None
+
+def _read_key_value_file(path: Path):
+    out = {}
+    try:
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            out[k.strip()] = v.strip().strip("'").strip('"')
+    except Exception:
+        return {}
+    return out
+
+def _load_bot_env():
+    merged = {}
+    for path in (
+        SERVICE_ENV,
+        BASE_DIR / ".env",
+        Path.cwd() / ".env",
+        Path.cwd() / "config" / ".service.env",
+    ):
+        if path.exists():
+            merged.update(_read_key_value_file(path))
+    return merged
+
+def _wallet_snapshot_ts(data):
+    if not isinstance(data, dict):
+        return None
+    for key in ("ts", "timestamp", "updated_at"):
+        v = data.get(key)
+        try:
+            return float(v)
+        except Exception:
+            continue
+    return None
+
+def _snapshot_is_fresh(data):
+    ts = _wallet_snapshot_ts(data)
+    if ts is None:
+        return False
+    return (time.time() - ts) <= WALLET_SNAPSHOT_MAX_AGE_SEC
+
+def _signed_binance_get(path: str, params: dict | None = None):
+    env = _load_bot_env()
+    api_key = (os.getenv("BINANCE_API_KEY") or env.get("BINANCE_API_KEY") or "").strip()
+    api_secret = (os.getenv("BINANCE_API_SECRET") or env.get("BINANCE_API_SECRET") or "").strip()
+    base_url = (os.getenv("BINANCE_BASE_URL") or env.get("BINANCE_BASE_URL") or "https://api.binance.com").strip()
+    if not api_key or not api_secret:
+        return None
+
+    payload = dict(params or {})
+    payload["timestamp"] = int(time.time() * 1000)
+    payload["recvWindow"] = 5000
+    query = urlencode(payload)
+    sig = hmac.new(api_secret.encode("utf-8"), query.encode("utf-8"), hashlib.sha256).hexdigest()
+    url = f"{base_url}{path}?{query}&signature={sig}"
+    req = urllib.request.Request(url, headers={"X-MBX-APIKEY": api_key, "User-Agent": "botdash"})
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+def _fetch_live_wallet_snapshot():
+    now = time.time()
+    cached = _LIVE_WALLET_CACHE.get("data")
+    if cached is not None and (now - float(_LIVE_WALLET_CACHE.get("ts", 0.0))) < LIVE_WALLET_CACHE_TTL_SEC:
+        return cached
+    try:
+        account = _signed_binance_get("/api/v3/account")
+        if not isinstance(account, dict):
+            return None
+        snap = {
+            "ts": now,
+            "source": "binance_live",
+            "balances": account.get("balances") or [],
+            "accountType": account.get("accountType"),
+            "updateTime": account.get("updateTime"),
+        }
+        _LIVE_WALLET_CACHE["ts"] = now
+        _LIVE_WALLET_CACHE["data"] = snap
+        return snap
     except Exception:
         return None
 
@@ -385,7 +473,14 @@ def load_wallet_snapshot():
         if p.exists():
             j = safe_read_json(p)
             if j is not None:
-                return {"file": str(p), "data": j}
+                if _snapshot_is_fresh(j):
+                    return {"file": str(p), "data": j}
+                break
+    live = _fetch_live_wallet_snapshot()
+    if live is not None:
+        return {"file": "binance_live", "data": live}
+    if 'j' in locals() and j is not None:
+        return {"file": str(p), "data": j}
     return {"file": "", "data": None}
 
 def normalize_wallet(wallet_data):
@@ -400,6 +495,8 @@ def normalize_wallet(wallet_data):
     if not wallet_data:
         return rows, fx
     data = wallet_data
+    if isinstance(data, dict) and isinstance(data.get("account"), dict):
+        data = data.get("account") or data
     # Common shapes:
     # - {"balances":[{"asset":"BTC","free":"0.1","locked":"0"}]}
     # - [{"asset":"USDC","free":...}]
