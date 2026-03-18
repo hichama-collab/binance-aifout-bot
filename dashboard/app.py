@@ -56,6 +56,8 @@ DASH_PASS = os.getenv("DASH_PASS", "")
 FX_USDC_EUR_ENV = os.getenv("FX_USDC_EUR", "").strip()
 WALLET_SNAPSHOT_MAX_AGE_SEC = float(os.getenv("WALLET_SNAPSHOT_MAX_AGE_SEC", "120"))
 LIVE_WALLET_CACHE_TTL_SEC = float(os.getenv("LIVE_WALLET_CACHE_TTL_SEC", "10"))
+FX_CACHE_TTL_SEC = float(os.getenv("FX_CACHE_TTL_SEC", "60"))
+PRICE_CACHE_TTL_SEC = float(os.getenv("PRICE_CACHE_TTL_SEC", "30"))
 WALLET_MIN_DISPLAY = float(os.getenv("WALLET_MIN_DISPLAY", "0.9"))
 
 
@@ -70,6 +72,8 @@ MAX_TAIL_LINES = 600
 
 app = Flask(__name__)
 _LIVE_WALLET_CACHE = {"ts": 0.0, "data": None}
+_FX_CACHE = {"ts": 0.0, "usdc_eur": None}
+_PRICE_CACHE = {"ts": 0.0, "prices": None}
 
 # ---- auth ----
 def _unauthorized():
@@ -249,7 +253,7 @@ def parse_last_indicators(lines):
             data[key] = m.group(1)
     return data
 
-def load_trades_csv(csv_path: Path | None = None, max_rows: int = 1500):
+def load_trades_csv(csv_path: Path | None = None, max_rows: int | None = 1500):
     """
     Returns list[dict] for recent rows.
     If csv_path is None, aggregate every *_trades.csv under LOG_DIR.
@@ -289,7 +293,7 @@ def load_trades_csv(csv_path: Path | None = None, max_rows: int = 1500):
             continue
 
     rows.sort(key=lambda r: (str(r.get("ts_utc") or ""), str(r.get("symbol") or "")))
-    if len(rows) > max_rows:
+    if isinstance(max_rows, int) and max_rows > 0 and len(rows) > max_rows:
         rows = rows[-max_rows:]
     return rows, cols
 
@@ -303,6 +307,60 @@ def fnum(x):
         return float(s)
     except Exception:
         return None
+
+def parse_trade_ts(value):
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        if re.fullmatch(r"\d{10}(?:\.\d+)?", s):
+            return datetime.fromtimestamp(float(s), tz=timezone.utc)
+        if re.fullmatch(r"\d{13}", s):
+            return datetime.fromtimestamp(float(s) / 1000.0, tz=timezone.utc)
+    except Exception:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except Exception:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+    return None
+
+def extract_closed_pnl_rows(trades):
+    rows = []
+    for t in trades:
+        pnl = fnum(t.get("pnl"))
+        if pnl is None:
+            continue
+        ts = parse_trade_ts(t.get("ts_utc") or t.get("ts") or t.get("timestamp"))
+        rows.append({
+            "ts": ts,
+            "symbol": (t.get("symbol") or "").strip().upper(),
+            "pnl": pnl,
+            "src": t.get("src") or "",
+        })
+    rows.sort(key=lambda r: ((r.get("ts") or datetime.min.replace(tzinfo=timezone.utc)), r.get("symbol") or ""))
+    return rows
+
+def build_equity_points(pnl_rows, fx):
+    points = []
+    cum_usdc = 0.0
+    for row in pnl_rows:
+        cum_usdc += float(row.get("pnl") or 0.0)
+        ts = row.get("ts")
+        points.append({
+            "ts": ts.isoformat() if isinstance(ts, datetime) else "",
+            "usdc": round(cum_usdc, 6),
+            "eur": round(usdc_to_eur(cum_usdc, fx), 6) if fx is not None else None,
+            "symbol": row.get("symbol") or "",
+        })
+    return points
 
 def compute_stats(trades):
     # pnl column may be missing
@@ -382,6 +440,72 @@ def _fetch_fx_usdc_eur_binance():
         return 1.0 / price
     except Exception:
         return None
+
+def _fetch_all_ticker_prices_binance():
+    url = "https://api.binance.com/api/v3/ticker/price"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "botdash"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        if not isinstance(data, list):
+            return None
+        prices = {}
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            symbol = str(item.get("symbol") or "").strip().upper()
+            price = fnum(item.get("price"))
+            if symbol and isinstance(price, float) and price > 0:
+                prices[symbol] = price
+        return prices
+    except Exception:
+        return None
+
+def get_all_ticker_prices():
+    now = time.time()
+    cached = _PRICE_CACHE.get("prices")
+    if isinstance(cached, dict) and (now - float(_PRICE_CACHE.get("ts", 0.0))) < PRICE_CACHE_TTL_SEC:
+        return cached
+
+    prices = _fetch_all_ticker_prices_binance()
+    _PRICE_CACHE["ts"] = now
+    _PRICE_CACHE["prices"] = prices if isinstance(prices, dict) else None
+    return _PRICE_CACHE["prices"]
+
+def asset_to_usdc(asset, total, prices):
+    try:
+        qty = float(total)
+    except Exception:
+        return None
+    if qty <= 0:
+        return None
+
+    asset = str(asset or "").strip().upper()
+    if not asset:
+        return None
+    if asset == "USDC":
+        return qty
+    if not isinstance(prices, dict) or not prices:
+        return None
+
+    direct = prices.get(f"{asset}USDC")
+    if isinstance(direct, (int, float)) and direct > 0:
+        return qty * float(direct)
+
+    inverse = prices.get(f"USDC{asset}")
+    if isinstance(inverse, (int, float)) and inverse > 0:
+        return qty / float(inverse)
+
+    via_usdt = prices.get(f"{asset}USDT")
+    usdt_usdc = prices.get("USDTUSDC")
+    if isinstance(via_usdt, (int, float)) and via_usdt > 0 and isinstance(usdt_usdc, (int, float)) and usdt_usdc > 0:
+        return qty * float(via_usdt) * float(usdt_usdc)
+
+    via_usdt_inverse = prices.get(f"USDT{asset}")
+    if isinstance(via_usdt_inverse, (int, float)) and via_usdt_inverse > 0 and isinstance(usdt_usdc, (int, float)) and usdt_usdc > 0:
+        return qty / float(via_usdt_inverse) * float(usdt_usdc)
+
+    return None
 
 def get_fx_usdc_eur():
     # Priority:
@@ -487,6 +611,7 @@ def load_wallet_snapshot():
 def normalize_wallet(wallet_data):
     # Output list[{asset, free, locked, total, value_usdc, value_eur}]
     fx = get_fx_usdc_eur()
+    prices = get_all_ticker_prices()
     rows = []
 
     def has_visible_balance(free, locked, total, value_usdc, value_eur):
@@ -545,6 +670,8 @@ def normalize_wallet(wallet_data):
         # compute for USDC itself
         if v_usdc is None and asset == "USDC":
             v_usdc = total
+        if v_usdc is None and total is not None:
+            v_usdc = asset_to_usdc(asset, total, prices)
         if v_eur is None and v_usdc is not None and fx is not None:
             v_eur = usdc_to_eur(v_usdc, fx)
         if not has_visible_balance(free, locked, total, v_usdc, v_eur):
@@ -762,30 +889,39 @@ def api_pnl():
     UI expects bucket pnl for: session/week/month/year + trades/winrate/profit_factor.
     Uses latest *_trades.csv.
     """
-    trades, _cols = load_trades_csv()
+    trades, _cols = load_trades_csv(max_rows=None)
     trades_path = find_latest(LOG_DIR, "*_trades.csv")
     if not trades:
-        return jsonify(ok=True, session=None, week=None, month=None, year=None, trades=0, winrate=None, profit_factor=None, source=None)
+        return jsonify(
+            ok=True,
+            session=None,
+            week=None,
+            month=None,
+            year=None,
+            trades=0,
+            winrate=None,
+            profit_factor=None,
+            source=None,
+            equity_points=[],
+        )
 
     fx = get_fx_usdc_eur()
     now = datetime.now(timezone.utc)
+    pnl_rows = extract_closed_pnl_rows(trades)
+    session_rows = []
+    if trades_path and Path(trades_path).exists():
+        session_trades, _ = load_trades_csv(csv_path=Path(trades_path), max_rows=None)
+        session_rows = extract_closed_pnl_rows(session_trades)
 
-    def parse_ts(s):
-        try:
-            return datetime.fromisoformat(s.replace("Z","+00:00"))
-        except Exception:
-            return None
-
-    def bucket(days=None):
+    def bucket(days=None, rows=None):
         cutoff = None
         if days is not None:
             cutoff = now - timedelta(days=days)
         pnl_vals = []
-        for t in trades:
-            ts = parse_ts(t.get("ts_utc") or "")
-            pnl = fnum(t.get("pnl"))
-            if ts is None or pnl is None:
-                continue
+        scope = rows if rows is not None else pnl_rows
+        for t in scope:
+            ts = t.get("ts")
+            pnl = t.get("pnl")
             if cutoff and ts < cutoff:
                 continue
             pnl_vals.append(pnl)
@@ -800,10 +936,11 @@ def api_pnl():
             "profit_factor": round((sum(wins) / abs(sum(losses))), 3) if losses else (round(sum(wins), 3) if wins else None),
         }
 
-    session = bucket(days=None)
-    week = bucket(days=7)
-    month = bucket(days=30)
-    year = bucket(days=365)
+    session = bucket(rows=session_rows or pnl_rows)
+    week = bucket(days=7, rows=pnl_rows)
+    month = bucket(days=30, rows=pnl_rows)
+    year = bucket(days=365, rows=pnl_rows)
+    equity_points = build_equity_points(pnl_rows[-400:], fx)
 
     # winrate/profit_factor cannot be derived reliably without closed-trade PnL; keep null
     return jsonify(
@@ -816,7 +953,8 @@ def api_pnl():
         winrate=session["winrate"],
         profit_factor=session["profit_factor"],
         source=str(trades_path),
-        fx_usdc_eur=fx
+        fx_usdc_eur=fx,
+        equity_points=equity_points,
     )
 
 

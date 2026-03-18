@@ -148,6 +148,88 @@ function binanceSpotUrl(symbol) {
     if (pill) pill.textContent = `${rows.length} unités`;
   }
 
+  function drawEquityChart(points) {
+    const canvas = document.getElementById("equityChart");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(canvas.clientWidth || canvas.parentElement?.clientWidth || 640, 320);
+    const height = Math.max(canvas.clientHeight || 240, 180);
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    ctx.fillStyle = "rgba(148, 163, 184, 0.75)";
+    ctx.font = "12px sans-serif";
+
+    if (!points || !points.length) {
+      ctx.fillText("Pas assez de donnees pour tracer l'equity.", 16, 28);
+      return;
+    }
+
+    const values = points.map((p) => Number(p.usdc ?? 0)).filter((v) => Number.isFinite(v));
+    if (!values.length) {
+      ctx.fillText("Pas assez de donnees pour tracer l'equity.", 16, 28);
+      return;
+    }
+
+    const minV = Math.min(...values);
+    const maxV = Math.max(...values);
+    const range = Math.max(maxV - minV, 1e-9);
+    const padL = 52;
+    const padR = 16;
+    const padT = 16;
+    const padB = 26;
+    const plotW = Math.max(width - padL - padR, 10);
+    const plotH = Math.max(height - padT - padB, 10);
+
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.18)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i += 1) {
+      const y = padT + (plotH / 2) * i;
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(width - padR, y);
+      ctx.stroke();
+    }
+
+    const yFor = (v) => padT + plotH - (((v - minV) / range) * plotH);
+    const xFor = (idx) => padL + ((plotW * idx) / Math.max(points.length - 1, 1));
+
+    ctx.fillStyle = "rgba(148, 163, 184, 0.75)";
+    ctx.fillText(fmt(maxV, 2), 8, padT + 4);
+    ctx.fillText(fmt((minV + maxV) / 2, 2), 8, padT + plotH / 2 + 4);
+    ctx.fillText(fmt(minV, 2), 8, padT + plotH + 4);
+
+    ctx.beginPath();
+    points.forEach((p, idx) => {
+      const x = xFor(idx);
+      const y = yFor(Number(p.usdc ?? 0));
+      if (idx === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = "rgba(59, 130, 246, 0.95)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    const last = points[points.length - 1];
+    const lastX = xFor(points.length - 1);
+    const lastY = yFor(Number(last.usdc ?? 0));
+    ctx.fillStyle = "rgba(96, 165, 250, 1)";
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(148, 163, 184, 0.75)";
+    ctx.fillText(points[0].ts ? new Date(points[0].ts).toLocaleDateString() : "", padL, height - 8);
+    const endLabel = last.ts ? new Date(last.ts).toLocaleDateString() : "";
+    const labelWidth = ctx.measureText(endLabel).width;
+    ctx.fillText(endLabel, width - padR - labelWidth, height - 8);
+  }
+
   function renderTokenNow(st) {
     if (!$("#token-now")) return;
     const sym = (st.token?.symbol || st.token?.SYMBOL || "--");
@@ -334,17 +416,17 @@ function binanceSpotUrl(symbol) {
       if (pill) pill.textContent = pnl.fx_usdc_eur ? `FX: ${fmt(pnl.fx_usdc_eur,4)} EUR` : "--";
 
       setText("kpi-session", pnl.session?.usdc != null ? `${fmt(pnl.session.usdc,2)} USDC | ${fmt(pnl.session.eur,2)} EUR` : "--");
-      setText("kpi-week", pnl.week?.usdc != null ? `${fmt(pnl.week.usdc,2)} | ${fmt(pnl.week.eur,2)}` : "--");
-      setText("kpi-month", pnl.month?.usdc != null ? `${fmt(pnl.month.usdc,2)} | ${fmt(pnl.month.eur,2)}` : "--");
-      setText("kpi-year", pnl.year?.usdc != null ? `${fmt(pnl.year.usdc,2)} | ${fmt(pnl.year.eur,2)}` : "--");
+      setText("kpi-week", pnl.week?.usdc != null ? `${fmt(pnl.week.usdc,2)} USDC | ${fmt(pnl.week.eur,2)} EUR` : "--");
+      setText("kpi-month", pnl.month?.usdc != null ? `${fmt(pnl.month.usdc,2)} USDC | ${fmt(pnl.month.eur,2)} EUR` : "--");
+      setText("kpi-year", pnl.year?.usdc != null ? `${fmt(pnl.year.usdc,2)} USDC | ${fmt(pnl.year.eur,2)} EUR` : "--");
       setText("kpi-trades", pnl.trades != null ? fmtInt(pnl.trades) : "--");
       setText("kpi-winrate", pnl.winrate != null ? `${fmt(pnl.winrate,1)}%` : "--");
       setText("kpi-pf", pnl.profit_factor != null ? fmt(pnl.profit_factor,2) : "--");
+      drawEquityChart(pnl.equity_points || []);
     } catch (e) {
       if (pill) pill.textContent = `KO: ${e.message}`;
+      drawEquityChart([]);
     }
-
-    // Chart optional: keep if Chart.js exists in page (not bundled)
   }
 
   async function refreshAll() {
