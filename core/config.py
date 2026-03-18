@@ -125,6 +125,11 @@ class Config:
     # exit resilience
     sellBalUnavailableMaxLoops: int = 30
 
+    # early tape-exit (PSELL) guardrails
+    psellMinAgeSec: float = 25.0
+    psellMinLossPct: float = 0.0035
+    psellConfirmTicks: int = 4
+
     # entry warmup
     allowWarmupEntry: bool = False
 
@@ -231,6 +236,9 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("qty_mismatch_step_fraction", "qtyMismatchStepFraction"),
         ("mom_relax_strong_mult", "momRelaxStrongMult"),
         ("mom_relax_mid_mult", "momRelaxMidMult"),
+        ("psell_min_age_sec", "psellMinAgeSec"),
+        ("psell_min_loss_pct", "psellMinLossPct"),
+        ("psell_confirm_ticks", "psellConfirmTicks"),
     ]:
         if k_yaml in p and k_cfg in fields:
             updates[k_cfg] = p[k_yaml]

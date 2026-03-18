@@ -44,10 +44,23 @@ def _json_safe(obj):
 APP_TITLE = "botdash"
 
 # ---- config (env) ----
-BASE_DIR = Path(os.getenv("BOT_BASE_DIR", "/opt/binance-aifout-bot")).resolve()
-LOG_DIR = Path(os.getenv("BOT_LOG_DIR", str(BASE_DIR / "data" / "logs"))).resolve()
-RUNTIME_DIR = Path(os.getenv("BOT_RUNTIME_DIR", str(BASE_DIR / "data" / "runtime"))).resolve()
-SERVICE_ENV = Path(os.getenv("BOT_SERVICE_ENV", str(BASE_DIR / ".service.env"))).resolve()
+def _resolve_runtime_path(env_name: str, default_path: str, repo_relative: str) -> Path:
+    raw = os.getenv(env_name, default_path)
+    candidate = Path(raw).expanduser().resolve()
+    if candidate.exists():
+        return candidate
+
+    repo_base = Path(__file__).resolve().parents[1]
+    fallback = (repo_base / repo_relative).resolve()
+    if fallback.exists():
+        return fallback
+    return candidate
+
+
+BASE_DIR = _resolve_runtime_path("BOT_BASE_DIR", "/opt/binance-aifout-bot", ".")
+LOG_DIR = _resolve_runtime_path("BOT_LOG_DIR", str(BASE_DIR / "data" / "logs"), "data/logs")
+RUNTIME_DIR = _resolve_runtime_path("BOT_RUNTIME_DIR", str(BASE_DIR / "data" / "runtime"), "data/runtime")
+SERVICE_ENV = _resolve_runtime_path("BOT_SERVICE_ENV", str(BASE_DIR / ".service.env"), ".service.env")
 
 DASH_USER = os.getenv("DASH_USER", "")
 DASH_PASS = os.getenv("DASH_PASS", "")

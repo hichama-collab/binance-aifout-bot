@@ -855,13 +855,23 @@ def main():
                 sellSignal = False
                 if has_new_tick and (P1 is not None) and (P2 is not None) and (P3 is not None):
                     age_sec = max(0.0, time.time() - float(getattr(pos, "ts_entry", time.time())))
-                    min_signal_exit_sec = max(12.0, float(getattr(cfg, "entryFillTtlSec", 2.5)) * 4.0)
+                    min_signal_exit_sec = max(
+                        float(getattr(cfg, "psellMinAgeSec", 25.0) or 25.0),
+                        float(getattr(cfg, "entryFillTtlSec", 2.5)) * 4.0,
+                    )
                     weak_tape = (momPct <= 0.0) or (upRatio < max(0.35, float(getattr(cfg, "momMinUpRatio", 0.0)) * 0.6))
-                    below_entry_guard = float(pos.entry) * (1.0 - max(float(getattr(cfg, "feeBufPct", 0.0) or 0.0) * 0.5, 0.0008))
+                    min_loss_pct = max(
+                        float(getattr(cfg, "psellMinLossPct", 0.0035) or 0.0035),
+                        float(getattr(cfg, "feeBufPct", 0.0) or 0.0) * 1.25,
+                    )
+                    below_entry_guard = float(pos.entry) * (1.0 - min_loss_pct)
+                    confirm_ticks = max(3, int(getattr(cfg, "psellConfirmTicks", 4) or 4))
+                    descending_tape = (P1 < P2) and (P2 < P3)
+                    if confirm_ticks >= 4 and (P4 is not None):
+                        descending_tape = descending_tape and (P3 < P4)
                     sellSignal = (
                         age_sec >= min_signal_exit_sec
-                        and (P1 < P2)
-                        and (P2 < P3)
+                        and descending_tape
                         and (P3 < below_entry_guard)
                         and weak_tape
                     )

@@ -1,6 +1,6 @@
 profiles:
   major:
-    mom_min_up_ratio: 0.8
+    mom_min_up_ratio: 0.9
     mom_range_min_pct: 0
     mom_use_instant: false
     mom_lookback: 5
@@ -14,7 +14,7 @@ profiles:
     rsi_min: 25
     rsi_max: 90
     entry_fill_ttl_sec: 3.0
-    entry_cooldown_sec: 12
+    entry_cooldown_sec: 20
     entry_cross_spread: false
     hold_csv_every: 10
     hold_log_every: 5
@@ -25,7 +25,7 @@ profiles:
     wallet_retry_backoff_sec: 0.4
     order_rest_max_retries: 3
     order_rest_backoff_sec: 0.2
-    allow_warmup_entry: true
+    allow_warmup_entry: false
     ticks_keep_min_sec: 40
     mom_relax_strong_mult: 0.6
     mom_relax_mid_mult: 0.8
@@ -34,16 +34,19 @@ profiles:
     armPct: 0.006
     trailPct: 0.004
     feeBufPct: 0.0015
+    psell_min_age_sec: 30
+    psell_min_loss_pct: 0.0035
+    psell_confirm_ticks: 4
     tp_min_pct: 0.004
     maxPosTime: 240
     hardMaxPosTime: 1200
     cap_usdc: 75
     mom_max_pct: 0.006
     rsi_buy_max: 68
-    mom_min_pct: 0.0008
+    mom_min_pct: 0.0012
     mom_window_sec: 20
-    min_range_entry_pct: 0.0012
-    min_range_vs_spread: 2.5
+    min_range_entry_pct: 0.0020
+    min_range_vs_spread: 3.5
     min_order_notional_usdc: 10.0
 
   midcap:
