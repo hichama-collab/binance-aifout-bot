@@ -1,6 +1,6 @@
 profiles:
   major:
-    mom_min_up_ratio: 0.7
+    mom_min_up_ratio: 0.8
     mom_range_min_pct: 0
     mom_use_instant: false
     mom_lookback: 5
@@ -35,15 +35,15 @@ profiles:
     trailPct: 0.006
     feeBufPct: 0.0015
     tp_min_pct: 0.004
-    maxPosTime: 300
+    maxPosTime: 240
     hardMaxPosTime: 1200
-    cap_usdc: 10000
-    mom_max_pct: 0.01
+    cap_usdc: 75
+    mom_max_pct: 0.006
     rsi_buy_max: 68
-    mom_min_pct: 0.0003
+    mom_min_pct: 0.0008
     mom_window_sec: 20
-    min_range_entry_pct: 0.0005
-    min_range_vs_spread: 1.2
+    min_range_entry_pct: 0.0012
+    min_range_vs_spread: 2.5
     min_order_notional_usdc: 10.0
 
   midcap:

@@ -80,7 +80,7 @@ class Config:
 
     dryRun: bool = False
     strategyName: str = 'momentum'
-    profileName: str = 'strict'
+    profileName: str = 'major'
 
     # sizing / risk (tunable via config/risk.yaml)
     maxUsdcPerTrade: float = 50.0
@@ -159,7 +159,7 @@ def loadConfig() -> Config:
     dry = os.getenv("DRY_RUN", "").strip().lower() in ("1", "true", "yes", "on")
     trades_csv = os.getenv("TRADES_CSV", "").strip()
     strat = os.getenv('STRATEGY', 'momentum').strip().lower() or 'momentum'
-    prof = (os.getenv('PROFILE') or 'strict').strip().lower() or 'strict'
+    prof = (os.getenv('PROFILE') or 'major').strip().lower() or 'major'
 
     cfg = Config(apiKey=apiKey, apiSecret=apiSecret, dryRun=dry, strategyName=strat, profileName=prof)
     if trades_csv:
@@ -179,7 +179,7 @@ def _loadRiskYaml(path: Path):
 
 def applyRiskConfig(cfg: Config) -> Config:
     data = _loadRiskYaml(cfg.riskYaml)
-    prof = (getattr(cfg, "profileName", None) or "strict").lower()
+    prof = (getattr(cfg, "profileName", None) or "major").lower()
     strat = (getattr(cfg, "strategyName", None) or "momentum").lower()
 
     p = (data.get("profiles") or {}).get(prof) or {}
@@ -247,7 +247,7 @@ def applyRiskConfig(cfg: Config) -> Config:
 
 
 def pickProfile() -> StrategyProfile:
-    name = (os.getenv("PROFILE") or "strict").strip().lower()
+    name = (os.getenv("PROFILE") or "major").strip().lower()
     base = PROFILES.get(name, PROFILES["strict"])
 
     # allow tuning via config/risk.yaml (no hardcoded thresholds required)

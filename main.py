@@ -584,6 +584,68 @@ def main():
                 buySignal = (P1 > P2) and (P2 > P3) and (P3 > P4)
 
             if buySignal:
+                max_mom_pct = float(getattr(cfg, "momMaxPct", 1.0) or 1.0)
+                min_range_entry_pct = float(getattr(cfg, "minRangeEntryPct", 0.0) or 0.0)
+                min_range_vs_spread = float(getattr(cfg, "minRangeVsSpread", 0.0) or 0.0)
+                required_range_pct = max(min_range_entry_pct, float(spread) * min_range_vs_spread)
+
+                if not momOk:
+                    maybe_hold(
+                        now,
+                        'HOLD_MOM',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
+                if max_mom_pct > 0 and momPct > max_mom_pct:
+                    maybe_hold(
+                        now,
+                        'HOLD_CHASE',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
+                if required_range_pct > 0 and momRangePct < required_range_pct:
+                    maybe_hold(
+                        now,
+                        'HOLD_RANGE',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
                 if spread > spreadLimit:
                     maybe_hold(
                         now,
@@ -641,7 +703,35 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                spend = min(cap, usdc)
+                # Refresh quote balance right before placing a BUY and keep a small
+                # safety margin to avoid Binance "insufficient balance" rejects.
+                live_usdc = get_usdc_balance_safe(bx, cfg)
+                if live_usdc is not None:
+                    usdc = live_usdc
+
+                fee_buf = float(getattr(cfg, "feeBufPct", 0.0) or 0.0)
+                buy_safety_buf = max(fee_buf, 0.0025)
+                spendable_usdc = max(0.0, float(usdc) * (1.0 - buy_safety_buf))
+                spend = min(cap, spendable_usdc)
+
+                if spend < float(minNotional):
+                    maybe_hold(
+                        now,
+                        'HOLD_MIN_NOTIONAL',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
 
                 # BUY LIMIT at ASK (rounded up to tick)
                 buyPx = round_tick_up(float(ask), tick)
@@ -764,7 +854,17 @@ def main():
             if exitReason is None and (pos is not None) and (pos.entry > 0):
                 sellSignal = False
                 if has_new_tick and (P1 is not None) and (P2 is not None) and (P3 is not None):
-                    sellSignal = (P1 < P3) and (P3 < float(pos.entry))
+                    age_sec = max(0.0, time.time() - float(getattr(pos, "ts_entry", time.time())))
+                    min_signal_exit_sec = max(12.0, float(getattr(cfg, "entryFillTtlSec", 2.5)) * 4.0)
+                    weak_tape = (momPct <= 0.0) or (upRatio < max(0.35, float(getattr(cfg, "momMinUpRatio", 0.0)) * 0.6))
+                    below_entry_guard = float(pos.entry) * (1.0 - max(float(getattr(cfg, "feeBufPct", 0.0) or 0.0) * 0.5, 0.0008))
+                    sellSignal = (
+                        age_sec >= min_signal_exit_sec
+                        and (P1 < P2)
+                        and (P2 < P3)
+                        and (P3 < below_entry_guard)
+                        and weak_tape
+                    )
                 if sellSignal:
                     exitReason = f"PSELL P1={P1} P2={P2} P3={P3} P4={P4} entry={pos.entry}"
             

@@ -160,26 +160,49 @@ def parse_last_indicators(lines):
             data[key] = m.group(1)
     return data
 
-def load_trades_csv(csv_path: Path, max_rows: int = 1500):
+def load_trades_csv(csv_path: Path | None = None, max_rows: int = 1500):
     """
-    returns list[dict] for last rows
-    expected columns (best effort): ts_utc,symbol,event,side,qty,price,reason,pnl,profile,dry_run
+    Returns list[dict] for recent rows.
+    If csv_path is None, aggregate every *_trades.csv under LOG_DIR.
     """
-    if not csv_path or not csv_path.exists():
-        return [], []
     rows = []
     cols = []
-    try:
-        with csv_path.open("r", newline="", encoding="utf-8", errors="ignore") as f:
-            reader = csv.DictReader(f)
-            cols = reader.fieldnames or []
-            for r in reader:
-                rows.append(r)
-        if len(rows) > max_rows:
-            rows = rows[-max_rows:]
-        return rows, cols
-    except Exception:
+    paths = []
+    if csv_path is None:
+        paths = sorted(LOG_DIR.glob("*_trades.csv"))
+    elif csv_path.exists():
+        paths = [csv_path]
+
+    if not paths:
         return [], []
+
+    for path in paths:
+        try:
+            with path.open("r", newline="", encoding="utf-8", errors="ignore") as f:
+                reader = csv.DictReader(f)
+                if not cols and reader.fieldnames:
+                    cols = reader.fieldnames
+                symbol_from_file = path.name.split("_trades.csv")[0]
+                for r in reader:
+                    row = dict(r)
+                    if not row.get("symbol"):
+                        row["symbol"] = symbol_from_file
+                    row.setdefault("ts_utc", row.get("utc") or row.get("timestamp") or "")
+                    row.setdefault("event", "")
+                    row.setdefault("reason", "")
+                    row.setdefault("side", "")
+                    row.setdefault("qty", "")
+                    row.setdefault("price", "")
+                    row.setdefault("pnl", row.get("pnl_usdc") or "")
+                    row["src"] = path.name
+                    rows.append(row)
+        except Exception:
+            continue
+
+    rows.sort(key=lambda r: (str(r.get("ts_utc") or ""), str(r.get("symbol") or "")))
+    if len(rows) > max_rows:
+        rows = rows[-max_rows:]
+    return rows, cols
 
 def fnum(x):
     try:
@@ -497,6 +520,11 @@ def api_status():
 
     return jsonify({
         "ok": True,
+        "host": os.uname().nodename,
+        "utc": utc_now_str(),
+        "base": str(BASE_DIR),
+        "logs": str(LOG_DIR),
+        "fx_usdc_eur": get_fx_usdc_eur(),
         "ts_utc": utc_now_str(),
         "token": {"symbol": symbol, "profile": profile, "dry_run": dry_run},
         "units": units_list,
@@ -521,16 +549,14 @@ def api_token_now():
 @app.route("/api/stats")
 @require_basic_auth
 def api_stats():
-    # latest trades csv
-    csv_path = find_latest("*_trades.csv")
-    trades, cols = load_trades_csv(csv_path) if csv_path else ([], [])
+    trades, cols = load_trades_csv()
     stats = compute_stats(trades)
 
     # session: from last BOOT marker if present
     # best effort: use all current file as "session"
     return jsonify({
         "ok": True,
-        "file": str(csv_path) if csv_path else "",
+        "file": str(find_latest("*_trades.csv") or ""),
         "columns": cols,
         "kpi": stats,
         "last_trades": trades[-30:],
@@ -600,53 +626,18 @@ def api_control():
     action = str(body.get("action", "")).strip().lower()
     if not unit or action not in ("start", "stop", "restart"):
         return jsonify(ok=False, error="bad request"), 400
-    res = systemctl(action, unit)
-    return jsonify(ok=res.get('ok', False), unit=unit, action=action, active=res.get('active'), output=res.get('output',''), error=res.get('error'))
+    ok, out = systemctl(action, unit)
+    return jsonify(ok=ok, unit=unit, action=action, output=out, error="" if ok else out)
 
 @app.route("/api/trades")
 @require_basic_auth
 def api_trades():
     """
-    Last 10 traded symbols with net result (buys/sells) from latest *_trades.csv
+    Recent trade/decision rows for the dashboard table.
     """
-    trades_path = find_latest(LOG_DIR, "*_trades.csv")
-    if not trades_path:
-        return jsonify(ok=True, tokens=[], source=None)
-    trades, _cols = load_trades_csv(trades_path)
-    # group by symbol, keep most recent 10 symbols by last ts
-    by_symbol = {}
-    for t in trades:
-        sym = t.get("symbol") or ""
-        if not sym:
-            continue
-        ts = t.get("ts_utc") or ""
-        rec = by_symbol.setdefault(sym, {"symbol": sym, "first_ts": ts, "last_ts": ts, "net_usdc": 0.0, "trades": 0})
-        if ts and (not rec["first_ts"] or ts < rec["first_ts"]):
-            rec["first_ts"] = ts
-        if ts and (not rec["last_ts"] or ts > rec["last_ts"]):
-            rec["last_ts"] = ts
-        side = (t.get("side") or "").upper()
-        qty = float(t.get("qty") or 0.0)
-        price = float(t.get("price") or 0.0)
-        usdc = qty * price
-        # net: sells - buys
-        if side == "SELL":
-            rec["net_usdc"] += usdc
-        elif side == "BUY":
-            rec["net_usdc"] -= usdc
-        rec["trades"] += 1
-
-    tokens = list(by_symbol.values())
-    # sort by last_ts desc and take 10
-    tokens.sort(key=lambda r: r.get("last_ts") or "", reverse=True)
-    tokens = tokens[:10]
-
-    fx = get_fx_usdc_eur()
-    for r in tokens:
-        r["net_usdc"] = round(float(r["net_usdc"]), 6)
-        r["net_eur"] = round(float(r["net_usdc"]) * fx, 6) if fx else None
-        r["period"] = f'{r.get("first_ts","")} → {r.get("last_ts","")}'
-    return jsonify(ok=True, tokens=tokens, source=str(trades_path), fx_usdc_eur=fx)
+    trades, _cols = load_trades_csv()
+    rows = sorted(trades, key=lambda t: str(t.get("ts_utc") or ""), reverse=True)[:120]
+    return jsonify(ok=True, rows=rows, source=str(find_latest("*_trades.csv") or ""))
 
 @app.route("/api/pnl")
 @require_basic_auth
@@ -655,11 +646,11 @@ def api_pnl():
     UI expects bucket pnl for: session/week/month/year + trades/winrate/profit_factor.
     Uses latest *_trades.csv.
     """
+    trades, _cols = load_trades_csv()
     trades_path = find_latest(LOG_DIR, "*_trades.csv")
-    if not trades_path:
+    if not trades:
         return jsonify(ok=True, session=None, week=None, month=None, year=None, trades=0, winrate=None, profit_factor=None, source=None)
 
-    trades, _cols = load_trades_csv(trades_path)
     fx = get_fx_usdc_eur()
     now = datetime.now(timezone.utc)
 
@@ -669,35 +660,28 @@ def api_pnl():
         except Exception:
             return None
 
-    # compute per-trade pnl isn't available in raw trades; approximate from grouped net per symbol within window
     def bucket(days=None):
         cutoff = None
         if days is not None:
             cutoff = now - timedelta(days=days)
-        # filter trades by cutoff
-        ftr = []
+        pnl_vals = []
         for t in trades:
             ts = parse_ts(t.get("ts_utc") or "")
-            if not ts:
+            pnl = fnum(t.get("pnl"))
+            if ts is None or pnl is None:
                 continue
             if cutoff and ts < cutoff:
                 continue
-            ftr.append(t)
-        # net USDC = sells - buys for that window
-        net = 0.0
-        for t in ftr:
-            side = (t.get("side") or "").upper()
-            qty = float(t.get("qty") or 0.0)
-            price = float(t.get("price") or 0.0)
-            usdc = qty * price
-            if side == "SELL":
-                net += usdc
-            elif side == "BUY":
-                net -= usdc
+            pnl_vals.append(pnl)
+        net = sum(pnl_vals)
+        wins = [v for v in pnl_vals if v > 0]
+        losses = [v for v in pnl_vals if v < 0]
         return {
             "usdc": round(net, 6),
             "eur": round(net * fx, 6) if fx else None,
-            "trades": len(ftr),
+            "trades": len(pnl_vals),
+            "winrate": round((len(wins) / len(pnl_vals) * 100.0), 2) if pnl_vals else None,
+            "profit_factor": round((sum(wins) / abs(sum(losses))), 3) if losses else (round(sum(wins), 3) if wins else None),
         }
 
     session = bucket(days=None)
@@ -713,8 +697,8 @@ def api_pnl():
         month=month,
         year=year,
         trades=session["trades"],
-        winrate=None,
-        profit_factor=None,
+        winrate=session["winrate"],
+        profit_factor=session["profit_factor"],
         source=str(trades_path),
         fx_usdc_eur=fx
     )
@@ -788,7 +772,7 @@ def api_config():
 @require_basic_auth
 def api_summary():
     csv_path = find_latest("*_trades.csv")
-    trades, _ = load_trades_csv(csv_path) if csv_path else ([], [])
+    trades, _ = load_trades_csv()
     rows, fx = summarize_pnl_by_symbol(trades)
 
     # hide empty tokens (no trades)
