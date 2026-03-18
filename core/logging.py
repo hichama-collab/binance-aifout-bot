@@ -22,13 +22,27 @@ def _log_dir(cfg) -> Path:
 def _prefixed(name: str, symbol: str | None) -> str:
     if not symbol:
         return name
-    # Keep filenames simple and deterministic.
     return f"{symbol}_{name}"
+
+
+def _run_stamp(cfg) -> str:
+    stamp = getattr(cfg, "_log_run_stamp", "")
+    if stamp:
+        return stamp
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    setattr(cfg, "_log_run_stamp", stamp)
+    return stamp
+
+
+def _artifact_name(cfg, symbol: str | None, suffix: str) -> str:
+    if not symbol:
+        return suffix
+    return f"{symbol}_{_run_stamp(cfg)}_{suffix}"
 
 
 def tradeLogger(cfg, symbol: str | None = None):
     logDir = _log_dir(cfg)
-    logFile = logDir / _prefixed("trades.log", symbol)
+    logFile = logDir / _artifact_name(cfg, symbol, "trades.log")
 
     # Ensure the file exists even if no trade happens.
     logFile.touch(exist_ok=True)
@@ -43,7 +57,7 @@ def tradeLogger(cfg, symbol: str | None = None):
 
 def errorLogger(cfg, symbol: str | None = None):
     logDir = _log_dir(cfg)
-    logFile = logDir / _prefixed("errors.log", symbol)
+    logFile = logDir / _artifact_name(cfg, symbol, "errors.log")
 
     # Ensure the file exists even if no error happens.
     logFile.touch(exist_ok=True)
@@ -62,7 +76,7 @@ def errorLogger(cfg, symbol: str | None = None):
 
 def tradeCsvLogger(cfg, symbol: str | None = None):
     logDir = _log_dir(cfg)
-    csvFile = logDir / _prefixed("trades.csv", symbol)
+    csvFile = logDir / _artifact_name(cfg, symbol, "trades.csv")
 
     def log(row: dict):
         cols = [
@@ -94,7 +108,7 @@ def ensureCsvHeader(cfg, symbol: str | None = None):
         "p1","p2","p3","p4","entry_vs_mid_pct","mid_vs_entry_pct"
     ]
     logDir = _log_dir(cfg)
-    csvFile = logDir / _prefixed("trades.csv", symbol)
+    csvFile = logDir / _artifact_name(cfg, symbol, "trades.csv")
     if (not csvFile.exists()) or csvFile.stat().st_size == 0:
         with open(csvFile, "a", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=cols)

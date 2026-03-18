@@ -267,6 +267,21 @@ def parse_last_indicators(lines):
             data[key] = m.group(1)
     return data
 
+
+def parse_log_artifact_name(name: str, kind: str):
+    patterns = {
+        "trades_csv": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}-\d{4,6}))?_trades\.csv$",
+        "trades_log": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}-\d{4,6}))?_trades\.log$",
+        "errors_log": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}-\d{4,6}))?_errors\.log$",
+    }
+    pat = patterns.get(kind)
+    if not pat:
+        return None
+    m = re.match(pat, name)
+    if not m:
+        return None
+    return {"symbol": m.group("symbol"), "run": m.groupdict().get("run") or ""}
+
 def load_trades_csv(csv_path: Path | None = None, max_rows: int | None = 1500):
     """
     Returns list[dict] for recent rows.
@@ -289,11 +304,14 @@ def load_trades_csv(csv_path: Path | None = None, max_rows: int | None = 1500):
                 reader = csv.DictReader(f)
                 if not cols and reader.fieldnames:
                     cols = reader.fieldnames
-                symbol_from_file = path.name.split("_trades.csv")[0]
+                parsed_name = parse_log_artifact_name(path.name, "trades_csv") or {}
+                symbol_from_file = parsed_name.get("symbol") or path.name.split("_trades.csv")[0]
                 for r in reader:
                     row = dict(r)
                     if not row.get("symbol"):
                         row["symbol"] = symbol_from_file
+                    if parsed_name.get("run"):
+                        row.setdefault("run_id", parsed_name["run"])
                     row.setdefault("ts_utc", row.get("utc") or row.get("timestamp") or "")
                     row.setdefault("event", "")
                     row.setdefault("reason", "")
@@ -700,7 +718,7 @@ def usdc_to_eur(usdc, fx):
         return None
 
 def summarize_pnl_by_symbol(trades):
-    # returns list of {symbol, pnl_usdc, pnl_eur, trades, last_ts}
+    # returns list of {symbol, pnl_usdc, pnl_eur, trades, last_ts, buy_usdc, sell_usdc, pnl_pct}
     fx = get_fx_usdc_eur()
     agg = {}
     for r in trades:
@@ -708,11 +726,28 @@ def summarize_pnl_by_symbol(trades):
         if not sym:
             continue
         pnl = fnum(r.get("pnl"))
-        if pnl is None:
+        qty = fnum(r.get("qty"))
+        price = fnum(r.get("price"))
+        side = (r.get("side") or r.get("event") or "").strip().upper()
+        if pnl is None and (qty is None or price is None):
             continue
         ts = (r.get("ts_utc") or r.get("ts") or "").strip()
-        a = agg.get(sym) or {"symbol": sym, "pnl_usdc": 0.0, "trades": 0, "last_ts": ts}
-        a["pnl_usdc"] += pnl
+        a = agg.get(sym) or {
+            "symbol": sym,
+            "pnl_usdc": 0.0,
+            "trades": 0,
+            "last_ts": ts,
+            "buy_usdc": 0.0,
+            "sell_usdc": 0.0,
+        }
+        if pnl is not None:
+            a["pnl_usdc"] += pnl
+        notional = (qty * price) if qty is not None and price is not None else None
+        if notional is not None:
+            if side == "BUY":
+                a["buy_usdc"] += notional
+            elif side == "SELL":
+                a["sell_usdc"] += notional
         a["trades"] += 1
         if ts:
             a["last_ts"] = ts
@@ -720,10 +755,18 @@ def summarize_pnl_by_symbol(trades):
     rows = []
     for sym, a in agg.items():
         pnl_usdc = a["pnl_usdc"]
+        buy_usdc = round(a["buy_usdc"], 6) if a["buy_usdc"] else 0.0
+        sell_usdc = round(a["sell_usdc"], 6) if a["sell_usdc"] else 0.0
+        pnl_pct = (pnl_usdc / buy_usdc * 100.0) if buy_usdc > 0 else None
         rows.append({
             "symbol": sym,
             "pnl_usdc": round(pnl_usdc, 6),
             "pnl_eur": round(usdc_to_eur(pnl_usdc, fx), 6) if fx is not None else None,
+            "buy_usdc": buy_usdc,
+            "buy_eur": round(usdc_to_eur(buy_usdc, fx), 6) if fx is not None else None,
+            "sell_usdc": sell_usdc,
+            "sell_eur": round(usdc_to_eur(sell_usdc, fx), 6) if fx is not None else None,
+            "pnl_pct": round(pnl_pct, 3) if pnl_pct is not None else None,
             "trades": a["trades"],
             "last_ts": a["last_ts"],
         })

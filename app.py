@@ -233,8 +233,19 @@ def _parse_trade_logs(bot_log_dir: Path) -> list[dict]:
     qty_re = re.compile(r"\bqty\b\s*[:=]\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
     price_re = re.compile(r"\bprice\b\s*[:=]\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
 
+    def _artifact_symbol(name: str, kind: str) -> str:
+        pats = {
+            "trades_log": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}-\d{4,6}))?_trades\.log$",
+            "trades_csv": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}-\d{4,6}))?_trades\.csv$",
+        }
+        m = re.match(pats[kind], name)
+        if m:
+            return m.group("symbol")
+        suffix = "_trades.log" if kind == "trades_log" else "_trades.csv"
+        return name.split(suffix)[0]
+
     for log_path in sorted(bot_log_dir.glob("*_trades.log")):
-        symbol = log_path.name.split("_trades.log")[0]
+        symbol = _artifact_symbol(log_path.name, "trades_log")
         try:
             with log_path.open("r", encoding="utf-8", errors="replace") as f:
                 for line in f:
@@ -287,7 +298,7 @@ def load_trades_csv() -> tuple[list[dict], dict]:
 
     for csv_path in sorted(LOG_DIR.glob("*_trades.csv")):
         meta["files"].append(str(csv_path.name))
-        symbol_from_file = csv_path.name.split("_trades.csv")[0]
+        symbol_from_file = _artifact_symbol(csv_path.name, "trades_csv")
 
         try:
             with csv_path.open("r", newline="", encoding="utf-8", errors="replace") as f:
@@ -565,4 +576,3 @@ def api_wallet():
         "fx_usdc_eur": fx,
         "rows": filtered,
     }))
-

@@ -9,8 +9,8 @@
   <div class="card card-blue col-12">
     <div class="card-head">
       <div>
-        <div class="card-title">Wallet Spot</div>
-        <div class="card-sub">Valeurs en <b>USDC</b> et <b>EUR</b> (taux live)</div>
+        <div class="card-title">Capital disponible</div>
+        <div class="card-sub">Lecture portefeuille en <b>USDC</b> et <b>EUR</b>, utile pour voir ce qui reste deployable.</div>
       </div>
       <div class="pill" id="wallet-total">--</div>
     </div>
@@ -37,8 +37,8 @@
   <div class="card card-purple col-12 col-lg-6">
     <div class="card-head">
       <div>
-        <div class="card-title">Token Now</div>
-        <div class="card-sub">Ce que le bot est censé trader maintenant</div>
+        <div class="card-title">Token suivi maintenant</div>
+        <div class="card-sub">L'actif actuellement cible par la logique de selection.</div>
       </div>
       <div class="pill pill-purple" id="token-now-pill">--</div>
     </div>
@@ -53,8 +53,8 @@
   <div class="card card-green col-12 col-lg-6">
     <div class="card-head">
       <div>
-        <div class="card-title">Position Live</div>
-        <div class="card-sub">Ce qui est réellement en position (si ouvert)</div>
+        <div class="card-title">Position en cours</div>
+        <div class="card-sub">Lecture directe de l'exposition reelle si un trade est ouvert.</div>
       </div>
       <div class="pill pill-green" id="pos-pill">--</div>
     </div>
@@ -72,8 +72,8 @@
   <div class="card card-amber col-12">
     <div class="card-head">
       <div>
-        <div class="card-title">Services</div>
-        <div class="card-sub">État + dernière activité</div>
+        <div class="card-title">Moteurs actifs</div>
+        <div class="card-sub">Etat des composants qui font tourner le bot et l'interface.</div>
       </div>
       <div class="pill pill-amber" id="svc-pill">--</div>
     </div>
@@ -99,7 +99,7 @@
     <div class="card-head">
       <div>
         <div class="card-title">Derniers Tokens Tradés (10)</div>
-        <div class="card-sub">Période + résultat net (buys/sells)</div>
+        <div class="card-sub">Chaque ligne raconte un run: budget engage, budget recupere et resultat net.</div>
       </div>
       <div class="pill pill-red" id="tr-pill">--</div>
     </div>
@@ -109,13 +109,16 @@
           <tr>
             <th>Token</th>
             <th>Période</th>
+            <th class="right">Entrée USDC</th>
+            <th class="right">Sortie USDC</th>
             <th class="right">Net USDC</th>
+            <th class="right">Net %</th>
             <th class="right">Net EUR</th>
             <th class="right">Trades</th>
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="5" class="muted">Chargement...</td></tr>
+          <tr><td colspan="8" class="muted">Chargement...</td></tr>
         </tbody>
       </table>
     </div>
@@ -125,8 +128,8 @@
   <div class="card card-slate col-12">
     <div class="card-head">
       <div>
-        <div class="card-title">Dernières décisions</div>
-        <div class="card-sub">Ce que le bot a décidé, lisible “trader”</div>
+        <div class="card-title">Lecture des dernières actions</div>
+        <div class="card-sub">Vue simplifiee pour comprendre ce que le bot vient de faire ou refuser.</div>
       </div>
       <div class="pill" id="dec-pill">--</div>
     </div>
@@ -135,15 +138,16 @@
         <thead>
           <tr>
             <th>Heure</th>
-            <th>Événement</th>
-            <th>Raison</th>
+            <th>Token</th>
+            <th>Action</th>
+            <th>Lecture</th>
             <th class="right">Prix</th>
             <th class="right">Qté</th>
-            <th class="right">PnL</th>
+            <th class="right">Impact</th>
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="6" class="muted">Chargement...</td></tr>
+          <tr><td colspan="7" class="muted">Chargement...</td></tr>
         </tbody>
       </table>
     </div>

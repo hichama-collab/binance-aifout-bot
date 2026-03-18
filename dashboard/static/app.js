@@ -36,10 +36,26 @@
   }
 
   function fmtDateTime(ts) {
-    if (!ts) return "--";
-    const d = new Date(ts);
-    if (Number.isNaN(d.getTime())) return ts;
+    const d = parseDateValue(ts);
+    if (!d) return "--";
     return d.toLocaleString();
+  }
+
+  function parseDateValue(ts) {
+    if (ts === null || ts === undefined || ts === "") return null;
+    const raw = String(ts).trim();
+    if (!raw) return null;
+    if (/^\d{10}$/.test(raw)) {
+      const d = new Date(Number(raw) * 1000);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    if (/^\d{13}$/.test(raw)) {
+      const d = new Date(Number(raw));
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return ts;
+    return d;
   }
 
   function fmtAgo(sec) {
@@ -96,27 +112,34 @@ function binanceSpotUrl(symbol) {
   function sidebarInit() {
     const btn = $("#btn-menu");
     const sb = $("#sidebar");
+    const overlay = $("#sidebar-overlay");
     if (!btn || !sb) return;
-    btn.addEventListener("click", () => sb.classList.toggle("open"));
+    const syncMenu = (open) => {
+      sb.classList.toggle("open", open);
+      if (overlay) overlay.classList.toggle("active", open);
+      btn.classList.toggle("active", open);
+    };
+    btn.addEventListener("click", () => syncMenu(!sb.classList.contains("open")));
+    if (overlay) overlay.addEventListener("click", () => syncMenu(false));
     document.addEventListener("click", (e) => {
-      if (window.innerWidth > 960) return;
+      if (window.innerWidth > 1099) return;
       const t = e.target;
-      if (!sb.contains(t) && t !== btn && !btn.contains(t)) sb.classList.remove("open");
+      if (!sb.contains(t) && t !== btn && !btn.contains(t)) syncMenu(false);
     });
   }
 
   async function loadHeader() {
     try {
       const st = await jget("/api/status");
-      setText("hdr-host", `host: ${st.host || "--"}`);
-      setText("hdr-utc", `utc: ${st.utc || "--"}`);
+      setText("hdr-host", st.host || "--");
+      setText("hdr-utc", st.utc || "--");
       setText("kv-base", st.base || "--");
       setText("kv-logs", st.logs || "--");
       const fx = st.fx_usdc_eur;
       setText("kv-fx", fx ? `1 USDC ≈ ${fmt(fx, 4)} EUR` : "--");
-      setText("footer-status", st.ok ? "OK" : "KO");
+      setText("footer-status", st.ok ? "En ligne" : "Incident");
     } catch (e) {
-      setText("footer-status", `KO: ${e.message}`);
+      setText("footer-status", "Incident");
     }
   }
 
@@ -367,21 +390,27 @@ function binanceSpotUrl(symbol) {
   function renderTokensTable(summary) {
     const tbl = $("#tokens-table tbody");
     if (!tbl) return;
-    const fx = summary.fx_usdc_eur;
     const rows = (summary.rows || []).slice(0, 10);
     if (!rows.length) {
-      tbl.innerHTML = `<tr><td colspan="5" class="muted">aucun trade</td></tr>`;
+      tbl.innerHTML = `<tr><td colspan="8" class="muted">aucun trade</td></tr>`;
       return;
     }
     tbl.innerHTML = rows.map(r => {
       const usdc = r.pnl_usdc ?? 0;
       const eur = r.pnl_eur ?? null;
+      const buyUsdc = r.buy_usdc ?? null;
+      const sellUsdc = r.sell_usdc ?? null;
+      const pnlPct = r.pnl_pct ?? null;
       const cls = pnlClass(usdc);
       const period = r.last_ts ? `${r.last_ts}` : "--";
+      const pctTxt = pnlPct == null ? "--" : `${fmt(pnlPct, 1)}%`;
       return `<tr>
         <td><b><a class="link" href="${binanceSpotUrl(r.symbol) || "#"}" target="_blank" rel="noreferrer">${r.symbol}</a></b></td>
         <td class="muted">${period}</td>
+        <td class="right">${buyUsdc === null ? "--" : fmt(buyUsdc, 2)}</td>
+        <td class="right">${sellUsdc === null ? "--" : fmt(sellUsdc, 2)}</td>
         <td class="right ${cls}">${fmt(usdc, 2)}</td>
+        <td class="right ${cls}">${pctTxt}</td>
         <td class="right ${cls}">${eur === null ? "--" : fmt(eur, 2)}</td>
         <td class="right">${fmtInt(r.trades)}</td>
       </tr>`;
@@ -395,21 +424,46 @@ function binanceSpotUrl(symbol) {
     if (!tbl) return;
     const rows = (trades.rows || []).slice(0, 10);
     if (!rows.length) {
-      tbl.innerHTML = `<tr><td colspan="6" class="muted">pas de décisions</td></tr>`;
+      tbl.innerHTML = `<tr><td colspan="7" class="muted">pas de décisions</td></tr>`;
       return;
+    }
+    function actionLabel(r) {
+      const ev = String(r.event || r.side || "").toUpperCase();
+      if (ev.includes("BUY")) return "Achat execute";
+      if (ev.includes("SELL")) return "Vente executee";
+      if (ev === "DECIDE_HOLD") return "Attente";
+      return ev || "--";
+    }
+    function reasonLabel(r) {
+      const reason = String(r.reason || "").toUpperCase();
+      if (!reason) return "--";
+      if (reason === "TP") return "Objectif de gain atteint";
+      if (reason === "STOP") return "Sortie de protection";
+      if (reason === "TIME") return "Sortie par duree max";
+      if (reason === "HOLD_MOM") return "Le momentum n'est pas assez confirme";
+      if (reason === "HOLD_RANGE") return "Le mouvement est encore trop faible";
+      if (reason === "HOLD_CHASE") return "Le prix est deja parti, le bot n'achete pas trop haut";
+      if (reason === "HOLD_SPREAD") return "Spread trop large";
+      if (reason === "HOLD_BAL") return "Solde non disponible";
+      if (reason === "HOLD_MIN_NOTIONAL") return "Montant trop petit pour Binance";
+      if (reason.startsWith("PBUY")) return "Signal d'achat valide";
+      if (reason.startsWith("PSELL")) return "Signal de vente valide";
+      return reason.replaceAll("_", " ").toLowerCase();
     }
     tbl.innerHTML = rows.map(r => {
       const ts = r.ts_utc || r.ts || "--";
-      const ev = r.event || r.side || "--";
-      const reason = r.reason || "--";
-      const price = r.price == null ? "--" : fmt(r.price, 8);
-      const qty = r.qty == null ? "--" : fmt(r.qty, 6);
-      const pnl = r.pnl == null ? "--" : fmt(r.pnl, 2);
+      const symbol = r.symbol || "--";
+      const price = r.price == null || r.price === "" ? "--" : fmt(r.price, 8);
+      const qty = r.qty == null || r.qty === "" ? "--" : fmt(r.qty, 6);
+      const pnl = r.pnl == null || r.pnl === "" ? "--" : fmt(r.pnl, 2);
       const cls = pnlClass(r.pnl);
+      const url = binanceSpotUrl(symbol);
+      const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${symbol}</a>` : symbol;
       return `<tr>
-        <td class="muted">${ts}</td>
-        <td><b>${ev}</b></td>
-        <td class="muted">${reason}</td>
+        <td class="muted">${fmtDateTime(ts)}</td>
+        <td><b>${symbolHtml}</b></td>
+        <td><b>${actionLabel(r)}</b></td>
+        <td class="muted">${reasonLabel(r)}</td>
         <td class="right">${price}</td>
         <td class="right">${qty}</td>
         <td class="right ${cls}">${pnl}</td>
