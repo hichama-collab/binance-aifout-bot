@@ -56,6 +56,7 @@ DASH_PASS = os.getenv("DASH_PASS", "")
 FX_USDC_EUR_ENV = os.getenv("FX_USDC_EUR", "").strip()
 WALLET_SNAPSHOT_MAX_AGE_SEC = float(os.getenv("WALLET_SNAPSHOT_MAX_AGE_SEC", "120"))
 LIVE_WALLET_CACHE_TTL_SEC = float(os.getenv("LIVE_WALLET_CACHE_TTL_SEC", "10"))
+WALLET_MIN_DISPLAY = float(os.getenv("WALLET_MIN_DISPLAY", "0.9"))
 
 
 # systemd units allowlist (security)
@@ -492,6 +493,15 @@ def normalize_wallet(wallet_data):
         values = (free, locked, total, value_usdc, value_eur)
         return any(isinstance(v, (int, float)) and abs(v) > 1e-12 for v in values)
 
+    def display_metric(row):
+        v_usdc = row.get("value_usdc")
+        if isinstance(v_usdc, (int, float)):
+            return float(v_usdc)
+        total = row.get("total")
+        if isinstance(total, (int, float)):
+            return float(total)
+        return 0.0
+
     if not wallet_data:
         return rows, fx
     data = wallet_data
@@ -547,8 +557,8 @@ def normalize_wallet(wallet_data):
             "value_usdc": round(v_usdc, 6) if v_usdc is not None else None,
             "value_eur": round(v_eur, 6) if v_eur is not None else None,
         })
-    # sort: value_usdc desc else asset
-    rows.sort(key=lambda r: (r.get("value_usdc") is not None, r.get("value_usdc") or 0.0), reverse=True)
+    rows = [r for r in rows if display_metric(r) > WALLET_MIN_DISPLAY]
+    rows.sort(key=lambda r: (display_metric(r), r.get("asset") or ""), reverse=True)
     return rows, fx
 
 # ---- routes ----
