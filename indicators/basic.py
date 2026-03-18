@@ -23,7 +23,12 @@ def dec(x) -> Decimal:
 def fmt(x, quantum=Decimal("0.00000001")) -> str:
     d = dec(x)
     q = dec(quantum)
-    return str(d.quantize(q, rounding=ROUND_DOWN).normalize())
+    s = format(d.quantize(q, rounding=ROUND_DOWN), "f")
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    if s in ("", "-0"):
+        s = "0"
+    return s
 
 
 class Signals:
@@ -59,4 +64,3 @@ def computeSignals(bx, symbol, profile):
         Signals(ema1_ok, rsi1, vol_ok),
         Signals(ema5_ok, rsi1, vol_ok)
     )
-

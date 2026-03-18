@@ -84,7 +84,16 @@ function binanceSpotUrl(symbol) {
     const tbl = $("#wallet-table tbody");
     if (!tbl) return;
 
-    const rows = data.rows || [];
+    const rows = (data.rows || []).filter((r) => {
+      const values = [
+        Number(r.free ?? 0),
+        Number(r.locked ?? 0),
+        Number(r.total ?? 0),
+        Number(r.value_usdc ?? r.usdc_value ?? 0),
+        Number(r.value_eur ?? r.eur_value ?? 0),
+      ];
+      return values.some((v) => Number.isFinite(v) && Math.abs(v) > 1e-12);
+    });
     const fx = data.fx_usdc_eur;
     let totalUsdc = 0;
     let totalEur = 0;

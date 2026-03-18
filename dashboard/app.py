@@ -392,6 +392,11 @@ def normalize_wallet(wallet_data):
     # Output list[{asset, free, locked, total, value_usdc, value_eur}]
     fx = get_fx_usdc_eur()
     rows = []
+
+    def has_visible_balance(free, locked, total, value_usdc, value_eur):
+        values = (free, locked, total, value_usdc, value_eur)
+        return any(isinstance(v, (int, float)) and abs(v) > 1e-12 for v in values)
+
     if not wallet_data:
         return rows, fx
     data = wallet_data
@@ -412,6 +417,8 @@ def normalize_wallet(wallet_data):
                 free = fnum(v.get("free") or v.get("available"))
                 locked = fnum(v.get("locked") or v.get("freeze"))
                 total = (free or 0.0) + (locked or 0.0)
+                if not has_visible_balance(free, locked, total, None, None):
+                    continue
                 rows.append({"asset": str(k).upper(), "free": free, "locked": locked, "total": total, "value_usdc": None, "value_eur": None})
         return rows, fx
     for b in balances:
@@ -433,6 +440,8 @@ def normalize_wallet(wallet_data):
             v_usdc = total
         if v_eur is None and v_usdc is not None and fx is not None:
             v_eur = usdc_to_eur(v_usdc, fx)
+        if not has_visible_balance(free, locked, total, v_usdc, v_eur):
+            continue
         rows.append({
             "asset": asset,
             "free": free,

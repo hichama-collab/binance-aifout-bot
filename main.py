@@ -897,6 +897,19 @@ def main():
 
             sellPx = bid
             sellPx = round_tick_down(sellPx, tick)
+            try:
+                print(
+                    "SELL_TRIGGER",
+                    "reason", exitReason,
+                    "qty", fmt(sellQty, step),
+                    "bid", fmt(bid, tick),
+                    "px", fmt(sellPx, tick),
+                    "entry", fmt(getattr(pos, "entry", 0.0), tick),
+                    "high", fmt(getattr(pos, "high", 0.0), tick),
+                    "stop", fmt(getattr(pos, "stop", 0.0), tick),
+                )
+            except Exception:
+                pass
 
             try:
                 order = placeLimit(

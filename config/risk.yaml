@@ -30,9 +30,9 @@ profiles:
     mom_relax_strong_mult: 0.6
     mom_relax_mid_mult: 0.8
     riskPct: 0.008
-    tpPct: 0.014
-    armPct: 0.012
-    trailPct: 0.006
+    tpPct: 0.009
+    armPct: 0.006
+    trailPct: 0.004
     feeBufPct: 0.0015
     tp_min_pct: 0.004
     maxPosTime: 240
