@@ -76,6 +76,7 @@ WALLET_MIN_DISPLAY = float(os.getenv("WALLET_MIN_DISPLAY", "0.9"))
 
 # systemd units allowlist (security)
 UNITS = [
+    "botdash.service",
     "binance-aifout-bot.service",
     "token-profile-selector.service",
     "token-profile-selector.timer",
@@ -335,7 +336,10 @@ def parse_trade_ts(value):
     except Exception:
         return None
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
     except Exception:
         pass
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
@@ -356,6 +360,9 @@ def extract_closed_pnl_rows(trades):
             "ts": ts,
             "symbol": (t.get("symbol") or "").strip().upper(),
             "pnl": pnl,
+            "price": fnum(t.get("price")),
+            "qty": fnum(t.get("qty")),
+            "event": (t.get("event") or t.get("side") or "").strip(),
             "src": t.get("src") or "",
         })
     rows.sort(key=lambda r: ((r.get("ts") or datetime.min.replace(tzinfo=timezone.utc)), r.get("symbol") or ""))
@@ -374,6 +381,128 @@ def build_equity_points(pnl_rows, fx):
             "symbol": row.get("symbol") or "",
         })
     return points
+
+def compute_streaks(pnl_rows):
+    best_win = 0
+    best_loss = 0
+    cur_win = 0
+    cur_loss = 0
+    for row in pnl_rows:
+        pnl = float(row.get("pnl") or 0.0)
+        if pnl > 0:
+            cur_win += 1
+            cur_loss = 0
+        elif pnl < 0:
+            cur_loss += 1
+            cur_win = 0
+        else:
+            cur_win = 0
+            cur_loss = 0
+        best_win = max(best_win, cur_win)
+        best_loss = max(best_loss, cur_loss)
+    return {"win": best_win, "loss": best_loss}
+
+def compute_max_drawdown(pnl_rows):
+    peak = 0.0
+    cum = 0.0
+    max_dd = 0.0
+    for row in pnl_rows:
+        cum += float(row.get("pnl") or 0.0)
+        peak = max(peak, cum)
+        max_dd = max(max_dd, peak - cum)
+    return round(max_dd, 6)
+
+def summarize_tokens(pnl_rows, fx, limit=5):
+    agg = {}
+    for row in pnl_rows:
+        symbol = row.get("symbol") or "?"
+        item = agg.setdefault(symbol, {"symbol": symbol, "pnl_usdc": 0.0, "trades": 0, "last_ts": None})
+        item["pnl_usdc"] += float(row.get("pnl") or 0.0)
+        item["trades"] += 1
+        ts = row.get("ts")
+        if isinstance(ts, datetime) and (item["last_ts"] is None or ts > item["last_ts"]):
+            item["last_ts"] = ts
+
+    rows = []
+    for item in agg.values():
+        pnl_usdc = round(item["pnl_usdc"], 6)
+        rows.append({
+            "symbol": item["symbol"],
+            "pnl_usdc": pnl_usdc,
+            "pnl_eur": round(usdc_to_eur(pnl_usdc, fx), 6) if fx is not None else None,
+            "trades": item["trades"],
+            "last_ts": item["last_ts"].isoformat() if isinstance(item["last_ts"], datetime) else "",
+        })
+
+    rows_by_best = sorted(rows, key=lambda r: (r["pnl_usdc"], r["trades"], r["symbol"]), reverse=True)
+    top = rows_by_best[:limit]
+    top_symbols = {row["symbol"] for row in top}
+    rows_by_worst = [row for row in sorted(rows, key=lambda r: (r["pnl_usdc"], -r["trades"], r["symbol"])) if row["symbol"] not in top_symbols]
+    return {"top": top, "bottom": rows_by_worst[:limit]}
+
+def build_recent_closed(pnl_rows, fx, limit=12):
+    rows = []
+    for row in reversed(pnl_rows):
+        pnl_usdc = round(float(row.get("pnl") or 0.0), 6)
+        rows.append({
+            "ts": row.get("ts").isoformat() if isinstance(row.get("ts"), datetime) else "",
+            "symbol": row.get("symbol") or "",
+            "event": row.get("event") or "",
+            "price": row.get("price"),
+            "qty": row.get("qty"),
+            "pnl_usdc": pnl_usdc,
+            "pnl_eur": round(usdc_to_eur(pnl_usdc, fx), 6) if fx is not None else None,
+            "src": row.get("src") or "",
+        })
+        if len(rows) >= limit:
+            break
+    return rows
+
+def build_quality_metrics(pnl_rows, fx):
+    pnl_vals = [float(row.get("pnl") or 0.0) for row in pnl_rows]
+    wins = [v for v in pnl_vals if v > 0]
+    losses = [v for v in pnl_vals if v < 0]
+    streaks = compute_streaks(pnl_rows)
+    best_trade = max(pnl_vals) if pnl_vals else None
+    worst_trade = min(pnl_vals) if pnl_vals else None
+    avg_win = (sum(wins) / len(wins)) if wins else None
+    avg_loss = (sum(losses) / len(losses)) if losses else None
+    max_dd = compute_max_drawdown(pnl_rows)
+    return {
+        "avg_win_usdc": round(avg_win, 6) if avg_win is not None else None,
+        "avg_win_eur": round(usdc_to_eur(avg_win, fx), 6) if avg_win is not None and fx is not None else None,
+        "avg_loss_usdc": round(avg_loss, 6) if avg_loss is not None else None,
+        "avg_loss_eur": round(usdc_to_eur(avg_loss, fx), 6) if avg_loss is not None and fx is not None else None,
+        "best_trade_usdc": round(best_trade, 6) if best_trade is not None else None,
+        "best_trade_eur": round(usdc_to_eur(best_trade, fx), 6) if best_trade is not None and fx is not None else None,
+        "worst_trade_usdc": round(worst_trade, 6) if worst_trade is not None else None,
+        "worst_trade_eur": round(usdc_to_eur(worst_trade, fx), 6) if worst_trade is not None and fx is not None else None,
+        "max_drawdown_usdc": max_dd,
+        "max_drawdown_eur": round(usdc_to_eur(max_dd, fx), 6) if fx is not None else None,
+        "longest_win_streak": streaks["win"],
+        "longest_loss_streak": streaks["loss"],
+    }
+
+def describe_last_trade(pnl_rows, now, fx):
+    if not pnl_rows:
+        return None
+    row = pnl_rows[-1]
+    ts = row.get("ts")
+    age_sec = None
+    if isinstance(ts, datetime):
+        age_sec = max(0, int((now - ts).total_seconds()))
+    pnl_usdc = round(float(row.get("pnl") or 0.0), 6)
+    return {
+        "ts": ts.isoformat() if isinstance(ts, datetime) else "",
+        "symbol": row.get("symbol") or "",
+        "event": row.get("event") or "",
+        "price": row.get("price"),
+        "qty": row.get("qty"),
+        "pnl_usdc": pnl_usdc,
+        "pnl_eur": round(usdc_to_eur(pnl_usdc, fx), 6) if fx is not None else None,
+        "src": row.get("src") or "",
+        "age_sec": age_sec,
+    }
 
 def compute_stats(trades):
     # pnl column may be missing
@@ -907,6 +1036,7 @@ def api_pnl():
     if not trades:
         return jsonify(
             ok=True,
+            today=None,
             session=None,
             week=None,
             month=None,
@@ -914,28 +1044,30 @@ def api_pnl():
             trades=0,
             winrate=None,
             profit_factor=None,
+            quality={},
+            last_trade=None,
+            token_rankings={"top": [], "bottom": []},
+            recent_closed=[],
             source=None,
             equity_points=[],
         )
 
     fx = get_fx_usdc_eur()
     now = datetime.now(timezone.utc)
+    today_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
     pnl_rows = extract_closed_pnl_rows(trades)
     session_rows = []
     if trades_path and Path(trades_path).exists():
         session_trades, _ = load_trades_csv(csv_path=Path(trades_path), max_rows=None)
         session_rows = extract_closed_pnl_rows(session_trades)
 
-    def bucket(days=None, rows=None):
-        cutoff = None
-        if days is not None:
-            cutoff = now - timedelta(days=days)
+    def bucket(cutoff=None, rows=None):
         pnl_vals = []
         scope = rows if rows is not None else pnl_rows
         for t in scope:
             ts = t.get("ts")
             pnl = t.get("pnl")
-            if cutoff and ts < cutoff:
+            if cutoff and (ts is None or ts < cutoff):
                 continue
             pnl_vals.append(pnl)
         net = sum(pnl_vals)
@@ -949,15 +1081,21 @@ def api_pnl():
             "profit_factor": round((sum(wins) / abs(sum(losses))), 3) if losses else (round(sum(wins), 3) if wins else None),
         }
 
+    today = bucket(cutoff=today_start, rows=pnl_rows)
     session = bucket(rows=session_rows or pnl_rows)
-    week = bucket(days=7, rows=pnl_rows)
-    month = bucket(days=30, rows=pnl_rows)
-    year = bucket(days=365, rows=pnl_rows)
+    week = bucket(cutoff=now - timedelta(days=7), rows=pnl_rows)
+    month = bucket(cutoff=now - timedelta(days=30), rows=pnl_rows)
+    year = bucket(cutoff=now - timedelta(days=365), rows=pnl_rows)
     equity_points = build_equity_points(pnl_rows[-400:], fx)
+    quality = build_quality_metrics(pnl_rows, fx)
+    last_trade = describe_last_trade(pnl_rows, now, fx)
+    token_rankings = summarize_tokens(pnl_rows, fx, limit=5)
+    recent_closed = build_recent_closed(pnl_rows, fx, limit=12)
 
     # winrate/profit_factor cannot be derived reliably without closed-trade PnL; keep null
     return jsonify(
         ok=True,
+        today=today,
         session=session,
         week=week,
         month=month,
@@ -965,6 +1103,10 @@ def api_pnl():
         trades=session["trades"],
         winrate=session["winrate"],
         profit_factor=session["profit_factor"],
+        quality=quality,
+        last_trade=last_trade,
+        token_rankings=token_rankings,
+        recent_closed=recent_closed,
         source=str(trades_path),
         fx_usdc_eur=fx,
         equity_points=equity_points,

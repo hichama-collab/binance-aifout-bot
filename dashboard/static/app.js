@@ -25,6 +25,46 @@
     return "";
   }
 
+  function fmtPnlPair(usdc, eur) {
+    if (usdc === null || usdc === undefined || Number.isNaN(Number(usdc))) return "--";
+    return `${fmt(usdc, 2)} USDC | ${eur === null || eur === undefined ? "--" : fmt(eur, 2) + " EUR"}`;
+  }
+
+  function fmtBucket(bucket) {
+    if (!bucket || bucket.usdc === null || bucket.usdc === undefined) return "--";
+    return fmtPnlPair(bucket.usdc, bucket.eur);
+  }
+
+  function fmtDateTime(ts) {
+    if (!ts) return "--";
+    const d = new Date(ts);
+    if (Number.isNaN(d.getTime())) return ts;
+    return d.toLocaleString();
+  }
+
+  function fmtAgo(sec) {
+    if (sec === null || sec === undefined || Number.isNaN(Number(sec))) return "--";
+    const s = Math.max(0, Math.floor(Number(sec)));
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)} min`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h`;
+    return `${Math.floor(s / 86400)} j`;
+  }
+
+  function setPnlText(id, usdc, eur) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = fmtPnlPair(usdc, eur);
+    el.className = `v ${pnlClass(usdc)}`.trim();
+  }
+
+  function setMetricPnl(id, bucket) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = fmtBucket(bucket);
+    el.className = `kpi-v ${pnlClass(bucket?.usdc)}`.trim();
+  }
+
 
 function setHTML(id, html) {
   const el = document.getElementById(id);
@@ -230,6 +270,58 @@ function binanceSpotUrl(symbol) {
     ctx.fillText(endLabel, width - padR - labelWidth, height - 8);
   }
 
+  function renderStatsRankings(rankings) {
+    const tbl = $("#stats-tokens-table tbody");
+    if (!tbl) return;
+    const top = rankings?.top || [];
+    const bottom = rankings?.bottom || [];
+    const rows = [
+      ...top.map((r) => ({ ...r, bucket: "Top" })),
+      ...bottom.map((r) => ({ ...r, bucket: "Flop" })),
+    ];
+    if (!rows.length) {
+      tbl.innerHTML = `<tr><td colspan="5" class="muted">pas assez d'historique</td></tr>`;
+      return;
+    }
+    tbl.innerHTML = rows.map((r) => {
+      const cls = r.bucket === "Top" ? "rank-good" : "rank-bad";
+      const url = binanceSpotUrl(r.symbol);
+      const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${r.symbol}</a>` : r.symbol;
+      return `<tr>
+        <td class="${cls}">${r.bucket}</td>
+        <td><b>${symbolHtml}</b></td>
+        <td class="right ${pnlClass(r.pnl_usdc)}">${fmt(r.pnl_usdc, 2)}</td>
+        <td class="right">${fmtInt(r.trades)}</td>
+        <td class="muted">${fmtDateTime(r.last_ts)}</td>
+      </tr>`;
+    }).join("");
+    const pill = $("#stats-token-pill");
+    if (pill) pill.textContent = `${top.length} top | ${bottom.length} flop`;
+  }
+
+  function renderRecentClosed(rows) {
+    const tbl = $("#stats-recent-table tbody");
+    if (!tbl) return;
+    const list = rows || [];
+    if (!list.length) {
+      tbl.innerHTML = `<tr><td colspan="5" class="muted">aucun trade ferme</td></tr>`;
+      return;
+    }
+    tbl.innerHTML = list.map((r) => {
+      const url = binanceSpotUrl(r.symbol);
+      const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${r.symbol}</a>` : r.symbol;
+      return `<tr>
+        <td class="muted">${fmtDateTime(r.ts)}</td>
+        <td><b>${symbolHtml}</b></td>
+        <td class="right ${pnlClass(r.pnl_usdc)}">${fmt(r.pnl_usdc, 2)}</td>
+        <td>${r.event || "--"}</td>
+        <td class="muted">${r.src || "--"}</td>
+      </tr>`;
+    }).join("");
+    const pill = $("#stats-recent-pill");
+    if (pill) pill.textContent = `${list.length} lignes`;
+  }
+
   function renderTokenNow(st) {
     if (!$("#token-now")) return;
     const sym = (st.token?.symbol || st.token?.SYMBOL || "--");
@@ -409,22 +501,57 @@ function binanceSpotUrl(symbol) {
   }
 
   async function loadStatisticsPage() {
-    // reuse existing endpoint /api/pnl if present
     const pill = $("#pnl-pill");
     try {
       const pnl = await jget("/api/pnl");
-      if (pill) pill.textContent = pnl.fx_usdc_eur ? `FX: ${fmt(pnl.fx_usdc_eur,4)} EUR` : "--";
+      if (pill) pill.textContent = pnl.source ? `source: ${String(pnl.source).split("/").pop()}` : "--";
 
-      setText("kpi-session", pnl.session?.usdc != null ? `${fmt(pnl.session.usdc,2)} USDC | ${fmt(pnl.session.eur,2)} EUR` : "--");
-      setText("kpi-week", pnl.week?.usdc != null ? `${fmt(pnl.week.usdc,2)} USDC | ${fmt(pnl.week.eur,2)} EUR` : "--");
-      setText("kpi-month", pnl.month?.usdc != null ? `${fmt(pnl.month.usdc,2)} USDC | ${fmt(pnl.month.eur,2)} EUR` : "--");
-      setText("kpi-year", pnl.year?.usdc != null ? `${fmt(pnl.year.usdc,2)} USDC | ${fmt(pnl.year.eur,2)} EUR` : "--");
+      setMetricPnl("kpi-today", pnl.today);
+      setMetricPnl("kpi-session", pnl.session);
+      setMetricPnl("kpi-week", pnl.week);
+      setMetricPnl("kpi-month", pnl.month);
+      setMetricPnl("kpi-year", pnl.year);
       setText("kpi-trades", pnl.trades != null ? fmtInt(pnl.trades) : "--");
       setText("kpi-winrate", pnl.winrate != null ? `${fmt(pnl.winrate,1)}%` : "--");
       setText("kpi-pf", pnl.profit_factor != null ? fmt(pnl.profit_factor,2) : "--");
+
+      const quality = pnl.quality || {};
+      setPnlText("q-avg-win", quality.avg_win_usdc, quality.avg_win_eur);
+      setPnlText("q-avg-loss", quality.avg_loss_usdc, quality.avg_loss_eur);
+      setPnlText("q-best", quality.best_trade_usdc, quality.best_trade_eur);
+      setPnlText("q-worst", quality.worst_trade_usdc, quality.worst_trade_eur);
+      setText("q-win-streak", quality.longest_win_streak != null ? `${fmtInt(quality.longest_win_streak)} trades` : "--");
+      setText("q-loss-streak", quality.longest_loss_streak != null ? `${fmtInt(quality.longest_loss_streak)} trades` : "--");
+      const ddEl = document.getElementById("q-drawdown");
+      if (ddEl) {
+        ddEl.textContent = fmtPnlPair(quality.max_drawdown_usdc, quality.max_drawdown_eur);
+        ddEl.className = "v pos-bad";
+      }
+      setText("q-source", pnl.source ? String(pnl.source).split("/").pop() : "--");
+      const qualityPill = $("#quality-pill");
+      if (qualityPill) qualityPill.textContent = quality.max_drawdown_usdc != null ? `DD max ${fmt(quality.max_drawdown_usdc, 2)} USDC` : "--";
+
+      const last = pnl.last_trade || {};
+      const ltPill = $("#lasttrade-pill");
+      const lastUrl = binanceSpotUrl(last.symbol);
+      if (lastUrl) setHTML("lt-symbol", `<a class="link" href="${lastUrl}" target="_blank" rel="noreferrer">${last.symbol}</a>`);
+      else setText("lt-symbol", last.symbol || "--");
+      setText("lt-time", fmtDateTime(last.ts));
+      setText("lt-age", fmtAgo(last.age_sec));
+      setPnlText("lt-pnl", last.pnl_usdc, last.pnl_eur);
+      setText("lt-price", last.price != null ? fmt(last.price, 8) : "--");
+      setText("lt-qty", last.qty != null ? fmt(last.qty, 6) : "--");
+      setText("lt-event", last.event || "--");
+      setText("lt-source", last.src || "--");
+      if (ltPill) ltPill.textContent = last.age_sec != null ? `il y a ${fmtAgo(last.age_sec)}` : "aucun";
+
+      renderStatsRankings(pnl.token_rankings);
+      renderRecentClosed(pnl.recent_closed);
       drawEquityChart(pnl.equity_points || []);
     } catch (e) {
       if (pill) pill.textContent = `KO: ${e.message}`;
+      renderStatsRankings({ top: [], bottom: [] });
+      renderRecentClosed([]);
       drawEquityChart([]);
     }
   }
@@ -447,7 +574,7 @@ function binanceSpotUrl(symbol) {
     // auto refresh: dashboard + services states
     setInterval(() => {
       const p = window.location.pathname;
-      if (p === "/" || p.startsWith("/services")) refreshAll();
+      if (p === "/" || p.startsWith("/services") || p.startsWith("/statistics")) refreshAll();
     }, 5000);
   }
 

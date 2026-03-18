@@ -7,12 +7,13 @@
     <div class="card-head">
       <div>
         <div class="card-title">Performance</div>
-        <div class="card-sub">PnL / Winrate / Profit Factor (selon logs)</div>
+        <div class="card-sub">Vue rapide du realise, avec focus court terme et courbe d'equity.</div>
       </div>
       <div class="pill" id="pnl-pill">--</div>
     </div>
 
-    <div class="kpi-row" id="kpi-row">
+    <div class="stats-kpi-grid" id="kpi-row">
+      <div class="kpi"><div class="kpi-k">Aujourd'hui</div><div class="kpi-v" id="kpi-today">--</div></div>
       <div class="kpi"><div class="kpi-k">Session</div><div class="kpi-v" id="kpi-session">--</div></div>
       <div class="kpi"><div class="kpi-k">Semaine</div><div class="kpi-v" id="kpi-week">--</div></div>
       <div class="kpi"><div class="kpi-k">Mois</div><div class="kpi-v" id="kpi-month">--</div></div>
@@ -25,7 +26,79 @@
     <div class="chart-wrap">
       <canvas id="equityChart"></canvas>
     </div>
-    <div class="muted small">Graph: equity réalisée (si dispo dans tes logs).</div>
+    <div class="stats-foot muted small">Graph: equity realisee calculee a partir des trades fermes presents dans les logs.</div>
+  </div>
+
+  <div class="card card-purple col-12 col-lg-6">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Qualite d'execution</div>
+        <div class="card-sub">Comment le bot gagne, perd et encaisse ses creux.</div>
+      </div>
+      <div class="pill pill-purple" id="quality-pill">--</div>
+    </div>
+    <div class="kv2" id="quality-box">
+      <div class="k">Gain moyen</div><div class="v" id="q-avg-win">--</div>
+      <div class="k">Perte moyenne</div><div class="v" id="q-avg-loss">--</div>
+      <div class="k">Meilleur trade</div><div class="v" id="q-best">--</div>
+      <div class="k">Pire trade</div><div class="v" id="q-worst">--</div>
+      <div class="k">Serie gagnante</div><div class="v" id="q-win-streak">--</div>
+      <div class="k">Serie perdante</div><div class="v" id="q-loss-streak">--</div>
+      <div class="k">Drawdown max</div><div class="v" id="q-drawdown">--</div>
+      <div class="k">Source</div><div class="v" id="q-source">--</div>
+    </div>
+  </div>
+
+  <div class="card card-green col-12 col-lg-6">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Dernier trade ferme</div>
+        <div class="card-sub">Fraicheur des donnees et dernier PnL concret observe.</div>
+      </div>
+      <div class="pill pill-green" id="lasttrade-pill">--</div>
+    </div>
+    <div class="kv2" id="last-trade-box">
+      <div class="k">Token</div><div class="v" id="lt-symbol">--</div>
+      <div class="k">Heure</div><div class="v" id="lt-time">--</div>
+      <div class="k">Age</div><div class="v" id="lt-age">--</div>
+      <div class="k">PnL</div><div class="v" id="lt-pnl">--</div>
+      <div class="k">Prix</div><div class="v" id="lt-price">--</div>
+      <div class="k">Quantite</div><div class="v" id="lt-qty">--</div>
+      <div class="k">Evenement</div><div class="v" id="lt-event">--</div>
+      <div class="k">Log source</div><div class="v" id="lt-source">--</div>
+    </div>
+  </div>
+
+  <div class="card card-red col-12 col-lg-6">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Tokens forts / faibles</div>
+        <div class="card-sub">Top 5 et flop 5 par PnL realise.</div>
+      </div>
+      <div class="pill pill-red" id="stats-token-pill">--</div>
+    </div>
+    <div class="table-wrap">
+      <table class="table" id="stats-tokens-table">
+        <thead><tr><th>Classement</th><th>Token</th><th class="right">PnL USDC</th><th class="right">Trades</th><th>Dernier trade</th></tr></thead>
+        <tbody><tr><td colspan="5" class="muted">Chargement...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card card-slate col-12 col-lg-6">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Derniers trades fermes</div>
+        <div class="card-sub">Lecture rapide des dernieres lignes qui impactent l'equity.</div>
+      </div>
+      <div class="pill" id="stats-recent-pill">--</div>
+    </div>
+    <div class="table-wrap">
+      <table class="table" id="stats-recent-table">
+        <thead><tr><th>Heure</th><th>Token</th><th class="right">PnL USDC</th><th>Evenement</th><th>Source</th></tr></thead>
+        <tbody><tr><td colspan="5" class="muted">Chargement...</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </div>
 {% endblock %}

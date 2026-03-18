@@ -220,6 +220,12 @@ pre.jsonbox, pre.logbox{
 .kpi-k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
 .kpi-v{font-weight:900;font-size:16px;margin-top:6px}
 
+.stats-kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:10px 16px 16px}
+@media(min-width:900px){.stats-kpi-grid{grid-template-columns:repeat(4,1fr)}}
+.stats-foot{padding:0 16px 16px}
+.rank-good{color:rgba(34,197,94,.95);font-weight:800}
+.rank-bad{color:rgba(239,68,68,.95);font-weight:800}
+
 .chart-wrap{padding:0 16px 16px}
 
 .pos-good{color:rgba(34,197,94,.95);font-weight:900}
