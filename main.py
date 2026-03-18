@@ -315,18 +315,42 @@ def _maybe_reexec_on_token_change(current_symbol: str, pos, last_env_mtime: floa
         new_symbol = _read_service_env_symbol(env_path)
         if not new_symbol or new_symbol == current_symbol:
             return current_symbol, mtime
-        msg = f"TOKEN_SWITCH old={current_symbol} new={new_symbol} source=.service.env"
-        print(msg)
-        try:
-            logTrade(msg)
-        except Exception:
-            pass
-        os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), new_symbol])
+        _reexec_to_symbol(current_symbol, new_symbol, source=".service.env")
     except SystemExit:
         raise
     except Exception:
         return current_symbol, last_env_mtime
     return current_symbol, last_env_mtime
+
+
+def _reexec_to_symbol(current_symbol: str, new_symbol: str, *, source: str = ".service.env"):
+    msg = f"TOKEN_SWITCH old={current_symbol} new={new_symbol} source={source}"
+    print(msg)
+    try:
+        logTrade(msg)
+    except Exception:
+        pass
+    os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), new_symbol])
+
+
+def _pending_token_switch(current_symbol: str, last_env_mtime: float):
+    """
+    Read .service.env and report a requested symbol switch without re-execing yet.
+    Returns: (requested_symbol_or_none, updated_mtime)
+    """
+    env_path = Path(__file__).resolve().parent / ".service.env"
+    try:
+        if not env_path.exists():
+            return None, last_env_mtime
+        mtime = env_path.stat().st_mtime
+        if mtime == last_env_mtime:
+            return None, last_env_mtime
+        new_symbol = _read_service_env_symbol(env_path)
+        if not new_symbol or new_symbol == current_symbol:
+            return None, mtime
+        return new_symbol, mtime
+    except Exception:
+        return None, last_env_mtime
 
 def main():
     symbol = _resolve_start_symbol()
@@ -405,6 +429,8 @@ def main():
 
     syncState = {"next": 0.0}
     syncInfo = {"usdc": 0.0}
+    pendingSwitchSymbol = None
+    pendingSwitchLogged = None
 
     # ring buffer of (ts, price_ref). We store MID=(bestBid+bestAsk)/2 for P1..P4 logic.
     ticks = []
@@ -486,6 +512,11 @@ def main():
         free_usdc = 0.0
         try:
             now = time.time()
+
+            requested_symbol, observed_env_mtime = _pending_token_switch(symbol, last_env_mtime)
+            if requested_symbol:
+                pendingSwitchSymbol = requested_symbol
+                last_env_mtime = observed_env_mtime
             
             bid, ask, tick_ts, tick_seq = stream.snapshot()
             if bid <= 0 or ask <= 0:
@@ -505,6 +536,8 @@ def main():
             
             # cooldown log so it doesn't look frozen
             if now < cooldownUntil:
+                if pendingSwitchSymbol and pos is None:
+                    _reexec_to_symbol(symbol, pendingSwitchSymbol, source="pending_switch")
                 if now - lastChk >= cfg.chkEvery:
                     lastChk = now
                     left = cooldownUntil - now
@@ -593,11 +626,28 @@ def main():
             
             # hot-reload token from .service.env (IDLE only)
             symbol, last_env_mtime = _maybe_reexec_on_token_change(symbol, pos, last_env_mtime)
+            if pos is None and pendingSwitchSymbol == symbol:
+                pendingSwitchSymbol = None
+                pendingSwitchLogged = None
+
+            if pendingSwitchSymbol and pendingSwitchLogged != pendingSwitchSymbol:
+                msg = f"TOKEN_SWITCH_PENDING old={symbol} new={pendingSwitchSymbol} state={'IN_POS' if pos else 'IDLE'}"
+                print(msg)
+                logTrade(msg)
+                pendingSwitchLogged = pendingSwitchSymbol
 
             # ===== ENTRY (P algo, MID-based) =====
 # BUY if (P1 >= P2 >= P3 >= P4)
             buySignal = False
-            if has_new_tick and (P1 is not None) and (P2 is not None) and (P3 is not None) and (P4 is not None):
+            if (
+                pos is None
+                and not pendingSwitchSymbol
+                and has_new_tick
+                and (P1 is not None)
+                and (P2 is not None)
+                and (P3 is not None)
+                and (P4 is not None)
+            ):
                 buySignal = (P1 >= P2) and (P2 >= P3) and (P3 >= P4)
 
             if buySignal:
@@ -847,7 +897,9 @@ def main():
             # ===== EXIT =====
             # If position was adopted from wallet (entry=0), treat as untracked.
             # We do not fabricate an entry; we liquidate when sellable, otherwise we clear as dust.
-            if pos.entry <= 0:
+            if pendingSwitchSymbol:
+                exitReason = f"TOKEN_SWITCH new={pendingSwitchSymbol}"
+            elif pos.entry <= 0:
                 exitReason = "WALLET_UNTRACKED"
             else:
                 pos.update(bid, cfg, profile, tick=tick)
