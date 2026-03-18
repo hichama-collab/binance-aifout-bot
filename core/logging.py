@@ -6,6 +6,14 @@ import csv
 _RUN_STAMPS: dict[int, str] = {}
 
 
+def local_timestamp() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def local_run_stamp() -> str:
+    return datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+
+
 def ensureDataDir(dataDir: Path):
     dataDir.mkdir(parents=True, exist_ok=True)
 
@@ -31,7 +39,7 @@ def _run_stamp(cfg) -> str:
     stamp = _RUN_STAMPS.get(id(cfg), "")
     if stamp:
         return stamp
-    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    stamp = local_run_stamp()
     _RUN_STAMPS[id(cfg)] = stamp
     return stamp
 
@@ -50,7 +58,7 @@ def tradeLogger(cfg, symbol: str | None = None):
     logFile.touch(exist_ok=True)
 
     def log(msg: str):
-        ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        ts = local_timestamp()
         with open(logFile, "a", encoding="utf-8") as f:
             f.write(f"[{ts}] {msg}\n")
 
@@ -65,7 +73,7 @@ def errorLogger(cfg, symbol: str | None = None):
     logFile.touch(exist_ok=True)
 
     def log(msg: str, exc: Exception | None = None):
-        ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        ts = local_timestamp()
         with open(logFile, "a", encoding="utf-8") as f:
             f.write(f"[{ts}] {msg}\n")
             if exc is not None:

@@ -227,7 +227,7 @@ def _parse_trade_logs(bot_log_dir: Path) -> list[dict]:
         return out
 
     # Common patterns seen in logs: ISO timestamp + messages containing BUY/SELL (+ optional FILLED)
-    iso_re = re.compile(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?)(?:Z|\+00:00)?")
+    iso_re = re.compile(r"(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)")
     side_re = re.compile(r"\b(BUY|SELL)\b", re.IGNORECASE)
     pnl_re = re.compile(r"\bpnl(?:_usdc)?\b\s*[:=]\s*(-?\d+(?:\.\d+)?)", re.IGNORECASE)
     qty_re = re.compile(r"\bqty\b\s*[:=]\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
@@ -260,7 +260,7 @@ def _parse_trade_logs(bot_log_dir: Path) -> list[dict]:
                         continue
 
                     ts_m = iso_re.search(line)
-                    ts_utc = ts_m.group(1).replace(" ", "T") + "Z" if ts_m else None
+                    ts_utc = ts_m.group(1).replace(" ", "T") if ts_m else None
 
                     pnl_m = pnl_re.search(line)
                     qty_m = qty_re.search(line)

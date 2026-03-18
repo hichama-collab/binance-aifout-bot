@@ -45,8 +45,8 @@ profiles:
     rsi_buy_max: 68
     mom_min_pct: 0.0012
     mom_window_sec: 20
-    min_range_entry_pct: 0.0018
-    min_range_vs_spread: 3.2
+    min_range_entry_pct: 0.0010
+    min_range_vs_spread: 1.0
     min_order_notional_usdc: 10.0
 
   midcap:

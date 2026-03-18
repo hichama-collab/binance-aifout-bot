@@ -157,7 +157,7 @@ def orderbook_imbalance_ok(bx, symbol: str, min_ratio: float, depth_levels: int)
 
 
 from core.config import loadConfig, pickProfile, applyRiskConfig
-from core.logging import tradeLogger, tradeCsvLogger, errorLogger, ensureCsvHeader
+from core.logging import tradeLogger, tradeCsvLogger, errorLogger, ensureCsvHeader, local_timestamp
 from services.ipguard import vpnCheckOrDie
 
 from exchange.binance import Binance
@@ -456,6 +456,7 @@ def main():
         p2,
         p3,
         p4,
+        detail="",
     ):
         nonlocal lastHoldCsv
         if (now - lastHoldCsv) < holdCsvEvery:
@@ -495,15 +496,16 @@ def main():
         except Exception:
             pass
         try:
+            detail_suffix = f" {detail}" if detail else ""
             logTrade(
                 f"DECIDE_HOLD reason={reason} spread={spread*100:.4f}% mom={momPct*100:.4f}% "
                 f"range={momRangePct*100:.4f}% up={upRatio*100:.2f}% "
-                f"mid={mid:.8f} P1={p1} P2={p2} P3={p3} P4={p4}"
+                f"mid={mid:.8f} P1={p1} P2={p2} P3={p3} P4={p4}{detail_suffix}"
             )
             print(
                 f"DECIDE_HOLD reason={reason} spread={spread*100:.4f}% mom={momPct*100:.4f}% "
                 f"range={momRangePct*100:.4f}% up={upRatio*100:.2f}% "
-                f"mid={mid:.8f} P1={p1} P2={p2} P3={p3} P4={p4}"
+                f"mid={mid:.8f} P1={p1} P2={p2} P3={p3} P4={p4}{detail_suffix}"
             )
         except Exception:
             pass
@@ -696,6 +698,7 @@ def main():
                         P2,
                         P3,
                         P4,
+                        detail=f"required_range={required_range_pct*100:.4f}%",
                     )
                     time.sleep(cfg.idleSleep)
                     continue
@@ -715,6 +718,7 @@ def main():
                         P2,
                         P3,
                         P4,
+                        detail=f"spread_limit={spreadLimit*100:.4f}%",
                     )
                     time.sleep(cfg.idleSleep)
                     continue
@@ -859,7 +863,7 @@ def main():
                 logTrade(f"BUY symbol={symbol} qty={getattr(pos,'qty','')} entry={getattr(pos,'entry','')} P1={P1} P2={P2} P3={P3} P4={P4}")
                 entry_vs_mid_pct = ((float(getattr(pos, 'entry', 0.0)) - float(mid)) / float(mid) * 100.0) if mid > 0 else ""
                 logCsv({
-                    "ts_utc": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
+                    "ts_utc": local_timestamp(),
                     "symbol": symbol,
                     "event": "BUY_FILLED",
                     "side": "BUY",
@@ -1026,7 +1030,7 @@ def main():
             print("SELL_FILLED", sellQty, "@", fmt(exitPx), "PNL", fmt(pnl, Decimal('0.0001')), exitReason)
             logTrade(f"SELL symbol={symbol} qty={sellQty} exit={exitPx} pnl={pnl} reason={exitReason} profile={profile.name}")
             logCsv({
-                "ts_utc": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
+                "ts_utc": local_timestamp(),
                 "symbol": symbol,
                 "event": "SELL_FILLED",
                 "side": "SELL",
