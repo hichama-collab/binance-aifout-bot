@@ -280,6 +280,23 @@ def _read_service_env_symbol(env_path: Path) -> str | None:
         return None
 
 
+def _resolve_start_symbol() -> str | None:
+    """
+    Resolve trading symbol from argv, env, then .service.env.
+    This keeps the bot launchable even if systemd forgets to inject SYMBOL.
+    """
+    arg_symbol = sys.argv[1].strip().upper() if len(sys.argv) >= 2 else ""
+    if arg_symbol:
+        return arg_symbol
+
+    env_symbol = (os.getenv("SYMBOL") or "").strip().upper()
+    if env_symbol:
+        return env_symbol
+
+    env_path = Path(__file__).resolve().parent / ".service.env"
+    return _read_service_env_symbol(env_path)
+
+
 def _maybe_reexec_on_token_change(current_symbol: str, pos, last_env_mtime: float):
     """
     Hot-reload token only when IDLE (pos is None).
@@ -312,11 +329,11 @@ def _maybe_reexec_on_token_change(current_symbol: str, pos, last_env_mtime: floa
     return current_symbol, last_env_mtime
 
 def main():
-    if len(sys.argv) < 2:
+    symbol = _resolve_start_symbol()
+    if not symbol:
         print("USAGE: python3 main.py SYMBOLUSDC")
+        print("Or define SYMBOL in environment / .service.env")
         sys.exit(1)
-
-    symbol = sys.argv[1].strip().upper()
     last_env_mtime = 0.0
 
     cfg = loadConfig()

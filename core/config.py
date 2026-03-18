@@ -6,6 +6,17 @@ from dotenv import load_dotenv
 import yaml
 
 
+def _load_service_env() -> None:
+    """
+    Load runtime overrides from .service.env if present.
+    .env keeps API secrets; .service.env can override runtime knobs
+    like SYMBOL / PROFILE / DRY_RUN when systemd does not export them.
+    """
+    service_env = Path(".service.env")
+    if service_env.exists():
+        load_dotenv(service_env, override=True)
+
+
 @dataclass(frozen=True)
 class StrategyProfile:
     name: str
@@ -156,6 +167,7 @@ class Config:
 
 def loadConfig() -> Config:
     load_dotenv()
+    _load_service_env()
     apiKey = os.getenv("BINANCE_API_KEY")
     apiSecret = os.getenv("BINANCE_API_SECRET")
     if not apiKey or not apiSecret:
@@ -255,6 +267,7 @@ def applyRiskConfig(cfg: Config) -> Config:
 
 
 def pickProfile() -> StrategyProfile:
+    _load_service_env()
     name = (os.getenv("PROFILE") or "major").strip().lower()
     base = PROFILES.get(name, PROFILES["strict"])
 
