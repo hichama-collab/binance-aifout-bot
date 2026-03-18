@@ -3,6 +3,8 @@ from datetime import datetime
 import traceback
 import csv
 
+_RUN_STAMPS: dict[int, str] = {}
+
 
 def ensureDataDir(dataDir: Path):
     dataDir.mkdir(parents=True, exist_ok=True)
@@ -26,11 +28,11 @@ def _prefixed(name: str, symbol: str | None) -> str:
 
 
 def _run_stamp(cfg) -> str:
-    stamp = getattr(cfg, "_log_run_stamp", "")
+    stamp = _RUN_STAMPS.get(id(cfg), "")
     if stamp:
         return stamp
     stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    setattr(cfg, "_log_run_stamp", stamp)
+    _RUN_STAMPS[id(cfg)] = stamp
     return stamp
 
 
