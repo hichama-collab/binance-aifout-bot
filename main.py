@@ -606,24 +606,11 @@ def main():
                 min_range_vs_spread = float(getattr(cfg, "minRangeVsSpread", 0.0) or 0.0)
                 required_range_pct = max(min_range_entry_pct, float(spread) * min_range_vs_spread)
 
-                if not momOk:
-                    maybe_hold(
-                        now,
-                        'HOLD_MOM',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        bid,
-                        ask,
-                        mid,
-                        P1,
-                        P2,
-                        P3,
-                        P4,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
+                # Momentum gate intentionally disabled here.
+                # The P1 >= P2 >= P3 >= P4 check already validates the same
+                # short-term directional move and is enough as an anti-noise
+                # filter for entry. Keeping momOk on top of P1..P4 was
+                # redundant and blocked too many otherwise valid setups.
 
                 if max_mom_pct > 0 and momPct > max_mom_pct:
                     maybe_hold(
