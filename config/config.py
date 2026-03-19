@@ -147,6 +147,12 @@ class Config:
     reentryTrailCooldownSec: float = 60.0
     reentryRecoveryPct: float = 0.0015
 
+    # tape asymmetry defense
+    flowDefenseEnabled: bool = False
+    flowLookback: int = 8
+    flowMinRatio: float = 1.2
+    flowMaxSingleDropPct: float = 0.0025
+
     # anti-chase caps
     momMaxPct: float = 1.0
     rsiBuyMax: float = 100.0
@@ -245,6 +251,10 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("reentry_loss_cooldown_sec", "reentryLossCooldownSec"),
         ("reentry_trail_cooldown_sec", "reentryTrailCooldownSec"),
         ("reentry_recovery_pct", "reentryRecoveryPct"),
+        ("flow_defense_enabled", "flowDefenseEnabled"),
+        ("flow_lookback", "flowLookback"),
+        ("flow_min_ratio", "flowMinRatio"),
+        ("flow_max_single_drop_pct", "flowMaxSingleDropPct"),
         ("mom_max_pct", "momMaxPct"),
         ("rsi_buy_max", "rsiBuyMax"),
         ("qty_mismatch_step_fraction", "qtyMismatchStepFraction"),

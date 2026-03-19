@@ -40,6 +40,10 @@ profiles:
     reentry_loss_cooldown_sec: 90
     reentry_trail_cooldown_sec: 60
     reentry_recovery_pct: 0.0015
+    flow_defense_enabled: true
+    flow_lookback: 8
+    flow_min_ratio: 1.15
+    flow_max_single_drop_pct: 0.0025
     tp_min_pct: 0.004
     maxPosTime: 240
     hardMaxPosTime: 1200

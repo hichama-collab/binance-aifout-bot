@@ -132,6 +132,46 @@ def tick_confirmation_ok(ticks, lookback: int, min_pct: float):
     return (prog >= float(min_pct)), prog
 
 
+def flow_pressure_ok(ticks, lookback: int, min_ratio: float, max_single_drop_pct: float):
+    """Defensive tape quality filter.
+    Rejects fake strength where small upticks are repeatedly erased by larger downticks.
+    Uses recent MID ticks and compares cumulative up/down magnitudes.
+    Returns (ok, flow_ratio, worst_drop_pct, net_pct).
+    """
+    lookback = max(3, int(lookback))
+    if not ticks or len(ticks) < lookback:
+        return False, 0.0, 0.0, 0.0
+
+    recent = [float(px) for _, px in ticks[-lookback:]]
+    if recent[0] <= 0:
+        return False, 0.0, 0.0, 0.0
+
+    up_mag = 0.0
+    down_mag = 0.0
+    worst_drop_pct = 0.0
+    for i in range(1, len(recent)):
+        prev = float(recent[i - 1])
+        cur = float(recent[i])
+        if prev <= 0:
+            continue
+        d_pct = (cur - prev) / prev
+        if d_pct > 0:
+            up_mag += d_pct
+        elif d_pct < 0:
+            down_mag += (-d_pct)
+            if (-d_pct) > worst_drop_pct:
+                worst_drop_pct = (-d_pct)
+
+    flow_ratio = (up_mag / down_mag) if down_mag > 0 else 999.0
+    net_pct = (recent[-1] - recent[0]) / recent[0]
+    ok = (
+        (net_pct > 0.0)
+        and (flow_ratio >= float(min_ratio))
+        and (worst_drop_pct <= float(max_single_drop_pct))
+    )
+    return ok, flow_ratio, worst_drop_pct, net_pct
+
+
 def ticks_fresh(ticks, max_age_sec: float) -> bool:
     if not ticks:
         return False
@@ -707,6 +747,37 @@ def main():
                             P3,
                             P4,
                             detail=f"tick_prog={tick_prog*100:.4f}%",
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+
+                if bool(getattr(cfg, "flowDefenseEnabled", False)):
+                    flow_ok, flow_ratio, worst_drop_pct, flow_net_pct = flow_pressure_ok(
+                        ticks,
+                        int(getattr(cfg, "flowLookback", 8)),
+                        float(getattr(cfg, "flowMinRatio", 1.2)),
+                        float(getattr(cfg, "flowMaxSingleDropPct", 0.0025)),
+                    )
+                    if not flow_ok:
+                        maybe_hold(
+                            now,
+                            'HOLD_FLOW',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            detail=(
+                                f"flow_ratio={flow_ratio:.2f} "
+                                f"worst_drop={worst_drop_pct*100:.4f}% "
+                                f"net={flow_net_pct*100:.4f}%"
+                            ),
                         )
                         time.sleep(cfg.idleSleep)
                         continue
