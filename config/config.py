@@ -137,6 +137,16 @@ class Config:
     tickEntryLookback: int = 2
     tickEntryMinPct: float = 0.0002
 
+    # protective sell signal tuning
+    psellMinAgeSec: float = 25.0
+    psellMinLossPct: float = 0.0035
+    psellConfirmTicks: int = 4
+
+    # anti-whipsaw re-entry guards
+    reentryLossCooldownSec: float = 90.0
+    reentryTrailCooldownSec: float = 60.0
+    reentryRecoveryPct: float = 0.0015
+
     # anti-chase caps
     momMaxPct: float = 1.0
     rsiBuyMax: float = 100.0
@@ -223,9 +233,18 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("entry_cross_spread", "entryCrossSpread"),
         ("allow_warmup_entry", "allowWarmupEntry"),
         ("ticks_keep_min_sec", "ticksKeepMinSec"),
+        ("tick_confirmation_enabled", "tickEntryEnabled"),
+        ("tick_confirmation_lookback", "tickEntryLookback"),
+        ("tick_confirmation_min_pct", "tickEntryMinPct"),
         ("tick_entry_enabled", "tickEntryEnabled"),
         ("tick_entry_lookback", "tickEntryLookback"),
         ("tick_entry_min_pct", "tickEntryMinPct"),
+        ("psell_min_age_sec", "psellMinAgeSec"),
+        ("psell_min_loss_pct", "psellMinLossPct"),
+        ("psell_confirm_ticks", "psellConfirmTicks"),
+        ("reentry_loss_cooldown_sec", "reentryLossCooldownSec"),
+        ("reentry_trail_cooldown_sec", "reentryTrailCooldownSec"),
+        ("reentry_recovery_pct", "reentryRecoveryPct"),
         ("mom_max_pct", "momMaxPct"),
         ("rsi_buy_max", "rsiBuyMax"),
         ("qty_mismatch_step_fraction", "qtyMismatchStepFraction"),

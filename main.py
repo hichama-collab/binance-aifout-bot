@@ -431,6 +431,7 @@ def main():
     syncInfo = {"usdc": 0.0}
     pendingSwitchSymbol = None
     pendingSwitchLogged = None
+    lastExitInfo = None
 
     # ring buffer of (ts, price_ref). We store MID=(bestBid+bestAsk)/2 for P1..P4 logic.
     ticks = []
@@ -514,11 +515,6 @@ def main():
         free_usdc = 0.0
         try:
             now = time.time()
-
-            requested_symbol, observed_env_mtime = _pending_token_switch(symbol, last_env_mtime)
-            if requested_symbol:
-                pendingSwitchSymbol = requested_symbol
-                last_env_mtime = observed_env_mtime
             
             bid, ask, tick_ts, tick_seq = stream.snapshot()
             if bid <= 0 or ask <= 0:
@@ -626,17 +622,28 @@ def main():
                 print(chk_msg)
                 logTrade(chk_msg)
             
-            # hot-reload token from .service.env (IDLE only)
-            symbol, last_env_mtime = _maybe_reexec_on_token_change(symbol, pos, last_env_mtime)
-            if pos is None and pendingSwitchSymbol == symbol:
+            # Management rule: never consult .service.env while a position is open.
+            # Token changes are only read/applied when fully idle.
+            if pos is None:
+                requested_symbol, observed_env_mtime = _pending_token_switch(symbol, last_env_mtime)
+                if requested_symbol:
+                    pendingSwitchSymbol = requested_symbol
+                    last_env_mtime = observed_env_mtime
+
+                # hot-reload token from .service.env (IDLE only)
+                symbol, last_env_mtime = _maybe_reexec_on_token_change(symbol, pos, last_env_mtime)
+                if pendingSwitchSymbol == symbol:
+                    pendingSwitchSymbol = None
+                    pendingSwitchLogged = None
+
+                if pendingSwitchSymbol and pendingSwitchLogged != pendingSwitchSymbol:
+                    msg = f"TOKEN_SWITCH_PENDING old={symbol} new={pendingSwitchSymbol} state=IDLE"
+                    print(msg)
+                    logTrade(msg)
+                    pendingSwitchLogged = pendingSwitchSymbol
+            else:
                 pendingSwitchSymbol = None
                 pendingSwitchLogged = None
-
-            if pendingSwitchSymbol and pendingSwitchLogged != pendingSwitchSymbol:
-                msg = f"TOKEN_SWITCH_PENDING old={symbol} new={pendingSwitchSymbol} state={'IN_POS' if pos else 'IDLE'}"
-                print(msg)
-                logTrade(msg)
-                pendingSwitchLogged = pendingSwitchSymbol
 
             # ===== ENTRY (P algo, MID-based) =====
 # BUY if (P1 >= P2 >= P3 >= P4)
@@ -650,7 +657,8 @@ def main():
                 and (P3 is not None)
                 and (P4 is not None)
             ):
-                buySignal = (P1 >= P2) and (P2 >= P3) and (P3 >= P4)
+                # Require a rising tape with actual progress, not just flat equal ticks.
+                buySignal = (P1 >= P2) and (P2 >= P3) and (P3 >= P4) and (P1 > P4)
 
             if buySignal:
                 max_mom_pct = float(getattr(cfg, "momMaxPct", 1.0) or 1.0)
@@ -658,11 +666,125 @@ def main():
                 min_range_vs_spread = float(getattr(cfg, "minRangeVsSpread", 0.0) or 0.0)
                 required_range_pct = max(min_range_entry_pct, float(spread) * min_range_vs_spread)
 
-                # Momentum gate intentionally disabled here.
-                # The P1 >= P2 >= P3 >= P4 check already validates the same
-                # short-term directional move and is enough as an anti-noise
-                # filter for entry. Keeping momOk on top of P1..P4 was
-                # redundant and blocked too many otherwise valid setups.
+                if not momOk:
+                    maybe_hold(
+                        now,
+                        'HOLD_MOM',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
+                if bool(getattr(cfg, "tickEntryEnabled", False)):
+                    tick_ok, tick_prog = tick_confirmation_ok(
+                        ticks,
+                        int(getattr(cfg, "tickEntryLookback", 3)),
+                        float(getattr(cfg, "tickEntryMinPct", 0.0004)),
+                    )
+                    if not tick_ok:
+                        maybe_hold(
+                            now,
+                            'HOLD_TICK',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            detail=f"tick_prog={tick_prog*100:.4f}%",
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+
+                if lastExitInfo and lastExitInfo.get("symbol") == symbol:
+                    last_reason = str(lastExitInfo.get("reason") or "")
+                    last_pnl = float(lastExitInfo.get("pnl", 0.0) or 0.0)
+                    last_exit_ts = float(lastExitInfo.get("ts", 0.0) or 0.0)
+                    age_since_exit = max(0.0, now - last_exit_ts)
+
+                    if last_pnl <= 0.0:
+                        loss_cd = float(getattr(cfg, "reentryLossCooldownSec", 0.0) or 0.0)
+                        if age_since_exit < loss_cd:
+                            maybe_hold(
+                                now,
+                                'HOLD_REENTRY',
+                                spread,
+                                momPct,
+                                momRangePct,
+                                upRatio,
+                                bid,
+                                ask,
+                                mid,
+                                P1,
+                                P2,
+                                P3,
+                                P4,
+                                detail=f"last_reason={last_reason} age={age_since_exit:.1f}s cooldown={loss_cd:.1f}s",
+                            )
+                            time.sleep(cfg.idleSleep)
+                            continue
+
+                        reclaim_ref = max(
+                            float(lastExitInfo.get("entry", 0.0) or 0.0),
+                            float(lastExitInfo.get("exit", 0.0) or 0.0),
+                        )
+                        reclaim_pct = float(getattr(cfg, "reentryRecoveryPct", 0.0) or 0.0)
+                        reclaim_need = reclaim_ref * (1.0 + reclaim_pct) if reclaim_ref > 0 else 0.0
+                        if reclaim_need > 0 and mid < reclaim_need:
+                            maybe_hold(
+                                now,
+                                'HOLD_RECLAIM',
+                                spread,
+                                momPct,
+                                momRangePct,
+                                upRatio,
+                                bid,
+                                ask,
+                                mid,
+                                P1,
+                                P2,
+                                P3,
+                                P4,
+                                detail=f"last_reason={last_reason} mid={mid:.8f} reclaim_need={reclaim_need:.8f}",
+                            )
+                            time.sleep(cfg.idleSleep)
+                            continue
+                    elif last_reason == "TRAIL":
+                        trail_cd = float(getattr(cfg, "reentryTrailCooldownSec", 0.0) or 0.0)
+                        if age_since_exit < trail_cd:
+                            maybe_hold(
+                                now,
+                                'HOLD_REENTRY',
+                                spread,
+                                momPct,
+                                momRangePct,
+                                upRatio,
+                                bid,
+                                ask,
+                                mid,
+                                P1,
+                                P2,
+                                P3,
+                                P4,
+                                detail=f"last_reason={last_reason} age={age_since_exit:.1f}s cooldown={trail_cd:.1f}s",
+                            )
+                            time.sleep(cfg.idleSleep)
+                            continue
 
                 if max_mom_pct > 0 and momPct > max_mom_pct:
                     maybe_hold(
@@ -901,9 +1023,7 @@ def main():
             # ===== EXIT =====
             # If position was adopted from wallet (entry=0), treat as untracked.
             # We do not fabricate an entry; we liquidate when sellable, otherwise we clear as dust.
-            if pendingSwitchSymbol:
-                exitReason = f"TOKEN_SWITCH new={pendingSwitchSymbol}"
-            elif pos.entry <= 0:
+            if pos.entry <= 0:
                 exitReason = "WALLET_UNTRACKED"
             else:
                 pos.update(bid, cfg, profile, tick=tick)
@@ -1059,6 +1179,15 @@ def main():
                 "entry_vs_mid_pct": "",
                 "mid_vs_entry_pct": mid_vs_entry_pct,
             })
+
+            lastExitInfo = {
+                "symbol": symbol,
+                "ts": time.time(),
+                "reason": exitReason,
+                "pnl": pnl,
+                "entry": float(pos.entry),
+                "exit": float(exitPx),
+            }
             
             # cooldown and reset
             cooldownUntil = time.time() + (cfg.cooldownWin if pnl > 0 else cfg.cooldownLoss)

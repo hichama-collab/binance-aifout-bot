@@ -1,13 +1,13 @@
 profiles:
   major:
-    mom_min_up_ratio: 0.85
+    mom_min_up_ratio: 0.75
     mom_range_min_pct: 0
     mom_use_instant: false
     mom_lookback: 5
     mom_max_age_sec: 3.0
     ob_imbalance_min_ratio: 0.0
     ob_depth_levels: 5
-    tick_confirmation_enabled: false
+    tick_confirmation_enabled: true
     tick_confirmation_lookback: 3
     tick_confirmation_min_pct: 0.0004
     spread_max: 0.0025
@@ -37,6 +37,9 @@ profiles:
     psell_min_age_sec: 30
     psell_min_loss_pct: 0.0035
     psell_confirm_ticks: 4
+    reentry_loss_cooldown_sec: 90
+    reentry_trail_cooldown_sec: 60
+    reentry_recovery_pct: 0.0015
     tp_min_pct: 0.004
     maxPosTime: 240
     hardMaxPosTime: 1200
