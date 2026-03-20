@@ -574,6 +574,8 @@ def main():
             
             # cooldown log so it doesn't look frozen
             if now < cooldownUntil:
+                if pos is None:
+                    symbol, last_env_mtime = _maybe_reexec_on_token_change(symbol, pos, last_env_mtime)
                 if pendingSwitchSymbol and pos is None:
                     _reexec_to_symbol(symbol, pendingSwitchSymbol, source="pending_switch")
                 if now - lastChk >= cfg.chkEvery:
@@ -665,13 +667,13 @@ def main():
             # Management rule: never consult .service.env while a position is open.
             # Token changes are only read/applied when fully idle.
             if pos is None:
+                # Re-exec first, otherwise reading the pending switch would consume
+                # the new mtime and block the actual symbol change.
+                symbol, last_env_mtime = _maybe_reexec_on_token_change(symbol, pos, last_env_mtime)
                 requested_symbol, observed_env_mtime = _pending_token_switch(symbol, last_env_mtime)
                 if requested_symbol:
                     pendingSwitchSymbol = requested_symbol
                     last_env_mtime = observed_env_mtime
-
-                # hot-reload token from .service.env (IDLE only)
-                symbol, last_env_mtime = _maybe_reexec_on_token_change(symbol, pos, last_env_mtime)
                 if pendingSwitchSymbol == symbol:
                     pendingSwitchSymbol = None
                     pendingSwitchLogged = None
