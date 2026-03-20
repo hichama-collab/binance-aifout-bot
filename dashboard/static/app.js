@@ -1,6 +1,15 @@
 /* botdash front */
 (function () {
   const $ = (sel) => document.querySelector(sel);
+  let currentLogName = "";
+  let serviceControlsBound = false;
+
+  const UNIT_LABELS = {
+    "botdash.service": "Dashboard",
+    "binance-aifout-bot.service": "Main Bot",
+    "token-profile-selector.service": "Selector Run",
+    "token-profile-selector.timer": "Selector Timer",
+  };
 
   function fmt(n, digits = 2) {
     if (n === null || n === undefined || Number.isNaN(Number(n))) return "--";
@@ -10,6 +19,21 @@
   function fmtInt(n) {
     if (n === null || n === undefined || Number.isNaN(Number(n))) return "--";
     return Number(n).toLocaleString();
+  }
+  function escapeHtml(text) {
+    return String(text || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+  function unitLabel(name) {
+    return UNIT_LABELS[name] || name || "--";
+  }
+  function findUnit(units, name) {
+    return (units || []).find((u) => u.unit === name) || null;
+  }
+  function isUnitActive(unit) {
+    return String(unit?.state || "").toLowerCase() === "active";
   }
   function badgeState(state) {
     const s = (state || "").toLowerCase();
@@ -33,6 +57,31 @@
   function fmtBucket(bucket) {
     if (!bucket || bucket.usdc === null || bucket.usdc === undefined) return "--";
     return fmtPnlPair(bucket.usdc, bucket.eur);
+  }
+
+  function actionLabel(r) {
+    const ev = String(r?.event || r?.side || "").toUpperCase();
+    if (ev.includes("BUY")) return "Achat execute";
+    if (ev.includes("SELL")) return "Vente executee";
+    if (ev === "DECIDE_HOLD") return "Attente";
+    return ev || "--";
+  }
+
+  function reasonLabel(r) {
+    const reason = String(r?.reason || "").toUpperCase();
+    if (!reason) return "--";
+    if (reason === "TP") return "Objectif de gain atteint";
+    if (reason === "STOP") return "Sortie de protection";
+    if (reason === "TIME") return "Sortie par duree max";
+    if (reason === "HOLD_MOM") return "Le momentum n'est pas assez confirme";
+    if (reason === "HOLD_RANGE") return "Le mouvement est encore trop faible";
+    if (reason === "HOLD_CHASE") return "Le prix est deja parti, le bot n'achete pas trop haut";
+    if (reason === "HOLD_SPREAD") return "Spread trop large";
+    if (reason === "HOLD_BAL") return "Solde non disponible";
+    if (reason === "HOLD_MIN_NOTIONAL") return "Montant trop petit pour Binance";
+    if (reason.startsWith("PBUY")) return "Signal d'achat valide";
+    if (reason.startsWith("PSELL")) return "Signal de vente valide";
+    return reason.replaceAll("_", " ").toLowerCase();
   }
 
   function fmtDateTime(ts) {
@@ -137,7 +186,12 @@ function binanceSpotUrl(symbol) {
       setText("kv-logs", st.logs || "--");
       const fx = st.fx_usdc_eur;
       setText("kv-fx", fx ? `1 USDC ≈ ${fmt(fx, 4)} EUR` : "--");
-      setText("footer-status", st.ok ? "En ligne" : "Incident");
+      const bot = findUnit(st.units, "binance-aifout-bot.service");
+      const dash = findUnit(st.units, "botdash.service");
+      let status = "Incident";
+      if (isUnitActive(bot)) status = "Trading actif";
+      else if (isUnitActive(dash)) status = "Bot arrete";
+      setText("footer-status", status);
     } catch (e) {
       setText("footer-status", "Incident");
     }
@@ -187,6 +241,77 @@ function binanceSpotUrl(symbol) {
     if (pill) pill.textContent = totalText;
   }
 
+  function renderSignalStrip(st, trades) {
+    if (!$("#sig-bot-value")) return;
+    const units = st.units || [];
+    const bot = findUnit(units, "binance-aifout-bot.service");
+    const token = st.token || {};
+    const pos = st.position || {};
+    const last = (trades?.rows || [])[0] || null;
+
+    setText("sig-bot-value", isUnitActive(bot) ? "Actif" : "Arrete");
+    setText(
+      "sig-bot-meta",
+      bot?.since ? `depuis ${fmtDateTime(bot.since)}` : (bot?.details || "etat inconnu"),
+    );
+
+    setText("sig-token-value", token.symbol || "--");
+    const runMode = token.dry_run == null ? "--" : (String(token.dry_run) === "1" ? "dry run" : "reel");
+    setText(
+      "sig-token-meta",
+      `${token.profile || "--"} | ${runMode}`,
+    );
+
+    if (pos?.symbol) {
+      setText("sig-position-value", pos.symbol);
+      const pnlText = pos.unreal_pnl_usdc == null ? "PnL --" : `PnL ${fmt(pos.unreal_pnl_usdc, 2)} USDC`;
+      setText("sig-position-meta", `qty ${fmt(pos.qty, 6)} | ${pnlText}`);
+    } else {
+      setText("sig-position-value", "Aucune");
+      setText("sig-position-meta", "Pas d'exposition ouverte actuellement.");
+    }
+
+    if (last) {
+      setText("sig-last-value", actionLabel(last));
+      setText("sig-last-meta", `${last.symbol || "--"} | ${reasonLabel(last)}`);
+    } else {
+      setText("sig-last-value", "Aucune");
+      setText("sig-last-meta", "Pas encore de decision disponible.");
+    }
+  }
+
+  function renderServiceHealth(units, selector = "#service-health", pillId = "") {
+    const box = document.querySelector(selector);
+    if (!box) return;
+    const rows = units || [];
+    if (!rows.length) {
+      box.innerHTML = `<div class="muted">aucune unite</div>`;
+      return;
+    }
+    box.innerHTML = rows.map((u) => {
+      const active = isUnitActive(u);
+      const metaBits = [];
+      if (u.details) metaBits.push(u.details);
+      if (u.since) metaBits.push(fmtDateTime(u.since));
+      return `<div class="service-chip ${active ? "is-live" : "is-idle"}">
+        <div class="service-chip-head">
+          <div>
+            <div class="service-chip-title">${unitLabel(u.unit)}</div>
+            <div class="service-chip-unit">${u.unit}</div>
+          </div>
+          ${badgeState(u.state)}
+        </div>
+        <div class="service-chip-meta">${metaBits.join(" | ") || "etat non remonte"}</div>
+      </div>`;
+    }).join("");
+
+    const pill = pillId ? document.getElementById(pillId) : null;
+    if (pill) {
+      const activeCount = rows.filter((u) => isUnitActive(u)).length;
+      pill.textContent = `${activeCount}/${rows.length} actifs`;
+    }
+  }
+
   function renderServices(units) {
     const tbl = $("#services-table tbody");
     if (!tbl) return;
@@ -197,17 +322,17 @@ function binanceSpotUrl(symbol) {
     }
     tbl.innerHTML = rows.map(u => {
       const st = (u.state || "--");
-      const since = u.since || "--";
+      const since = u.since ? fmtDateTime(u.since) : "--";
       const details = u.details || "";
       return `<tr>
-        <td><b>${u.unit}</b></td>
+        <td><b>${unitLabel(u.unit)}</b><div class="service-chip-unit">${u.unit}</div></td>
         <td>${badgeState(st)}</td>
         <td>${since}</td>
         <td class="muted">${details}</td>
       </tr>`;
     }).join("");
 
-    const pill = $("#svc-pill") || $("#svc2-pill");
+    const pill = $("#svc-pill");
     if (pill) pill.textContent = `${rows.length} unités`;
   }
 
@@ -427,29 +552,6 @@ function binanceSpotUrl(symbol) {
       tbl.innerHTML = `<tr><td colspan="7" class="muted">pas de décisions</td></tr>`;
       return;
     }
-    function actionLabel(r) {
-      const ev = String(r.event || r.side || "").toUpperCase();
-      if (ev.includes("BUY")) return "Achat execute";
-      if (ev.includes("SELL")) return "Vente executee";
-      if (ev === "DECIDE_HOLD") return "Attente";
-      return ev || "--";
-    }
-    function reasonLabel(r) {
-      const reason = String(r.reason || "").toUpperCase();
-      if (!reason) return "--";
-      if (reason === "TP") return "Objectif de gain atteint";
-      if (reason === "STOP") return "Sortie de protection";
-      if (reason === "TIME") return "Sortie par duree max";
-      if (reason === "HOLD_MOM") return "Le momentum n'est pas assez confirme";
-      if (reason === "HOLD_RANGE") return "Le mouvement est encore trop faible";
-      if (reason === "HOLD_CHASE") return "Le prix est deja parti, le bot n'achete pas trop haut";
-      if (reason === "HOLD_SPREAD") return "Spread trop large";
-      if (reason === "HOLD_BAL") return "Solde non disponible";
-      if (reason === "HOLD_MIN_NOTIONAL") return "Montant trop petit pour Binance";
-      if (reason.startsWith("PBUY")) return "Signal d'achat valide";
-      if (reason.startsWith("PSELL")) return "Signal de vente valide";
-      return reason.replaceAll("_", " ").toLowerCase();
-    }
     tbl.innerHTML = rows.map(r => {
       const ts = r.ts_utc || r.ts || "--";
       const symbol = r.symbol || "--";
@@ -480,78 +582,158 @@ function binanceSpotUrl(symbol) {
       jget("/api/summary"),
       jget("/api/trades"),
     ]);
+    renderSignalStrip(st, trades);
     renderTokenNow(st);
     renderPosition(st);
-    renderServices(st.units);
+    renderServiceHealth(st.units, "#service-health", "service-health-pill");
     renderWallet(wallet);
     renderTokensTable(summary);
     renderDecisions(trades);
   }
 
+  function renderControlResult(result) {
+    const out = $("#ctl-out");
+    if (!out) return;
+    if (!result) {
+      out.innerHTML = `<div class="action-empty">Aucune commande envoyee pour l'instant.</div>`;
+      return;
+    }
+    const ok = !!result.ok;
+    const feedback = String(result.output || result.error || "").trim() || "Aucun retour systeme.";
+    out.innerHTML = `<div class="action-result-card">
+      <div class="action-result-head">
+        <div>
+          <div class="action-result-title">${ok ? "Commande appliquee" : "Commande refusee"}</div>
+          <div class="action-result-sub">${unitLabel(result.unit)} | ${String(result.action || "").toUpperCase()}</div>
+        </div>
+        ${ok ? '<span class="pill pill-green">OK</span>' : '<span class="pill pill-red">ECHEC</span>'}
+      </div>
+      <div class="action-result-log">${escapeHtml(feedback)}</div>
+    </div>`;
+  }
+
+  function bindServiceControls() {
+    if (serviceControlsBound) return;
+    document.addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-unit][data-action]");
+      if (!btn || !window.location.pathname.startsWith("/services")) return;
+      btn.disabled = true;
+      try {
+        const unit = btn.getAttribute("data-unit");
+        const action = btn.getAttribute("data-action");
+        const r = await fetch("/api/control", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ unit, action }),
+        });
+        const j = await r.json().catch(() => ({ ok: false, error: "bad json", unit, action }));
+        renderControlResult(j);
+        await loadServicesPage();
+      } catch (err) {
+        renderControlResult({ ok: false, unit: btn.getAttribute("data-unit"), action: btn.getAttribute("data-action"), error: err.message });
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    serviceControlsBound = true;
+  }
+
   async function loadServicesPage() {
     const st = await jget("/api/status");
+    renderServiceHealth(st.units, "#service-health-ops", "svc2-pill");
     renderServices(st.units);
-    const out = $("#ctl-out");
-    const btns = document.querySelectorAll("button[data-unit][data-action]");
-    btns.forEach(b => {
-      b.addEventListener("click", async () => {
-        b.disabled = true;
-        try {
-          const unit = b.getAttribute("data-unit");
-          const action = b.getAttribute("data-action");
-          const r = await fetch("/api/control", {
-            method: "POST",
-            headers: {"Content-Type":"application/json"},
-            body: JSON.stringify({ unit, action }),
-          });
-          const j = await r.json().catch(()=>({ok:false, error:"bad json"}));
-          if (out) out.textContent = JSON.stringify(j, null, 2);
-          await loadServicesPage();
-        } catch (e) {
-          if (out) out.textContent = JSON.stringify({ ok:false, error:e.message }, null, 2);
-        } finally {
-          b.disabled = false;
-        }
-      });
-    });
+    bindServiceControls();
+  }
+
+  async function openLog(name, n = 200) {
+    const view = $("#log-view");
+    if (!name) return;
+    const t = await jget(`/api/log_tail?name=${encodeURIComponent(name)}&n=${encodeURIComponent(n)}`);
+    currentLogName = name;
+    if (view) view.textContent = (t.text || (t.lines ? t.lines.join("\n") : ""));
+    setText("log-current", name);
+  }
+
+  function renderQuickLogs(rows) {
+    const box = $("#log-quick");
+    if (!box) return;
+    const defs = [
+      { label: "Dernier trades.log", match: (name) => /_trades\.log$/i.test(name) },
+      { label: "Dernier errors.log", match: (name) => /_errors\.log$/i.test(name) },
+      { label: "Dernier trades.csv", match: (name) => /_trades\.csv$/i.test(name) },
+      { label: "Fichier le plus recent", match: () => true },
+    ];
+    box.innerHTML = defs.map((def) => {
+      const hit = rows.find((row) => def.match(row.name));
+      if (!hit) {
+        return `<button class="btn" disabled>${def.label}</button>`;
+      }
+      return `<button class="btn btn-blue" data-log-quick="${hit.name}">${def.label}</button>`;
+    }).join("");
   }
 
   async function loadLogsPage() {
     const tbl = $("#logs-table tbody");
-    const view = $("#log-view");
     if (!tbl) return;
     const j = await jget("/api/logs");
     const rows = j.files || [];
+    if (currentLogName && !rows.some((row) => row.name === currentLogName)) currentLogName = "";
     const pill = $("#logs-pill");
     if (pill) pill.textContent = `${rows.length} fichiers`;
+    renderQuickLogs(rows);
     if (!rows.length) {
-      tbl.innerHTML = `<tr><td colspan="4" class="muted">no logs</td></tr>`;
+      tbl.innerHTML = `<tr><td colspan="4" class="muted">aucun fichier</td></tr>`;
+      setText("log-current", "Aucun fichier");
       return;
     }
     tbl.innerHTML = rows.slice(0, 50).map(f => {
       const name = f.name;
-      return `<tr>
+      return `<tr class="${name === currentLogName ? "is-selected" : ""}">
         <td><b>${name}</b></td>
         <td class="right">${fmtInt(f.size || 0)}</td>
-        <td class="muted">${f.mtime || "--"}</td>
-        <td><button class="btn btn-blue" data-log="${name}">Open</button></td>
+        <td class="muted">${fmtDateTime(f.mtime)}</td>
+        <td><button class="btn btn-blue" data-log="${name}">Lire</button></td>
       </tr>`;
     }).join("");
 
     document.querySelectorAll("button[data-log]").forEach(b => {
       b.addEventListener("click", async () => {
-        const name = b.getAttribute("data-log");
+        const name = b.getAttribute("data-log") || "";
         b.disabled = true;
         try {
-          const t = await jget(`/api/log_tail?name=${encodeURIComponent(name)}&n=200`);
-          if (view) view.textContent = (t.text || (t.lines ? t.lines.join("\n") : ""));
+          await openLog(name, 200);
+          await loadLogsPage();
         } catch (e) {
+          setText("log-current", "Erreur");
+          const view = $("#log-view");
           if (view) view.textContent = `error: ${e.message}`;
         } finally {
           b.disabled = false;
         }
       });
     });
+
+    document.querySelectorAll("button[data-log-quick]").forEach((b) => {
+      b.addEventListener("click", async () => {
+        const name = b.getAttribute("data-log-quick") || "";
+        b.disabled = true;
+        try {
+          await openLog(name, 200);
+          await loadLogsPage();
+        } catch (e) {
+          setText("log-current", "Erreur");
+          const view = $("#log-view");
+          if (view) view.textContent = `error: ${e.message}`;
+        } finally {
+          b.disabled = false;
+        }
+      });
+    });
+
+    if (!currentLogName && rows[0]?.name) {
+      await openLog(rows[0].name, 200);
+      await loadLogsPage();
+    }
   }
 
   async function loadStatisticsPage() {

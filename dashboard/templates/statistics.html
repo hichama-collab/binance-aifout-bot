@@ -1,13 +1,14 @@
 {% extends "base.html" %}
 {% set title = "Statistiques" %}
 {% set active = "statistics" %}
+{% set subtitle = "Vue realisee du PnL, de l'equity et de la qualite d'execution." %}
 {% block content %}
 <div class="grid grid-12 gap-16">
   <div class="card card-blue col-12">
     <div class="card-head">
       <div>
-        <div class="card-title">Performance</div>
-        <div class="card-sub">Lecture synthese du realise: court terme, cadence, regularite et courbe d'equity.</div>
+        <div class="card-title">Performance realisee</div>
+        <div class="card-sub">Vue synthese du resultat: rythme court terme, cadence et courbe d'equity.</div>
       </div>
       <div class="pill" id="pnl-pill">--</div>
     </div>

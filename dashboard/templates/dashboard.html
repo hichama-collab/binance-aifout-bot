@@ -1,18 +1,92 @@
 {% extends "base.html" %}
 {% set title = "Dashboard" %}
 {% set active = "dashboard" %}
+{% set subtitle = "Cockpit live du bot, du token cible et des decisions recentes." %}
 {% block content %}
 
 <div class="grid grid-12 gap-16">
+  <div class="card card-slate col-12">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Lecture live</div>
+        <div class="card-sub">Les 4 signaux qui doivent te sauter aux yeux a l'ouverture.</div>
+      </div>
+    </div>
+    <div class="signal-strip">
+      <div class="signal-card">
+        <div class="signal-label">Bot</div>
+        <div class="signal-value" id="sig-bot-value">--</div>
+        <div class="signal-meta" id="sig-bot-meta">Etat du moteur principal.</div>
+      </div>
+      <div class="signal-card">
+        <div class="signal-label">Token actif</div>
+        <div class="signal-value" id="sig-token-value">--</div>
+        <div class="signal-meta" id="sig-token-meta">Configuration de trading en cours.</div>
+      </div>
+      <div class="signal-card">
+        <div class="signal-label">Position</div>
+        <div class="signal-value" id="sig-position-value">--</div>
+        <div class="signal-meta" id="sig-position-meta">Exposition actuelle du bot.</div>
+      </div>
+      <div class="signal-card">
+        <div class="signal-label">Derniere action</div>
+        <div class="signal-value" id="sig-last-value">--</div>
+        <div class="signal-meta" id="sig-last-meta">Derniere decision lue dans les trades.</div>
+      </div>
+    </div>
+  </div>
 
-  <!-- Wallet -->
+  <div class="card card-green col-12 col-lg-6">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Position en cours</div>
+        <div class="card-sub">Lecture directe de l'exposition reelle si un trade est ouvert.</div>
+      </div>
+      <div class="pill pill-green" id="pos-pill">--</div>
+    </div>
+    <div class="kv2" id="pos-live">
+      <div class="k">Symbol</div><div class="v" id="pos-symbol">--</div>
+      <div class="k">Qty</div><div class="v" id="pos-qty">--</div>
+      <div class="k">Entry</div><div class="v" id="pos-entry">--</div>
+      <div class="k">Bid / Ask</div><div class="v" id="pos-ba">--</div>
+      <div class="k">PnL (≈)</div><div class="v" id="pos-pnl">--</div>
+      <div class="k">Dernière raison</div><div class="v" id="pos-reason">--</div>
+    </div>
+  </div>
+
+  <div class="card card-amber col-12 col-lg-6">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Pilotage instantane</div>
+        <div class="card-sub">Configuration active et etat des moteurs sans quitter la home.</div>
+      </div>
+      <div class="pill pill-amber" id="service-health-pill">--</div>
+    </div>
+    <div class="pilot-grid">
+      <div class="pilot-block">
+        <div class="section-kicker">Configuration active</div>
+        <div class="kv2 kv2-compact" id="token-now">
+          <div class="k">Symbol</div><div class="v" id="tn-symbol">--</div>
+          <div class="k">Profile</div><div class="v" id="tn-profile">--</div>
+          <div class="k">Dry run</div><div class="v" id="tn-dry">--</div>
+        </div>
+      </div>
+      <div class="pilot-block">
+        <div class="section-kicker">Moteurs actifs</div>
+        <div class="service-health" id="service-health">
+          <div class="muted">Chargement...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="card card-blue col-12">
     <div class="card-head">
       <div>
         <div class="card-title">Capital disponible</div>
-        <div class="card-sub">Lecture portefeuille en <b>USDC</b> et <b>EUR</b>, utile pour voir ce qui reste deployable.</div>
+        <div class="card-sub">Le portefeuille reste visible, mais il ne prend plus toute la scene.</div>
       </div>
-      <div class="pill" id="wallet-total">--</div>
+      <div class="pill pill-blue" id="wallet-total">--</div>
     </div>
     <div class="table-wrap">
       <table class="table" id="wallet-table">
@@ -33,73 +107,11 @@
     </div>
   </div>
 
-  <!-- Token now -->
-  <div class="card card-purple col-12 col-lg-6">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Token suivi maintenant</div>
-        <div class="card-sub">L'actif actuellement cible par la logique de selection.</div>
-      </div>
-      <div class="pill pill-purple" id="token-now-pill">--</div>
-    </div>
-    <div class="kv2" id="token-now">
-      <div class="k">Symbol</div><div class="v" id="tn-symbol">--</div>
-      <div class="k">Profile</div><div class="v" id="tn-profile">--</div>
-      <div class="k">Dry run</div><div class="v" id="tn-dry">--</div>
-    </div>
-  </div>
-
-  <!-- Position live -->
-  <div class="card card-green col-12 col-lg-6">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Position en cours</div>
-        <div class="card-sub">Lecture directe de l'exposition reelle si un trade est ouvert.</div>
-      </div>
-      <div class="pill pill-green" id="pos-pill">--</div>
-    </div>
-    <div class="kv2" id="pos-live">
-      <div class="k">Symbol</div><div class="v" id="pos-symbol">--</div>
-      <div class="k">Qty</div><div class="v" id="pos-qty">--</div>
-      <div class="k">Entry</div><div class="v" id="pos-entry">--</div>
-      <div class="k">Bid / Ask</div><div class="v" id="pos-ba">--</div>
-      <div class="k">PnL (≈)</div><div class="v" id="pos-pnl">--</div>
-      <div class="k">Dernière raison</div><div class="v" id="pos-reason">--</div>
-    </div>
-  </div>
-
-  <!-- Services -->
-  <div class="card card-amber col-12">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Moteurs actifs</div>
-        <div class="card-sub">Etat des composants qui font tourner le bot et l'interface.</div>
-      </div>
-      <div class="pill pill-amber" id="svc-pill">--</div>
-    </div>
-    <div class="table-wrap">
-      <table class="table" id="services-table">
-        <thead>
-          <tr>
-            <th>Service</th>
-            <th>État</th>
-            <th>Depuis</th>
-            <th>Détails</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td colspan="4" class="muted">Chargement...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Tokens traded (summary) -->
   <div class="card card-red col-12">
     <div class="card-head">
       <div>
-        <div class="card-title">Derniers Tokens Tradés (10)</div>
-        <div class="card-sub">Chaque ligne raconte un run: budget engage, budget recupere et resultat net.</div>
+        <div class="card-title">PnL par token</div>
+        <div class="card-sub">Vue compacte des derniers tokens qui ont reellement impacte le resultat.</div>
       </div>
       <div class="pill pill-red" id="tr-pill">--</div>
     </div>
@@ -124,12 +136,11 @@
     </div>
   </div>
 
-  <!-- Last decisions -->
   <div class="card card-slate col-12">
     <div class="card-head">
       <div>
-        <div class="card-title">Lecture des dernières actions</div>
-        <div class="card-sub">Vue simplifiee pour comprendre ce que le bot vient de faire ou refuser.</div>
+        <div class="card-title">Dernieres actions du bot</div>
+        <div class="card-sub">Ce qu'il vient de faire, ou ce qu'il a refuse, avec une raison lisible.</div>
       </div>
       <div class="pill" id="dec-pill">--</div>
     </div>

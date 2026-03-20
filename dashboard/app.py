@@ -123,6 +123,55 @@ def systemctl(action, unit):
         return False, f"action not allowed: {action}"
     return run_cmd(["systemctl", action, unit])
 
+def read_unit_state(unit):
+    if unit not in UNITS:
+        return {"ok": False, "state": "unknown", "sub": "", "since": ""}
+
+    ok, out = run_cmd([
+        "systemctl",
+        "show",
+        unit,
+        "--property=ActiveState",
+        "--property=SubState",
+        "--property=ActiveEnterTimestamp",
+        "--property=UnitFileState",
+    ])
+    if ok:
+        data = {}
+        for line in out.splitlines():
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            data[key.strip()] = value.strip()
+        since = data.get("ActiveEnterTimestamp", "")
+        if since == "n/a":
+            since = ""
+        return {
+            "ok": True,
+            "state": data.get("ActiveState", "unknown") or "unknown",
+            "sub": data.get("SubState", ""),
+            "since": since,
+        }
+
+    ok, out = systemctl("status", unit)
+    state = "unknown"
+    sub = ""
+    since = ""
+    for line in out.splitlines():
+        if "Active:" not in line:
+            continue
+        m = re.search(r"Active:\s+(\w+)\s+\(([\w-]+)\)(?:\s+since\s+(.+?))?(?:;|$)", line)
+        if m:
+            state = m.group(1)
+            sub = m.group(2)
+            since = (m.group(3) or "").strip()
+            break
+        m2 = re.search(r"Active:\s+(\w+)", line)
+        if m2:
+            state = m2.group(1)
+            break
+    return {"ok": ok, "state": state, "sub": sub, "since": since}
+
 def tail_file(path: Path, n_lines: int = 200):
     if n_lines < 1:
         n_lines = 1
@@ -912,30 +961,14 @@ def api_status():
 
     units = {}
     for u in UNITS:
-        ok, out = systemctl("status", u)
-        # compact status parsing
-        state = "unknown"
-        sub = ""
-        for line in out.splitlines():
-            if "Active:" in line:
-                # Active: active (running) since ...
-                m = re.search(r"Active:\s+(\w+)\s+\((\w+)\)", line)
-                if m:
-                    state = m.group(1)
-                    sub = m.group(2)
-                else:
-                    m2 = re.search(r"Active:\s+(\w+)", line)
-                    if m2:
-                        state = m2.group(1)
-                break
-        units[u] = {"ok": ok, "state": state, "sub": sub}
+        units[u] = read_unit_state(u)
 
     units_list = []
     for name, info in units.items():
         units_list.append({
             "unit": name,
             "state": info.get("state","unknown"),
-            "since": "",
+            "since": info.get("since",""),
             "details": info.get("sub",""),
         })
 

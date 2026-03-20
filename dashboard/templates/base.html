@@ -62,7 +62,7 @@
             <span class="nav-icon nav-icon-green"></span>
             <span class="nav-copy">
               <span class="nav-title">Services</span>
-              <span class="nav-sub">bot, timer, dashboard</span>
+              <span class="nav-sub">bot, selector, dashboard</span>
             </span>
           </a>
           <a class="nav-item {% if active=='logs' %}active{% endif %}" href="/logs" data-nav="logs">
@@ -92,7 +92,7 @@
         <div class="topbar-title">
           <div class="eyebrow">Bot Trading Spot</div>
           <div class="page-title">{{ title or "Dashboard" }}</div>
-          <div class="page-sub">Lecture simple, orientée pilotage et décisions métier.</div>
+          <div class="page-sub">{{ subtitle or "Lecture live pour piloter le bot, le selector et les diagnostics utiles." }}</div>
         </div>
 
         <div class="topbar-actions">
@@ -104,7 +104,7 @@
             <span class="header-chip-label">Statut</span>
             <span class="header-chip-value" id="footer-status">--</span>
           </div>
-          <button class="btn btn-ghost" id="btn-refresh">Refresh</button>
+          <button class="btn btn-ghost" id="btn-refresh">Rafraichir</button>
         </div>
       </header>
 
@@ -113,7 +113,7 @@
       </section>
 
       <footer class="footer">
-        <span>Vue finance simplifiée. Les détails techniques restent dans les logs.</span>
+        <span>Lecture orientee pilotage. Les details fins restent accessibles dans les logs.</span>
       </footer>
     </main>
   </div>

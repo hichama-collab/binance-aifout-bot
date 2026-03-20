@@ -1,19 +1,34 @@
 {% extends "base.html" %}
 {% set title = "Services" %}
 {% set active = "services" %}
+{% set subtitle = "Commandes d'exploitation pour le bot, le selector et le dashboard." %}
 {% block content %}
-<div class="grid grid-12 gap-16">
+<div class="grid grid-12 gap-16 services-page">
+  <div class="card card-slate col-12">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Etat rapide</div>
+        <div class="card-sub">Les 4 unites critiques, lisibles en un coup d'oeil avant d'agir.</div>
+      </div>
+      <div class="pill" id="svc2-pill">--</div>
+    </div>
+    <div class="service-health service-health-grid" id="service-health-ops">
+      <div class="muted">Chargement...</div>
+    </div>
+  </div>
+
   <div class="card card-amber col-12">
     <div class="card-head">
       <div>
-        <div class="card-title">Pilotage des services</div>
-        <div class="card-sub">Demarrage, arret et redemarrage des composants principaux.</div>
+        <div class="card-title">Commandes directes</div>
+        <div class="card-sub">Demarrage, arret et relance des composants principaux.</div>
       </div>
     </div>
 
     <div class="control-grid">
       <div class="control">
         <div class="control-title">Main Bot</div>
+        <div class="control-sub muted">Le moteur de trading spot. Action la plus sensible.</div>
         <div class="btn-row">
           <button class="btn btn-green" data-unit="binance-aifout-bot.service" data-action="start">Start</button>
           <button class="btn btn-red" data-unit="binance-aifout-bot.service" data-action="stop">Stop</button>
@@ -22,7 +37,17 @@
       </div>
 
       <div class="control">
+        <div class="control-title">Selector Run</div>
+        <div class="control-sub muted">Lance un scan ponctuel du selector, sans attendre le timer.</div>
+        <div class="btn-row">
+          <button class="btn btn-green" data-unit="token-profile-selector.service" data-action="start">Run now</button>
+          <button class="btn btn-blue" data-unit="token-profile-selector.service" data-action="restart">Restart</button>
+        </div>
+      </div>
+
+      <div class="control">
         <div class="control-title">Selector Timer</div>
+        <div class="control-sub muted">Planifie le scan automatique toutes les 5 minutes.</div>
         <div class="btn-row">
           <button class="btn btn-green" data-unit="token-profile-selector.timer" data-action="start">Start</button>
           <button class="btn btn-red" data-unit="token-profile-selector.timer" data-action="stop">Stop</button>
@@ -32,6 +57,7 @@
 
       <div class="control">
         <div class="control-title">Dashboard</div>
+        <div class="control-sub muted">L'interface de pilotage, utile si la page ne repond plus.</div>
         <div class="btn-row">
           <button class="btn btn-green" data-unit="botdash.service" data-action="start">Start</button>
           <button class="btn btn-red" data-unit="botdash.service" data-action="stop">Stop</button>
@@ -39,17 +65,26 @@
         </div>
       </div>
     </div>
+  </div>
 
-    <pre class="jsonbox" id="ctl-out">{ "ok": true }</pre>
+  <div class="card card-purple col-12">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Derniere commande</div>
+        <div class="card-sub">Retour clair apres une action, sans JSON brut en plein milieu.</div>
+      </div>
+    </div>
+    <div class="action-result" id="ctl-out">
+      <div class="action-empty">Aucune commande envoyee pour l'instant.</div>
+    </div>
   </div>
 
   <div class="card card-slate col-12">
     <div class="card-head">
       <div>
-        <div class="card-title">Etat des unites</div>
-        <div class="card-sub">Vue detaillee pour confirmer ce qui tourne vraiment.</div>
+        <div class="card-title">Etat detaille des unites</div>
+        <div class="card-sub">Confirmation ligne par ligne de ce qui tourne vraiment.</div>
       </div>
-      <div class="pill" id="svc2-pill">--</div>
     </div>
     <div class="table-wrap">
       <table class="table" id="services-table">

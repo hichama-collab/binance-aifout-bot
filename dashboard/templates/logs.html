@@ -1,15 +1,19 @@
 {% extends "base.html" %}
 {% set title = "Logs" %}
 {% set active = "logs" %}
+{% set subtitle = "Acces rapide aux fichiers utiles pour comprendre ce que fait vraiment le bot." %}
 {% block content %}
 <div class="grid grid-12 gap-16">
-  <div class="card card-purple col-12">
+  <div class="card card-purple col-12 col-lg-4">
     <div class="card-head">
       <div>
-        <div class="card-title">Fichiers recents</div>
-        <div class="card-sub">Acces direct aux derniers journaux disponibles.</div>
+        <div class="card-title">Acces rapide</div>
+        <div class="card-sub">Ouvre les journaux les plus utiles sans fouiller toute la liste.</div>
       </div>
       <div class="pill pill-purple" id="logs-pill">--</div>
+    </div>
+    <div class="quick-log-grid" id="log-quick">
+      <div class="muted">Chargement...</div>
     </div>
 
     <div class="table-wrap">
@@ -20,14 +24,15 @@
     </div>
   </div>
 
-  <div class="card card-slate col-12">
+  <div class="card card-slate col-12 col-lg-8">
     <div class="card-head">
       <div>
-        <div class="card-title">Apercu</div>
-        <div class="card-sub">Lecture rapide des 200 dernieres lignes.</div>
+        <div class="card-title">Lecture</div>
+        <div class="card-sub">Apercu rapide du fichier selectionne, sans quitter la page.</div>
       </div>
+      <div class="pill" id="log-current">Aucun fichier</div>
     </div>
-    <pre class="logbox" id="log-view">Sélectionne un fichier…</pre>
+    <pre class="logbox logbox-tall" id="log-view">Choisis un fichier a gauche pour demarrer la lecture.</pre>
   </div>
 </div>
 {% endblock %}
