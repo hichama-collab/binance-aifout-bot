@@ -1,0 +1,37 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="panel" x1="10" y1="8" x2="55" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D39B68"/>
+      <stop offset="0.45" stop-color="#B87333"/>
+      <stop offset="1" stop-color="#7E4921"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="16" y1="14" x2="48" y2="50" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF3E2" stop-opacity="0.88"/>
+      <stop offset="1" stop-color="#F5D0AB" stop-opacity="0.26"/>
+    </linearGradient>
+    <linearGradient id="glyph" x1="17" y1="16" x2="49" y2="47" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1A1715"/>
+      <stop offset="1" stop-color="#2A211C"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="64" height="64" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="6"/>
+      <feGaussianBlur stdDeviation="4"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.05 0 0 0 0 0.03 0 0 0 0 0.02 0 0 0 0.35 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="6" y="4" width="52" height="52" rx="18" fill="#171717"/>
+    <rect x="7.25" y="5.25" width="49.5" height="49.5" rx="16.75" fill="url(#panel)"/>
+    <rect x="7.25" y="5.25" width="49.5" height="49.5" rx="16.75" stroke="#FFFFFF" stroke-opacity="0.10"/>
+    <path d="M16 15C22 10 31 8 40 10C46 11 51 15 54 21V12C49 7 42 4 34 4H24C18 4 12 8 8 14V24C10 20 13 17 16 15Z" fill="url(#shine)"/>
+    <path d="M18 20H22.2V29.4H30.2V20H34.4V40.8H30.2V33.2H22.2V40.8H18V20Z" fill="url(#glyph)"/>
+    <path d="M42.5 20H46.2L52 40.8H47.6L46.7 37.2H41.8L40.9 40.8H36.6L42.5 20ZM42.7 33.7H45.9L44.3 27.4L42.7 33.7Z" fill="url(#glyph)"/>
+    <path d="M50.2 17.2L53.8 20.8L52.1 22.4L49.8 20.2L47.4 22.6L45.8 21L49.4 17.4C49.6 17.1 50 17.1 50.2 17.2Z" fill="#6FA574"/>
+  </g>
+</svg>

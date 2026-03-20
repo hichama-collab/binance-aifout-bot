@@ -41,7 +41,7 @@ def _json_safe(obj):
     return obj
 
 
-APP_TITLE = "botdash"
+APP_TITLE = "Hicham AIFOUT Bot"
 
 # ---- config (env) ----
 def _resolve_runtime_path(env_name: str, default_path: str, repo_relative: str) -> Path:
@@ -88,6 +88,13 @@ app = Flask(__name__)
 _LIVE_WALLET_CACHE = {"ts": 0.0, "data": None}
 _FX_CACHE = {"ts": 0.0, "usdc_eur": None}
 _PRICE_CACHE = {"ts": 0.0, "prices": None}
+
+
+@app.context_processor
+def inject_branding():
+    return {
+        "app_title": APP_TITLE,
+    }
 
 # ---- auth ----
 def _unauthorized():

@@ -105,18 +105,23 @@ a{color:inherit;text-decoration:none}
 .brand-shell{display:flex;flex-direction:column;gap:16px;margin-bottom:30px}
 .brand{display:flex;align-items:center;gap:14px}
 .logo{
-  width:48px;
-  height:48px;
-  border-radius:16px;
-  display:grid;
-  place-items:center;
-  background:linear-gradient(135deg, var(--accent) 0%, var(--accent-soft) 100%);
-  color:#1b1b1d;
-  font-weight:700;
-  font-size:20px;
-  box-shadow:0 10px 25px rgba(184,115,51,.28);
+  width:56px;
+  height:56px;
+  flex:0 0 auto;
 }
-.brand-name{font-size:24px;font-weight:700;line-height:1}
+.logo-mark{
+  display:block;
+  width:100%;
+  height:100%;
+}
+.brand-text{min-width:0}
+.brand-name{
+  font-size:22px;
+  font-weight:700;
+  line-height:1.08;
+  letter-spacing:-.02em;
+  overflow-wrap:anywhere;
+}
 .brand-sub{font-size:13px;color:var(--text-soft);margin-top:4px}
 
 .host-card,

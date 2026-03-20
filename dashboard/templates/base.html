@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>{{ title or "botdash" }}</title>
+  <title>{% if title %}{{ title }} | {{ app_title }}{% else %}{{ app_title }}{% endif %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -23,9 +23,11 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand-shell">
         <div class="brand">
-          <div class="logo">bd</div>
+          <div class="logo">
+            <img class="logo-mark" src="{{ url_for('static', filename='logo-ha.svg') }}" alt="" aria-hidden="true"/>
+          </div>
           <div class="brand-text">
-            <div class="brand-name">botdash</div>
+            <div class="brand-name">{{ app_title }}</div>
             <div class="brand-sub">pilotage trading spot</div>
           </div>
         </div>
