@@ -4,167 +4,291 @@
 {% set subtitle = "Cockpit live du bot, du token cible et des decisions recentes." %}
 {% block content %}
 
-<div class="grid grid-12 gap-16">
-  <div class="card card-slate col-12">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Lecture live</div>
-        <div class="card-sub">Les 4 signaux qui doivent te sauter aux yeux a l'ouverture.</div>
+<div class="dashboard-shell">
+  <section class="hero-banner">
+    <div class="hero-copy">
+      <div class="hero-kicker">Template refresh</div>
+      <h2>Un dashboard plus clair, inspire du template InApp et recadre pour le trading.</h2>
+      <p>Les infos critiques remontent en premier, puis on descend vers l'equity, le wallet et les decisions.</p>
+    </div>
+    <div class="hero-badges">
+      <div class="hero-badge">
+        <span class="hero-badge-label">Token actif</span>
+        <strong id="token-now-pill">--</strong>
+      </div>
+      <div class="hero-badge">
+        <span class="hero-badge-label">Position</span>
+        <strong id="pos-pill">--</strong>
+      </div>
+      <div class="hero-badge">
+        <span class="hero-badge-label">Services</span>
+        <strong id="service-health-pill">--</strong>
       </div>
     </div>
-    <div class="signal-strip">
-      <div class="signal-card">
-        <div class="signal-label">Bot</div>
-        <div class="signal-value" id="sig-bot-value">--</div>
-        <div class="signal-meta" id="sig-bot-meta">Etat du moteur principal.</div>
-      </div>
-      <div class="signal-card">
-        <div class="signal-label">Token actif</div>
-        <div class="signal-value" id="sig-token-value">--</div>
-        <div class="signal-meta" id="sig-token-meta">Configuration de trading en cours.</div>
-      </div>
-      <div class="signal-card">
-        <div class="signal-label">Position</div>
-        <div class="signal-value" id="sig-position-value">--</div>
-        <div class="signal-meta" id="sig-position-meta">Exposition actuelle du bot.</div>
-      </div>
-      <div class="signal-card">
-        <div class="signal-label">Derniere action</div>
-        <div class="signal-value" id="sig-last-value">--</div>
-        <div class="signal-meta" id="sig-last-meta">Derniere decision lue dans les trades.</div>
-      </div>
-    </div>
-  </div>
+  </section>
 
-  <div class="card card-green col-12 col-lg-6">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Position en cours</div>
-        <div class="card-sub">Lecture directe de l'exposition reelle si un trade est ouvert.</div>
+  <section class="metric-grid">
+    <article class="metric-card metric-peach">
+      <div class="metric-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 7.5A2.5 2.5 0 0 1 8.5 5h7A2.5 2.5 0 0 1 18 7.5v9A2.5 2.5 0 0 1 15.5 19h-7A2.5 2.5 0 0 1 6 16.5v-9Zm2.5.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-7ZM10 10h4v1.5h-4V10Zm0 3h2.5v1.5H10V13Z"/>
+        </svg>
       </div>
-      <div class="pill pill-green" id="pos-pill">--</div>
-    </div>
-    <div class="kv2" id="pos-live">
-      <div class="k">Symbol</div><div class="v" id="pos-symbol">--</div>
-      <div class="k">Qty</div><div class="v" id="pos-qty">--</div>
-      <div class="k">Entry</div><div class="v" id="pos-entry">--</div>
-      <div class="k">Bid / Ask</div><div class="v" id="pos-ba">--</div>
-      <div class="k">PnL (≈)</div><div class="v" id="pos-pnl">--</div>
-      <div class="k">Dernière raison</div><div class="v" id="pos-reason">--</div>
-    </div>
-  </div>
+      <div class="metric-copy">
+        <div class="metric-label">Capital disponible</div>
+        <div class="metric-value" id="metric-wallet-value">--</div>
+        <div class="metric-meta" id="metric-wallet-meta">Wallet spot valorise.</div>
+      </div>
+    </article>
 
-  <div class="card card-amber col-12 col-lg-6">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Pilotage instantane</div>
-        <div class="card-sub">Configuration active et etat des moteurs sans quitter la home.</div>
+    <article class="metric-card metric-green">
+      <div class="metric-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 17v-4.5A2.5 2.5 0 0 1 8.5 10H10V7.5A2.5 2.5 0 0 1 12.5 5H18v2h-5.5a.5.5 0 0 0-.5.5V10h1.5A2.5 2.5 0 0 1 16 12.5V17h-2v-4.5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0-.5.5V17H6Zm11.5-2.5L20 17l-2.5 2.5-1.4-1.4L17.2 17H12v-2h5.2l-1.1-1.1 1.4-1.4Z"/>
+        </svg>
       </div>
-      <div class="pill pill-amber" id="service-health-pill">--</div>
-    </div>
-    <div class="pilot-grid">
-      <div class="pilot-block">
-        <div class="section-kicker">Configuration active</div>
-        <div class="kv2 kv2-compact" id="token-now">
-          <div class="k">Symbol</div><div class="v" id="tn-symbol">--</div>
-          <div class="k">Profile</div><div class="v" id="tn-profile">--</div>
-          <div class="k">Dry run</div><div class="v" id="tn-dry">--</div>
+      <div class="metric-copy">
+        <div class="metric-label">PnL session</div>
+        <div class="metric-value" id="metric-session-value">--</div>
+        <div class="metric-meta" id="metric-session-meta">Session fermee la plus recente.</div>
+      </div>
+    </article>
+
+    <article class="metric-card metric-blue">
+      <div class="metric-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 4a1 1 0 0 1 1 1v1h1.5a3.5 3.5 0 0 1 .4 7H10a1.5 1.5 0 0 0 0 3h5.5a1.5 1.5 0 0 0 1.5-1.5V14h2v.5A3.5 3.5 0 0 1 15.5 18H13v1a1 1 0 1 1-2 0v-1H9.5A3.5 3.5 0 0 1 9 11h5a1.5 1.5 0 0 0 0-3H8.5A1.5 1.5 0 0 0 7 9.5V10H5v-.5A3.5 3.5 0 0 1 8.5 6H11V5a1 1 0 0 1 1-1Z"/>
+        </svg>
+      </div>
+      <div class="metric-copy">
+        <div class="metric-label">PnL du jour</div>
+        <div class="metric-value" id="metric-today-value">--</div>
+        <div class="metric-meta" id="metric-today-meta">Lecture glissante du jour.</div>
+      </div>
+    </article>
+
+    <article class="metric-card metric-yellow">
+      <div class="metric-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 5h10a2 2 0 0 1 2 2v5.4a3 3 0 0 1-.9 2.1l-3.8 3.8a3 3 0 0 1-2.1.9H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm1 3v2h8V8H8Zm0 4v2h5v-2H8Z"/>
+        </svg>
+      </div>
+      <div class="metric-copy">
+        <div class="metric-label">Derniere action</div>
+        <div class="metric-value" id="metric-last-value">--</div>
+        <div class="metric-meta" id="metric-last-meta">Lecture de la derniere decision.</div>
+      </div>
+    </article>
+  </section>
+
+  <section class="grid grid-12 gap-16">
+    <article class="card card-green col-12 col-xl-4">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Position en cours</div>
+          <div class="card-sub">Lecture directe de l'exposition reelle si un trade est ouvert.</div>
         </div>
       </div>
-      <div class="pilot-block">
-        <div class="section-kicker">Moteurs actifs</div>
-        <div class="service-health" id="service-health">
+      <div class="kv2" id="pos-live">
+        <div class="k">Symbol</div><div class="v" id="pos-symbol">--</div>
+        <div class="k">Qty</div><div class="v" id="pos-qty">--</div>
+        <div class="k">Entry</div><div class="v" id="pos-entry">--</div>
+        <div class="k">Bid / Ask</div><div class="v" id="pos-ba">--</div>
+        <div class="k">PnL</div><div class="v" id="pos-pnl">--</div>
+        <div class="k">Derniere raison</div><div class="v" id="pos-reason">--</div>
+      </div>
+    </article>
+
+    <article class="card card-amber col-12 col-xl-4">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Setup actif</div>
+          <div class="card-sub">Le token courant et les derniers indicateurs de lecture remontes par le bot.</div>
+        </div>
+      </div>
+      <div class="kv2" id="token-now">
+        <div class="k">Symbol</div><div class="v" id="tn-symbol">--</div>
+        <div class="k">Profile</div><div class="v" id="tn-profile">--</div>
+        <div class="k">Dry run</div><div class="v" id="tn-dry">--</div>
+        <div class="k">Etat</div><div class="v" id="tn-state">--</div>
+        <div class="k">RSI</div><div class="v" id="tn-rsi">--</div>
+        <div class="k">Momentum</div><div class="v" id="tn-mom">--</div>
+        <div class="k">Spread</div><div class="v" id="tn-spread">--</div>
+        <div class="k">Bid / Ask</div><div class="v" id="tn-bidask">--</div>
+      </div>
+    </article>
+
+    <article class="card card-slate col-12 col-xl-4">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Services critiques</div>
+          <div class="card-sub">Le bot, le selector et le dashboard restent visibles sans quitter l'accueil.</div>
+        </div>
+      </div>
+      <div class="service-health dashboard-service-health" id="service-health">
+        <div class="muted">Chargement...</div>
+      </div>
+    </article>
+
+    <article class="card card-blue col-12 col-xl-8">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Equity realisee</div>
+          <div class="card-sub">Courbe issue des trades fermes pour garder la trajectoire en vue.</div>
+        </div>
+        <div class="pill pill-blue" id="dashboard-equity-pill">--</div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="dashboardEquityChart"></canvas>
+      </div>
+      <div class="stats-foot muted small">Lecture sur l'historique disponible, mise a jour avec les trades fermes.</div>
+    </article>
+
+    <article class="card card-purple col-12 col-xl-4">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Vue rapide</div>
+          <div class="card-sub">Les buckets de perf et les tokens qui tirent le resultat.</div>
+        </div>
+        <div class="pill pill-purple" id="dashboard-overview-pill">--</div>
+      </div>
+      <div class="overview-grid">
+        <div class="overview-stat">
+          <span>Semaine</span>
+          <strong id="overview-week">--</strong>
+        </div>
+        <div class="overview-stat">
+          <span>Mois</span>
+          <strong id="overview-month">--</strong>
+        </div>
+        <div class="overview-stat">
+          <span>Winrate</span>
+          <strong id="overview-winrate">--</strong>
+        </div>
+        <div class="overview-stat">
+          <span>Profit factor</span>
+          <strong id="overview-pf">--</strong>
+        </div>
+      </div>
+      <div class="mini-list-block">
+        <div class="mini-list-title">Top tokens</div>
+        <div class="mini-list" id="dashboard-top-tokens">
           <div class="muted">Chargement...</div>
         </div>
       </div>
-    </div>
-  </div>
-
-  <div class="card card-blue col-12">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Capital disponible</div>
-        <div class="card-sub">Le portefeuille reste visible, mais il ne prend plus toute la scene.</div>
+      <div class="mini-list-block">
+        <div class="mini-list-title">Sous pression</div>
+        <div class="mini-list" id="dashboard-bottom-tokens">
+          <div class="muted">Chargement...</div>
+        </div>
       </div>
-      <div class="pill pill-blue" id="wallet-total">--</div>
-    </div>
-    <div class="table-wrap">
-      <table class="table" id="wallet-table">
-        <thead>
-          <tr>
-            <th>Asset</th>
-            <th class="right">Free</th>
-            <th class="right">Locked</th>
-            <th class="right">Total</th>
-            <th class="right">≈ USDC</th>
-            <th class="right">≈ EUR</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td colspan="6" class="muted">Chargement...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
+    </article>
 
-  <div class="card card-red col-12">
-    <div class="card-head">
+    <article class="card card-green col-12">
+      <div class="card-head">
         <div>
-        <div class="card-title">PnL par token</div>
-        <div class="card-sub">Turnover cumule des trades fermes par token, avec le capital max engage sur une position.</div>
+          <div class="card-title">Dernier trade ferme</div>
+          <div class="card-sub">Derniere cloture exploitable pour juger la cadence et la fraicheur du feed.</div>
+        </div>
+        <div class="pill pill-green" id="dash-lasttrade-pill">--</div>
       </div>
-      <div class="pill pill-red" id="tr-pill">--</div>
-    </div>
-    <div class="table-wrap">
-      <table class="table" id="tokens-table">
-        <thead>
-          <tr>
-            <th>Token</th>
-            <th>Période</th>
-            <th class="right">Capital Max</th>
-            <th class="right">Turnover Achat</th>
-            <th class="right">Turnover Vente</th>
-            <th class="right">Net USDC</th>
-            <th class="right">Net EUR</th>
-            <th class="right">Net %</th>
-            <th class="right">Trades fermés</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td colspan="9" class="muted">Chargement...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="card card-slate col-12">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Dernieres actions du bot</div>
-        <div class="card-sub">Ce qu'il vient de faire, ou ce qu'il a refuse, avec une raison lisible.</div>
+      <div class="kv2 kv2-wide">
+        <div class="k">Token</div><div class="v" id="dash-last-symbol">--</div>
+        <div class="k">Heure</div><div class="v" id="dash-last-time">--</div>
+        <div class="k">Age</div><div class="v" id="dash-last-age">--</div>
+        <div class="k">PnL</div><div class="v" id="dash-last-pnl">--</div>
+        <div class="k">Prix</div><div class="v" id="dash-last-price">--</div>
+        <div class="k">Quantite</div><div class="v" id="dash-last-qty">--</div>
+        <div class="k">Evenement</div><div class="v" id="dash-last-event">--</div>
+        <div class="k">Source</div><div class="v" id="dash-last-source">--</div>
       </div>
-      <div class="pill" id="dec-pill">--</div>
-    </div>
-    <div class="table-wrap">
-      <table class="table" id="decisions-table">
-        <thead>
-          <tr>
-            <th>Heure</th>
-            <th>Token</th>
-            <th>Action</th>
-            <th>Lecture</th>
-            <th class="right">Prix</th>
-            <th class="right">Qté</th>
-            <th class="right">Impact</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td colspan="7" class="muted">Chargement...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
+    </article>
 
+    <article class="card card-blue col-12">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Capital disponible</div>
+          <div class="card-sub">Le portefeuille reste visible, mais il ne prend plus toute la scene.</div>
+        </div>
+        <div class="pill pill-blue" id="wallet-total">--</div>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="wallet-table">
+          <thead>
+            <tr>
+              <th>Asset</th>
+              <th class="right">Free</th>
+              <th class="right">Locked</th>
+              <th class="right">Total</th>
+              <th class="right">USDC</th>
+              <th class="right">EUR</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="6" class="muted">Chargement...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="card card-red col-12 col-xl-6">
+      <div class="card-head">
+        <div>
+          <div class="card-title">PnL par token</div>
+          <div class="card-sub">Turnover cumule des trades fermes par token, avec le capital max engage.</div>
+        </div>
+        <div class="pill pill-red" id="tr-pill">--</div>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="tokens-table">
+          <thead>
+            <tr>
+              <th>Token</th>
+              <th>Periode</th>
+              <th class="right">Capital Max</th>
+              <th class="right">Turnover Achat</th>
+              <th class="right">Turnover Vente</th>
+              <th class="right">Net USDC</th>
+              <th class="right">Net EUR</th>
+              <th class="right">Net %</th>
+              <th class="right">Trades fermes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="9" class="muted">Chargement...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="card card-slate col-12 col-xl-6">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Dernieres actions du bot</div>
+          <div class="card-sub">Ce qu'il vient de faire, ou ce qu'il a refuse, avec une raison lisible.</div>
+        </div>
+        <div class="pill" id="dec-pill">--</div>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="decisions-table">
+          <thead>
+            <tr>
+              <th>Heure</th>
+              <th>Token</th>
+              <th>Action</th>
+              <th>Lecture</th>
+              <th class="right">Prix</th>
+              <th class="right">Qte</th>
+              <th class="right">Impact</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="7" class="muted">Chargement...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </section>
 </div>
 
 {% endblock %}

@@ -130,6 +130,13 @@
     el.className = `kpi-v ${pnlClass(bucket?.usdc)}`.trim();
   }
 
+  function setMetricValue(id, value, tone = "") {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = value;
+    el.className = `metric-value ${tone}`.trim();
+  }
+
 
 function setHTML(id, html) {
   const el = document.getElementById(id);
@@ -181,6 +188,7 @@ function binanceSpotUrl(symbol) {
     try {
       const st = await jget("/api/status");
       setText("hdr-host", st.host || "--");
+      setText("hdr-host-top", st.host || "--");
       setText("hdr-utc", st.utc || "--");
       setText("kv-base", st.base || "--");
       setText("kv-logs", st.logs || "--");
@@ -193,6 +201,7 @@ function binanceSpotUrl(symbol) {
       else if (isUnitActive(dash)) status = "Bot arrete";
       setText("footer-status", status);
     } catch (e) {
+      setText("hdr-host-top", "--");
       setText("footer-status", "Incident");
     }
   }
@@ -336,8 +345,8 @@ function binanceSpotUrl(symbol) {
     if (pill) pill.textContent = `${rows.length} unités`;
   }
 
-  function drawEquityChart(points) {
-    const canvas = document.getElementById("equityChart");
+  function drawEquityChart(points, canvasId = "equityChart") {
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -474,13 +483,24 @@ function binanceSpotUrl(symbol) {
     if (!$("#token-now")) return;
     const sym = (st.token?.symbol || st.token?.SYMBOL || "--");
     const url = binanceSpotUrl(sym);
+    const indicators = st.indicators || {};
     if (url) {
       setHTML("tn-symbol", `<a class="link" href="${url}" target="_blank" rel="noreferrer">${sym}</a>`);
     } else {
       setText("tn-symbol", sym);
     }
     setText("tn-profile", st.token?.profile || st.token?.PROFILE || "--");
-    setText("tn-dry", String(st.token?.dry_run ?? "--"));
+    if (st.token?.dry_run === null || st.token?.dry_run === undefined || st.token?.dry_run === "") {
+      setText("tn-dry", "--");
+    } else {
+      setText("tn-dry", String(st.token?.dry_run) === "1" ? "Oui" : "Non");
+    }
+    setText("tn-state", indicators.STATE || "--");
+    setText("tn-rsi", indicators.RSI || "--");
+    setText("tn-mom", indicators.MOM || "--");
+    setText("tn-spread", indicators.SPREAD || "--");
+    if (indicators.BID && indicators.ASK) setText("tn-bidask", `${indicators.BID} / ${indicators.ASK}`);
+    else setText("tn-bidask", "--");
     const pill = $("#token-now-pill");
     if (pill) {
       pill.innerHTML = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${sym}</a>` : sym;
@@ -530,8 +550,10 @@ function binanceSpotUrl(symbol) {
       const cls = pnlClass(usdc);
       const period = r.last_ts ? `${r.last_ts}` : "--";
       const pctTxt = pnlPct == null ? "--" : `${fmt(pnlPct, 1)}%`;
+      const url = binanceSpotUrl(r.symbol);
+      const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${r.symbol}</a>` : (r.symbol || "--");
       return `<tr>
-        <td><b><a class="link" href="${binanceSpotUrl(r.symbol) || "#"}" target="_blank" rel="noreferrer">${r.symbol}</a></b></td>
+        <td><b>${symbolHtml}</b></td>
         <td class="muted">${period}</td>
         <td class="right">${maxOpenUsdc === null ? "--" : fmt(maxOpenUsdc, 2)}</td>
         <td class="right">${buyUsdc === null ? "--" : fmt(buyUsdc, 2)}</td>
@@ -577,12 +599,151 @@ function binanceSpotUrl(symbol) {
     if (pill) pill.textContent = `${rows.length} lignes`;
   }
 
+  function renderTokenMiniList(id, rows, emptyText) {
+    const box = document.getElementById(id);
+    if (!box) return;
+    const list = rows || [];
+    if (!list.length) {
+      box.innerHTML = `<div class="muted">${emptyText}</div>`;
+      return;
+    }
+    box.innerHTML = list.map((row) => {
+      const url = binanceSpotUrl(row.symbol);
+      const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${row.symbol}</a>` : (row.symbol || "--");
+      const metaBits = [];
+      if (row.trades != null) metaBits.push(`${fmtInt(row.trades)} trades`);
+      if (row.last_ts) metaBits.push(fmtDateTime(row.last_ts));
+      return `<div class="mini-list-row">
+        <div class="mini-list-copy">
+          <strong>${symbolHtml}</strong>
+          <span>${metaBits.join(" | ") || "historique indisponible"}</span>
+        </div>
+        <div class="mini-list-value ${pnlClass(row.pnl_usdc)}">${fmt(row.pnl_usdc, 2)} USDC</div>
+      </div>`;
+    }).join("");
+  }
+
+  function renderDashboardMetrics(st, wallet, pnl, trades) {
+    if (!document.getElementById("metric-wallet-value")) return;
+
+    const walletMeta = [];
+    if (wallet.total_eur != null) walletMeta.push(`≈ ${fmt(wallet.total_eur, 2)} EUR`);
+    if ((wallet.rows || []).length) walletMeta.push(`${fmtInt(wallet.rows.length)} assets suivis`);
+    setMetricValue("metric-wallet-value", wallet.total_usdc != null ? `${fmt(wallet.total_usdc, 2)} USDC` : "--");
+    setText("metric-wallet-meta", walletMeta.join(" | ") || "Valorisation indisponible.");
+
+    const session = pnl.session || {};
+    const sessionMeta = [];
+    if (session.eur != null) sessionMeta.push(`≈ ${fmt(session.eur, 2)} EUR`);
+    if (session.trades != null) sessionMeta.push(`${fmtInt(session.trades)} trades`);
+    if (session.winrate != null) sessionMeta.push(`${fmt(session.winrate, 1)}% winrate`);
+    setMetricValue(
+      "metric-session-value",
+      session.usdc != null ? `${fmt(session.usdc, 2)} USDC` : "--",
+      pnlClass(session.usdc),
+    );
+    setText("metric-session-meta", sessionMeta.join(" | ") || "Session non disponible.");
+
+    const today = pnl.today || {};
+    const todayMeta = [];
+    if (today.eur != null) todayMeta.push(`≈ ${fmt(today.eur, 2)} EUR`);
+    if (today.trades != null) todayMeta.push(`${fmtInt(today.trades)} trades`);
+    setMetricValue(
+      "metric-today-value",
+      today.usdc != null ? `${fmt(today.usdc, 2)} USDC` : "--",
+      pnlClass(today.usdc),
+    );
+    setText("metric-today-meta", todayMeta.join(" | ") || "Aucun trade ferme aujourd'hui.");
+
+    const last = (trades.rows || [])[0] || pnl.last_trade || null;
+    const lastMeta = [];
+    if (last?.symbol) lastMeta.push(last.symbol);
+    const reason = last ? reasonLabel(last) : "";
+    if (reason && reason !== "--") lastMeta.push(reason);
+    const ts = last?.ts_utc || last?.ts;
+    if (ts) lastMeta.push(fmtDateTime(ts));
+    setMetricValue("metric-last-value", last ? actionLabel(last) : "Aucune");
+    setText("metric-last-meta", lastMeta.join(" | ") || "Aucune decision recente.");
+
+    const overviewPill = $("#dashboard-overview-pill");
+    if (overviewPill) {
+      const activeCount = (st.units || []).filter((unit) => isUnitActive(unit)).length;
+      overviewPill.textContent = `${activeCount}/${(st.units || []).length || 0} services actifs`;
+    }
+
+    const equityPill = $("#dashboard-equity-pill");
+    if (equityPill) {
+      const points = pnl.equity_points || [];
+      equityPill.textContent = points.length ? `${fmtInt(points.length)} points` : "pas de courbe";
+    }
+  }
+
+  function renderDashboardOverview(pnl) {
+    const setOverviewValue = (id, value, tone = "") => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = value;
+      el.className = tone || "";
+    };
+
+    const week = pnl.week || {};
+    const month = pnl.month || {};
+    const session = pnl.session || {};
+
+    setOverviewValue("overview-week", week.usdc != null ? `${fmt(week.usdc, 2)} USDC` : "--", pnlClass(week.usdc));
+    setOverviewValue("overview-month", month.usdc != null ? `${fmt(month.usdc, 2)} USDC` : "--", pnlClass(month.usdc));
+    setOverviewValue("overview-winrate", session.winrate != null ? `${fmt(session.winrate, 1)}%` : "--");
+    setOverviewValue("overview-pf", session.profit_factor != null ? fmt(session.profit_factor, 2) : "--");
+
+    renderTokenMiniList("dashboard-top-tokens", pnl.token_rankings?.top || [], "Pas de top token pour l'instant.");
+    renderTokenMiniList("dashboard-bottom-tokens", pnl.token_rankings?.bottom || [], "Pas de token faible detecte.");
+  }
+
+  function renderDashboardLastTrade(last) {
+    const pill = $("#dash-lasttrade-pill");
+    if (!last) {
+      setText("dash-last-symbol", "--");
+      setText("dash-last-time", "--");
+      setText("dash-last-age", "--");
+      setText("dash-last-pnl", "--");
+      const pnlEl = document.getElementById("dash-last-pnl");
+      if (pnlEl) pnlEl.className = "v";
+      setText("dash-last-price", "--");
+      setText("dash-last-qty", "--");
+      setText("dash-last-event", "--");
+      setText("dash-last-source", "--");
+      if (pill) pill.textContent = "aucun";
+      return;
+    }
+
+    const url = binanceSpotUrl(last.symbol);
+    if (url) setHTML("dash-last-symbol", `<a class="link" href="${url}" target="_blank" rel="noreferrer">${last.symbol}</a>`);
+    else setText("dash-last-symbol", last.symbol || "--");
+    setText("dash-last-time", fmtDateTime(last.ts));
+    setText("dash-last-age", fmtAgo(last.age_sec));
+    setPnlText("dash-last-pnl", last.pnl_usdc, last.pnl_eur);
+    setText("dash-last-price", last.price != null ? fmt(last.price, 8) : "--");
+    setText("dash-last-qty", last.qty != null ? fmt(last.qty, 6) : "--");
+    setText("dash-last-event", last.event || "--");
+    setText("dash-last-source", last.src || "--");
+    if (pill) pill.textContent = last.age_sec != null ? `il y a ${fmtAgo(last.age_sec)}` : "recent";
+  }
+
   async function loadDashboard() {
-    const [st, wallet, summary, trades] = await Promise.all([
+    const [st, wallet, summary, trades, pnl] = await Promise.all([
       jget("/api/status"),
       jget("/api/wallet"),
       jget("/api/summary"),
       jget("/api/trades"),
+      jget("/api/pnl").catch(() => ({
+        today: {},
+        session: {},
+        week: {},
+        month: {},
+        last_trade: null,
+        token_rankings: { top: [], bottom: [] },
+        equity_points: [],
+      })),
     ]);
     renderSignalStrip(st, trades);
     renderTokenNow(st);
@@ -591,6 +752,10 @@ function binanceSpotUrl(symbol) {
     renderWallet(wallet);
     renderTokensTable(summary);
     renderDecisions(trades);
+    renderDashboardMetrics(st, wallet, pnl, trades);
+    renderDashboardOverview(pnl);
+    renderDashboardLastTrade(pnl.last_trade || null);
+    drawEquityChart(pnl.equity_points || [], "dashboardEquityChart");
   }
 
   function renderControlResult(result) {
