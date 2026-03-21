@@ -15,6 +15,14 @@ LOGS_ARCHIVE_DIR="${ARCHIVE_ROOT}/logs/${DAY}"
 mkdir -p "${RUNTIME_DIR}"
 mkdir -p "${LOGS_ARCHIVE_DIR}"
 
+SYNC_SCRIPT="${BOT_ROOT}/scripts/trade-memory-sync.sh"
+if [ ! -x "${SYNC_SCRIPT}" ]; then
+  echo "ERROR: sync script missing or not executable: ${SYNC_SCRIPT}" >&2
+  exit 1
+fi
+
+"${SYNC_SCRIPT}"
+
 journalctl -u binance-aifout-bot.service --since "24 hours ago" --no-pager \
   | gzip > "${RUNTIME_DIR}/binance-aifout-bot-${TS}.log.gz"
 
@@ -32,4 +40,3 @@ journalctl --vacuum-size=300M >/dev/null 2>&1 || true
 journalctl --vacuum-time=14d >/dev/null 2>&1 || true
 
 exit 0
-

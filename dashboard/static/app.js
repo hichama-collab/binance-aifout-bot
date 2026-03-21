@@ -517,12 +517,13 @@ function binanceSpotUrl(symbol) {
     if (!tbl) return;
     const rows = (summary.rows || []).slice(0, 10);
     if (!rows.length) {
-      tbl.innerHTML = `<tr><td colspan="8" class="muted">aucun trade</td></tr>`;
+      tbl.innerHTML = `<tr><td colspan="9" class="muted">aucun trade</td></tr>`;
       return;
     }
     tbl.innerHTML = rows.map(r => {
       const usdc = r.pnl_usdc ?? 0;
       const eur = r.pnl_eur ?? null;
+      const maxOpenUsdc = r.max_open_usdc ?? null;
       const buyUsdc = r.buy_usdc ?? null;
       const sellUsdc = r.sell_usdc ?? null;
       const pnlPct = r.pnl_pct ?? null;
@@ -532,6 +533,7 @@ function binanceSpotUrl(symbol) {
       return `<tr>
         <td><b><a class="link" href="${binanceSpotUrl(r.symbol) || "#"}" target="_blank" rel="noreferrer">${r.symbol}</a></b></td>
         <td class="muted">${period}</td>
+        <td class="right">${maxOpenUsdc === null ? "--" : fmt(maxOpenUsdc, 2)}</td>
         <td class="right">${buyUsdc === null ? "--" : fmt(buyUsdc, 2)}</td>
         <td class="right">${sellUsdc === null ? "--" : fmt(sellUsdc, 2)}</td>
         <td class="right ${cls}">${fmt(usdc, 2)}</td>

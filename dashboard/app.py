@@ -7,6 +7,7 @@ import time
 import hmac
 import hashlib
 import subprocess
+import sys
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone, timedelta
@@ -14,6 +15,11 @@ from functools import wraps
 from pathlib import Path
 from urllib.parse import urlencode
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from core.trade_memory import load_closed_trades, load_dashboard_cache, resolve_memory_db_path, sync_trade_memory
 from flask import Flask, Response, jsonify, render_template, request, abort
 
 
@@ -72,6 +78,8 @@ LIVE_WALLET_CACHE_TTL_SEC = float(os.getenv("LIVE_WALLET_CACHE_TTL_SEC", "10"))
 FX_CACHE_TTL_SEC = float(os.getenv("FX_CACHE_TTL_SEC", "60"))
 PRICE_CACHE_TTL_SEC = float(os.getenv("PRICE_CACHE_TTL_SEC", "30"))
 WALLET_MIN_DISPLAY = float(os.getenv("WALLET_MIN_DISPLAY", "0.9"))
+TRADE_MEMORY_SYNC_TTL_SEC = float(os.getenv("TRADE_MEMORY_SYNC_TTL_SEC", "20"))
+TRADE_MEMORY_ROWS_CACHE_TTL_SEC = float(os.getenv("TRADE_MEMORY_ROWS_CACHE_TTL_SEC", "10"))
 
 
 # systemd units allowlist (security)
@@ -88,6 +96,8 @@ app = Flask(__name__)
 _LIVE_WALLET_CACHE = {"ts": 0.0, "data": None}
 _FX_CACHE = {"ts": 0.0, "usdc_eur": None}
 _PRICE_CACHE = {"ts": 0.0, "prices": None}
+_TRADE_MEMORY_SYNC_CACHE = {"ts": 0.0, "data": None}
+_TRADE_MEMORY_ROWS_CACHE = {"ts": 0.0, "rows": None}
 
 
 @app.context_processor
@@ -422,6 +432,178 @@ def parse_trade_ts(value):
         except Exception:
             continue
     return None
+
+
+def sync_trade_memory_cached(force: bool = False):
+    now = time.time()
+    cached = _TRADE_MEMORY_SYNC_CACHE.get("data")
+    if (
+        not force
+        and cached is not None
+        and (now - float(_TRADE_MEMORY_SYNC_CACHE.get("ts", 0.0))) < TRADE_MEMORY_SYNC_TTL_SEC
+    ):
+        return cached
+
+    try:
+        info = sync_trade_memory(logs_dir=LOG_DIR)
+    except Exception as exc:
+        info = {
+            "ok": False,
+            "logs_dir": str(LOG_DIR),
+            "db_path": str(resolve_memory_db_path(BASE_DIR)),
+            "error": str(exc),
+        }
+
+    _TRADE_MEMORY_SYNC_CACHE["ts"] = now
+    _TRADE_MEMORY_SYNC_CACHE["data"] = info
+    _TRADE_MEMORY_ROWS_CACHE["ts"] = 0.0
+    _TRADE_MEMORY_ROWS_CACHE["rows"] = None
+    return info
+
+
+def load_persistent_trade_rows(force_sync: bool = False):
+    sync_info = sync_trade_memory_cached(force=force_sync)
+    now = time.time()
+    cached_rows = _TRADE_MEMORY_ROWS_CACHE.get("rows")
+    if (
+        cached_rows is not None
+        and (now - float(_TRADE_MEMORY_ROWS_CACHE.get("ts", 0.0))) < TRADE_MEMORY_ROWS_CACHE_TTL_SEC
+    ):
+        return cached_rows, sync_info
+
+    rows = []
+    try:
+        for item in load_closed_trades():
+            rows.append({
+                "ts_utc": str(item.get("ts_utc") or ""),
+                "symbol": str(item.get("symbol") or "").strip().upper(),
+                "event": "SELL_FILLED",
+                "side": "SELL",
+                "qty": item.get("qty"),
+                "price": item.get("exit_price"),
+                "entry_price": item.get("entry_price"),
+                "pnl": item.get("pnl_usdc"),
+                "reason": item.get("reason") or "",
+                "src": item.get("src") or "",
+            })
+    except Exception:
+        rows = []
+
+    _TRADE_MEMORY_ROWS_CACHE["ts"] = now
+    _TRADE_MEMORY_ROWS_CACHE["rows"] = rows
+    return rows, sync_info
+
+
+def load_stats_trade_rows():
+    rows, sync_info = load_persistent_trade_rows()
+    if rows:
+        return rows, sync_info, str(sync_info.get("db_path") or "")
+
+    live_rows, _ = load_trades_csv(max_rows=None)
+    return live_rows, sync_info, str(find_latest("*_trades.csv") or "")
+
+
+def load_dashboard_stats_cache(force_sync: bool = False):
+    sync_info = sync_trade_memory_cached(force=force_sync)
+    try:
+        payload = load_dashboard_cache()
+        if isinstance(payload, dict):
+            return payload, sync_info
+    except Exception:
+        pass
+    return {}, sync_info
+
+
+def decorate_bucket(bucket, fx):
+    if not isinstance(bucket, dict):
+        return None
+    out = dict(bucket)
+    usdc = out.get("usdc")
+    out["eur"] = round(usdc_to_eur(usdc, fx), 6) if usdc is not None and fx is not None else None
+    return out
+
+
+def decorate_quality_cache(quality, fx):
+    if not isinstance(quality, dict):
+        return {}
+    out = dict(quality)
+    for src_key, dst_key in (
+        ("avg_win_usdc", "avg_win_eur"),
+        ("avg_loss_usdc", "avg_loss_eur"),
+        ("best_trade_usdc", "best_trade_eur"),
+        ("worst_trade_usdc", "worst_trade_eur"),
+        ("max_drawdown_usdc", "max_drawdown_eur"),
+    ):
+        value = out.get(src_key)
+        out[dst_key] = round(usdc_to_eur(value, fx), 6) if value is not None and fx is not None else None
+    return out
+
+
+def decorate_trade_cache_row(row, fx, now=None):
+    if not isinstance(row, dict):
+        return None
+    out = dict(row)
+    pnl_usdc = out.get("pnl_usdc")
+    out["pnl_eur"] = round(usdc_to_eur(pnl_usdc, fx), 6) if pnl_usdc is not None and fx is not None else None
+    ts = parse_trade_ts(out.get("ts") or out.get("ts_utc") or "")
+    if now is not None and isinstance(ts, datetime):
+        out["age_sec"] = max(0, int((now - ts).total_seconds()))
+    elif "age_sec" not in out:
+        out["age_sec"] = None
+    return out
+
+
+def decorate_token_cache_row(row, fx):
+    if not isinstance(row, dict):
+        return None
+    out = dict(row)
+    pnl_usdc = out.get("pnl_usdc")
+    buy_usdc = out.get("buy_usdc")
+    sell_usdc = out.get("sell_usdc")
+    max_open_usdc = out.get("max_open_usdc")
+    out["pnl_eur"] = round(usdc_to_eur(pnl_usdc, fx), 6) if pnl_usdc is not None and fx is not None else None
+    out["buy_eur"] = round(usdc_to_eur(buy_usdc, fx), 6) if buy_usdc is not None and fx is not None else None
+    out["sell_eur"] = round(usdc_to_eur(sell_usdc, fx), 6) if sell_usdc is not None and fx is not None else None
+    out["max_open_eur"] = round(usdc_to_eur(max_open_usdc, fx), 6) if max_open_usdc is not None and fx is not None else None
+    return out
+
+
+def decorate_equity_cache(points, fx):
+    out = []
+    for item in points or []:
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        usdc = row.get("usdc")
+        row["eur"] = round(usdc_to_eur(usdc, fx), 6) if usdc is not None and fx is not None else None
+        out.append(row)
+    return out
+
+
+def bucket_from_daily_cache(daily_buckets, min_date: str):
+    net = 0.0
+    trades = 0
+    wins_count = 0
+    wins_sum = 0.0
+    losses_sum = 0.0
+    for item in daily_buckets or []:
+        if not isinstance(item, dict):
+            continue
+        day = str(item.get("date") or "")
+        if not day or day < min_date:
+            continue
+        net += float(item.get("usdc") or 0.0)
+        trades += int(item.get("trades") or 0)
+        wins_count += int(item.get("wins_count") or 0)
+        wins_sum += float(item.get("wins_sum") or 0.0)
+        losses_sum += float(item.get("losses_sum") or 0.0)
+
+    return {
+        "usdc": round(net, 6),
+        "trades": trades,
+        "winrate": round((wins_count / trades * 100.0), 2) if trades else None,
+        "profit_factor": round((wins_sum / abs(losses_sum)), 3) if losses_sum < 0 else (round(wins_sum, 3) if wins_sum > 0 else None),
+    }
 
 def extract_closed_pnl_rows(trades):
     rows = []
@@ -797,6 +979,7 @@ def summarize_pnl_by_symbol(trades):
             "last_dt": ts,
             "buy_usdc": 0.0,
             "sell_usdc": 0.0,
+            "max_open_usdc": 0.0,
         }
 
         a["pnl_usdc"] += pnl
@@ -817,6 +1000,7 @@ def summarize_pnl_by_symbol(trades):
 
         if buy_notional is not None:
             a["buy_usdc"] += buy_notional
+            a["max_open_usdc"] = max(float(a.get("max_open_usdc") or 0.0), float(buy_notional))
         if sell_notional is not None:
             a["sell_usdc"] += sell_notional
 
@@ -842,6 +1026,8 @@ def summarize_pnl_by_symbol(trades):
             "buy_eur": round(usdc_to_eur(buy_usdc, fx), 6) if fx is not None else None,
             "sell_usdc": sell_usdc,
             "sell_eur": round(usdc_to_eur(sell_usdc, fx), 6) if fx is not None else None,
+            "max_open_usdc": round(float(a["max_open_usdc"]), 6) if a.get("max_open_usdc") is not None else None,
+            "max_open_eur": round(usdc_to_eur(a["max_open_usdc"], fx), 6) if a.get("max_open_usdc") is not None and fx is not None else None,
             "pnl_pct": round(pnl_pct, 3) if pnl_pct is not None else None,
             "trades": a["trades"],
             "last_ts": a["last_ts"],
@@ -1039,17 +1225,26 @@ def api_token_now():
 @app.route("/api/stats")
 @require_basic_auth
 def api_stats():
-    trades, cols = load_trades_csv()
-    stats = compute_stats(trades)
+    cache, sync_info = load_dashboard_stats_cache()
+    live_trades, cols = load_trades_csv()
+    if cache.get("overall"):
+        stats = dict(cache.get("overall") or {})
+        last_trades = list(cache.get("last_trades") or [])
+        source = str(sync_info.get("db_path") or "")
+    else:
+        stats_trades, _sync_info, source = load_stats_trade_rows()
+        stats = compute_stats(stats_trades)
+        last_trades = sorted(stats_trades, key=lambda t: str(t.get("ts_utc") or ""), reverse=True)[:30]
 
     # session: from last BOOT marker if present
     # best effort: use all current file as "session"
     return jsonify({
         "ok": True,
-        "file": str(find_latest("*_trades.csv") or ""),
+        "file": source or str(find_latest("*_trades.csv") or ""),
         "columns": cols,
         "kpi": stats,
-        "last_trades": trades[-30:],
+        "last_trades": last_trades or live_trades[-30:],
+        "trade_memory": sync_info,
     })
 
 @app.route("/api/logs")
@@ -1134,10 +1329,53 @@ def api_trades():
 def api_pnl():
     """
     UI expects bucket pnl for: session/week/month/year + trades/winrate/profit_factor.
-    Uses latest *_trades.csv.
+    Uses persistent trade memory when available, then falls back to live CSVs.
     """
-    trades, _cols = load_trades_csv(max_rows=None)
+    cache, sync_info = load_dashboard_stats_cache()
     trades_path = find_latest(LOG_DIR, "*_trades.csv")
+    if cache.get("overall"):
+        fx = get_fx_usdc_eur()
+        now = datetime.now(timezone.utc)
+        today_key = now.date().isoformat()
+        week_key = (now.date() - timedelta(days=6)).isoformat()
+        month_key = (now.date() - timedelta(days=29)).isoformat()
+        year_key = (now.date() - timedelta(days=364)).isoformat()
+        today = decorate_bucket(bucket_from_daily_cache(cache.get("daily_buckets") or [], today_key), fx)
+        week = decorate_bucket(bucket_from_daily_cache(cache.get("daily_buckets") or [], week_key), fx)
+        month = decorate_bucket(bucket_from_daily_cache(cache.get("daily_buckets") or [], month_key), fx)
+        year = decorate_bucket(bucket_from_daily_cache(cache.get("daily_buckets") or [], year_key), fx)
+        session = decorate_bucket(cache.get("session") or {}, fx)
+        quality = decorate_quality_cache(cache.get("quality") or {}, fx)
+        last_trade = decorate_trade_cache_row(cache.get("last_trade"), fx, now=now)
+        recent_closed = [decorate_trade_cache_row(row, fx) for row in (cache.get("recent_closed") or []) if isinstance(row, dict)]
+        token_rankings = {
+            "top": [decorate_token_cache_row(row, fx) for row in (cache.get("token_rankings", {}).get("top") or []) if isinstance(row, dict)],
+            "bottom": [decorate_token_cache_row(row, fx) for row in (cache.get("token_rankings", {}).get("bottom") or []) if isinstance(row, dict)],
+        }
+        equity_points = decorate_equity_cache(cache.get("equity_points") or [], fx)
+
+        return jsonify(
+            ok=True,
+            today=today,
+            session=session,
+            week=week,
+            month=month,
+            year=year,
+            trades=(session or {}).get("trades"),
+            winrate=(session or {}).get("winrate"),
+            profit_factor=(session or {}).get("profit_factor"),
+            quality=quality,
+            last_trade=last_trade,
+            token_rankings=token_rankings,
+            recent_closed=recent_closed,
+            source=str(sync_info.get("db_path") or trades_path or ""),
+            fx_usdc_eur=fx,
+            equity_points=equity_points,
+            trade_memory=sync_info,
+        )
+
+    trades, _cols = load_trades_csv(max_rows=None)
+    stats_source = str(trades_path or "")
     if not trades:
         return jsonify(
             ok=True,
@@ -1155,6 +1393,7 @@ def api_pnl():
             recent_closed=[],
             source=None,
             equity_points=[],
+            trade_memory=sync_info,
         )
 
     fx = get_fx_usdc_eur()
@@ -1212,9 +1451,10 @@ def api_pnl():
         last_trade=last_trade,
         token_rankings=token_rankings,
         recent_closed=recent_closed,
-        source=str(trades_path),
+        source=stats_source or str(trades_path or ""),
         fx_usdc_eur=fx,
         equity_points=equity_points,
+        trade_memory=sync_info,
     )
 
 
@@ -1286,7 +1526,24 @@ def api_config():
 @require_basic_auth
 def api_summary():
     csv_path = find_latest("*_trades.csv")
-    trades, _ = load_trades_csv()
+    cache, sync_info = load_dashboard_stats_cache()
+    fx = get_fx_usdc_eur()
+    if cache.get("tokens") is not None:
+        rows = [decorate_token_cache_row(row, fx) for row in (cache.get("tokens") or []) if isinstance(row, dict)]
+        total_usdc = round(float(cache.get("total_usdc") or 0.0), 6)
+        total_eur = round(usdc_to_eur(total_usdc, fx), 6) if fx is not None else None
+        return jsonify(_json_safe({
+            "ok": True,
+            "fx_usdc_eur": fx,
+            "rows": rows[:60],
+            "tokens": rows[:60],
+            "total_usdc": total_usdc,
+            "total_eur": total_eur,
+            "source": str(sync_info.get("db_path") or csv_path or ""),
+            "trade_memory": sync_info,
+        }))
+
+    trades, _sync_info, source = load_stats_trade_rows()
     rows, fx = summarize_pnl_by_symbol(trades)
 
     # hide empty tokens (no trades)
@@ -1311,7 +1568,8 @@ def api_summary():
         "tokens": rows[:60],
         "total_usdc": total_usdc,
         "total_eur": total_eur,
-        "source": csv_path,
+        "source": source or csv_path,
+        "trade_memory": sync_info,
     }))
 @app.route("/api/wallet")
 @require_basic_auth
