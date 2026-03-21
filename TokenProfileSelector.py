@@ -2,12 +2,15 @@
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 import requests
 
+from core.trade_memory import load_token_scores, sync_trade_memory
+
 BASE_URL = "https://api.binance.com"
-ROOT_PATH = "/opt/binance-aifout-bot"
-SERVICE_ENV_PATH = os.path.join(ROOT_PATH, ".service.env")
+ROOT_PATH = Path((os.getenv("BOT_ROOT_DIR") or str(Path(__file__).resolve().parent)).strip()).resolve()
+SERVICE_ENV_PATH = str(Path(os.getenv("BOT_SERVICE_ENV_PATH") or (ROOT_PATH / ".service.env")).resolve())
 WINDOW_MINUTES = 10
 HTTP_TIMEOUT = 5
 MAX_WORKERS = 16
@@ -96,15 +99,14 @@ def change_window_pct(symbol: str):
         return None
     return (c - o) / o * 100.0
 
-def pick_top1_positive():
-    best_sym = None
-    best_pct = 0.0
+def collect_positive_candidates():
     symbols = get_symbols_usdc_trading()
     spread_map = get_spread_map()
     symbols = [
         sym for sym in symbols
         if spread_map.get(sym) is not None and spread_map[sym] <= SELECTOR_MAX_SPREAD_PCT
     ]
+    candidates = []
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         future_to_symbol = {
@@ -116,13 +118,74 @@ def pick_top1_positive():
                 pct = future.result()
             except Exception:
                 continue
-            if pct is None:
+            if pct is None or pct <= 0:
                 continue
-            if pct > best_pct:
-                best_pct = pct
-                best_sym = future_to_symbol[future]
+            sym = future_to_symbol[future]
+            candidates.append({
+                "symbol": sym,
+                "pct": pct,
+                "spread_pct": float(spread_map.get(sym, 0.0)) * 100.0,
+            })
+    candidates.sort(key=lambda item: (item["pct"], -item["spread_pct"], item["symbol"]), reverse=True)
+    return candidates
 
-    return best_sym, best_pct
+
+def rank_candidates(candidates, score_map):
+    ranked = []
+    for candidate in candidates:
+        symbol = candidate["symbol"]
+        memory = score_map.get(symbol, {})
+        history_bonus = float(memory.get("history_bonus") or 0.0)
+        final_score = float(candidate["pct"]) + history_bonus
+        ranked.append({
+            **candidate,
+            "final_score": final_score,
+            "history_bonus": history_bonus,
+            "is_toxic": bool(memory.get("is_toxic")),
+            "toxic_reasons": str(memory.get("toxic_reasons") or ""),
+            "closed_trades": int(memory.get("closed_trades") or 0),
+            "winrate_5": memory.get("winrate_5"),
+            "pnl_usdc_5": memory.get("pnl_usdc_5"),
+            "avg_pnl_pct_5": memory.get("avg_pnl_pct_5"),
+        })
+    ranked.sort(
+        key=lambda item: (
+            1 if item["is_toxic"] else 0,
+            -(item["final_score"]),
+            -(item["pct"]),
+            item["symbol"],
+        )
+    )
+    return ranked
+
+
+def pick_best_candidate(score_map):
+    candidates = collect_positive_candidates()
+    if not candidates:
+        return None, []
+    ranked = rank_candidates(candidates, score_map)
+    chosen = next((item for item in ranked if not item["is_toxic"]), None)
+    return chosen, ranked
+
+def log_selector_memory_state(sync_info, ranked):
+    print(
+        "TOKEN_SELECTOR: memory "
+        f"db={sync_info.get('db_path','')} scanned_files={sync_info.get('scanned_files',0)} "
+        f"skipped_files={sync_info.get('skipped_files',0)} imported_closed={sync_info.get('imported_closed_trades',0)} "
+        f"scored_tokens={sync_info.get('scored_tokens',0)}"
+    )
+    for idx, item in enumerate(ranked[:5], start=1):
+        winrate = item.get("winrate_5")
+        pnl_usdc_5 = item.get("pnl_usdc_5")
+        toxic = f" toxic={item['toxic_reasons']}" if item.get("is_toxic") else ""
+        print(
+            "TOKEN_SELECTOR: "
+            f"cand#{idx} {item['symbol']} var={item['pct']:.2f}% bonus={item['history_bonus']:+.2f} "
+            f"score={item['final_score']:.2f} closed={item['closed_trades']} "
+            f"pnl5={0.0 if pnl_usdc_5 is None else float(pnl_usdc_5):+.4f} "
+            f"win5={'--' if winrate is None else f'{float(winrate):.1f}%'}"
+            f"{toxic}"
+        )
 
 def write_service_env(symbol: str, pct: float, profile: str):
     # IMPORTANT: This tool must NOT change DRY_RUN or unrelated keys.
@@ -172,14 +235,28 @@ def write_service_env(symbol: str, pct: float, profile: str):
     )
 
 def main():
-    sym, pct = pick_top1_positive()
-    if not sym:
+    sync_info = sync_trade_memory()
+    score_map = load_token_scores()
+    chosen, ranked = pick_best_candidate(score_map)
+    log_selector_memory_state(sync_info, ranked)
+
+    if not chosen:
         print(
-            f"TOKEN_SELECTOR: no positive {QUOTE_ASSET} symbol found "
+            f"TOKEN_SELECTOR: no eligible positive {QUOTE_ASSET} symbol found "
             f"({WINDOW_MINUTES}m window, max_spread={SELECTOR_MAX_SPREAD_PCT*100:.2f}%)"
         )
         return 0
-    write_service_env(sym, pct, DEFAULT_PROFILE)
+    raw_top = ranked[0] if ranked else None
+    if raw_top and raw_top["symbol"] != chosen["symbol"] and raw_top.get("is_toxic"):
+        print(
+            f"TOKEN_SELECTOR: skipped toxic top candidate {raw_top['symbol']} "
+            f"var={raw_top['pct']:.2f}% reasons={raw_top.get('toxic_reasons') or 'n/a'}"
+        )
+    print(
+        f"TOKEN_SELECTOR: selected {chosen['symbol']} "
+        f"var={chosen['pct']:.2f}% bonus={chosen['history_bonus']:+.2f} score={chosen['final_score']:.2f}"
+    )
+    write_service_env(chosen["symbol"], chosen["pct"], DEFAULT_PROFILE)
     return 0
 
 if __name__ == "__main__":

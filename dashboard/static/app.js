@@ -535,8 +535,8 @@ function binanceSpotUrl(symbol) {
         <td class="right">${buyUsdc === null ? "--" : fmt(buyUsdc, 2)}</td>
         <td class="right">${sellUsdc === null ? "--" : fmt(sellUsdc, 2)}</td>
         <td class="right ${cls}">${fmt(usdc, 2)}</td>
-        <td class="right ${cls}">${pctTxt}</td>
         <td class="right ${cls}">${eur === null ? "--" : fmt(eur, 2)}</td>
+        <td class="right ${cls}">${pctTxt}</td>
         <td class="right">${fmtInt(r.trades)}</td>
       </tr>`;
     }).join("");

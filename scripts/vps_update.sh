@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # VPS update script
-# Update code from origin/main while preserving tracked runtime state
+# Update code from origin/main while preserving local runtime/state files
 # Usage: ./scripts/vps-update.sh
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,7 +14,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mapfile -t preserved_files < <(git ls-files 'data/runtime/*' 2>/dev/null || true)
+collect_preserved_files() {
+  {
+    git ls-files 'data/runtime/*' 2>/dev/null || true
+    [ -f ".service.env" ] && printf '%s\n' ".service.env"
+    [ -f "dashboard/botdash.env" ] && printf '%s\n' "dashboard/botdash.env"
+    find "data/runtime" -maxdepth 1 -type f \( -name "*.sqlite3" -o -name "*.db" \) 2>/dev/null || true
+  } | awk 'NF' | sort -u
+}
+
+mapfile -t preserved_files < <(collect_preserved_files)
 
 backup_runtime_file() {
   local path="$1"

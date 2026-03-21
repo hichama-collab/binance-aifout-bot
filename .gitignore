@@ -18,6 +18,8 @@ env/
 
 # Runtime / bot data (generated)
 data/runtime/
+data/runtime/*.sqlite3
+data/runtime/*.db
 archivelog/
 data/
 *.csv

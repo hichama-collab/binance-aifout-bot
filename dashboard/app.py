@@ -782,31 +782,51 @@ def summarize_pnl_by_symbol(trades):
         if not sym:
             continue
         pnl = fnum(r.get("pnl"))
-        qty = fnum(r.get("qty"))
-        price = fnum(r.get("price"))
-        side = (r.get("side") or r.get("event") or "").strip().upper()
-        if pnl is None and (qty is None or price is None):
+        if pnl is None:
             continue
-        ts = (r.get("ts_utc") or r.get("ts") or "").strip()
+        qty = fnum(r.get("qty"))
+        exit_price = fnum(r.get("price"))
+        entry_price = fnum(r.get("entry_price"))
+        ts_raw = (r.get("ts_utc") or r.get("ts") or "").strip()
+        ts = parse_trade_ts(ts_raw)
         a = agg.get(sym) or {
             "symbol": sym,
             "pnl_usdc": 0.0,
             "trades": 0,
-            "last_ts": ts,
+            "last_ts": ts_raw,
+            "last_dt": ts,
             "buy_usdc": 0.0,
             "sell_usdc": 0.0,
         }
-        if pnl is not None:
-            a["pnl_usdc"] += pnl
-        notional = (qty * price) if qty is not None and price is not None else None
-        if notional is not None:
-            if side == "BUY":
-                a["buy_usdc"] += notional
-            elif side == "SELL":
-                a["sell_usdc"] += notional
+
+        a["pnl_usdc"] += pnl
+
+        # Keep this card realized-only: use closed trade rows and reconstruct
+        # entry/sell notionals from the SELL row itself when possible.
+        buy_notional = None
+        sell_notional = None
+        if qty is not None and exit_price is not None:
+            sell_notional = qty * exit_price
+            if entry_price is not None:
+                buy_notional = qty * entry_price
+            else:
+                buy_notional = sell_notional - pnl
+        elif qty is not None and entry_price is not None:
+            buy_notional = qty * entry_price
+            sell_notional = buy_notional + pnl
+
+        if buy_notional is not None:
+            a["buy_usdc"] += buy_notional
+        if sell_notional is not None:
+            a["sell_usdc"] += sell_notional
+
         a["trades"] += 1
-        if ts:
-            a["last_ts"] = ts
+        if isinstance(ts, datetime):
+            if a.get("last_dt") is None or ts > a["last_dt"]:
+                a["last_dt"] = ts
+                a["last_ts"] = ts.isoformat()
+        elif ts_raw and not a.get("last_ts"):
+            a["last_ts"] = ts_raw
         agg[sym] = a
     rows = []
     for sym, a in agg.items():
@@ -826,9 +846,11 @@ def summarize_pnl_by_symbol(trades):
             "trades": a["trades"],
             "last_ts": a["last_ts"],
         })
-    # sort: most recent first (fallback by abs pnl)
+
+    # sort: most recent closed trade first (fallback by abs pnl)
     def keyfn(x):
-        return (x.get("last_ts") or "", abs(x.get("pnl_usdc") or 0.0))
+        dt = parse_trade_ts(x.get("last_ts") or "")
+        return (dt or datetime.min.replace(tzinfo=timezone.utc), abs(x.get("pnl_usdc") or 0.0))
     rows.sort(key=keyfn, reverse=True)
     return rows, fx
 
