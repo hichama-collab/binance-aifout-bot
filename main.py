@@ -950,6 +950,12 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
+                # Refresh quote balance right before entry checks so a stale cached
+                # wallet snapshot cannot incorrectly block a valid trade.
+                live_usdc = get_usdc_balance_safe(bx, cfg)
+                if live_usdc is not None:
+                    usdc = live_usdc
+
                 if usdc is None:
                     maybe_hold(
                         now,
@@ -984,15 +990,10 @@ def main():
                         P2,
                         P3,
                         P4,
+                        detail=f"usdc={usdc:.8f} min_notional={float(minNotional):.8f}",
                     )
                     time.sleep(cfg.idleSleep)
                     continue
-
-                # Refresh quote balance right before placing a BUY and keep a small
-                # safety margin to avoid Binance "insufficient balance" rejects.
-                live_usdc = get_usdc_balance_safe(bx, cfg)
-                if live_usdc is not None:
-                    usdc = live_usdc
 
                 fee_buf = float(getattr(cfg, "feeBufPct", 0.0) or 0.0)
                 buy_safety_buf = max(fee_buf, 0.0025)
@@ -1014,6 +1015,7 @@ def main():
                         P2,
                         P3,
                         P4,
+                        detail=f"spend={spend:.8f} min_notional={float(minNotional):.8f}",
                     )
                     time.sleep(cfg.idleSleep)
                     continue
