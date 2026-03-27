@@ -18,7 +18,15 @@ class Position:
 
     # internal flags (kept as attrs; wallet sync doesn't need them)
     armed: bool = False
+    protectArmed: bool = False
     tp: float = 0.0
+
+    def _raise_stop(self, candidate: float, tick: float):
+        if candidate <= 0:
+            return
+        candidate = floor_tick(candidate, tick)
+        if candidate > self.stop:
+            self.stop = candidate
 
     def init_stops(self, cfg, profile, tick: float):
         # SL uses cfg.riskPct by default; fallback = 0.8%
@@ -28,12 +36,16 @@ class Position:
 
         # TP default derived from riskPct, but not too small.
         tp_pct = float(getattr(cfg, "tpPct", max(0.006, sl_pct * 3.0)))
+        tp_min_pct = float(getattr(cfg, "tpMinPct", 0.0) or 0.0)
+        if tp_min_pct > 0:
+            tp_pct = max(tp_pct, tp_min_pct)
         arm_pct = float(getattr(cfg, "armPct", max(0.0045, sl_pct * 1.5)))
         fee_buf = float(getattr(cfg, "feeBufPct", 0.0025))
         trail_pct = float(getattr(cfg, "trailPct", 0.004))
 
         # Store into profile/cfg-less internal
         self.armed = False
+        self.protectArmed = False
 
         if self.high <= 0:
             self.high = self.entry
@@ -46,22 +58,46 @@ class Position:
         self.tp = self.entry * (1.0 + tp_pct)
         self.tp = floor_tick(self.tp, tick)
 
-        # initial arm check
-        self.armed = self.high >= (self.entry * (1.0 + arm_pct))
-
-        # if already armed, lift stop to break-even floor
-        if self.armed:
-            be_stop = self.entry * (1.0 + fee_buf)
-            be_stop = floor_tick(be_stop, tick)
-            if be_stop > self.stop:
-                self.stop = be_stop
-
         # keep these stored (no new abstractions)
         self._sl_pct = sl_pct
         self._tp_pct = tp_pct
         self._arm_pct = arm_pct
         self._fee_buf = fee_buf
         self._trail_pct = trail_pct
+        self._protect_arm_pct = float(getattr(cfg, "protectArmPct", 0.0) or 0.0)
+        if self._protect_arm_pct <= 0:
+            self._protect_arm_pct = max(
+                self._fee_buf * 1.5,
+                min(
+                    max(0.0030, self._arm_pct * 0.5),
+                    max(0.0030, (self._tp_pct * 0.33) if self._tp_pct > 0 else (self._sl_pct * 0.5)),
+                ),
+            )
+        self._protect_lock_pct = float(getattr(cfg, "protectLockPct", 0.0) or 0.0)
+        if self._protect_lock_pct <= 0:
+            self._protect_lock_pct = max(self._fee_buf, self._protect_arm_pct * 0.5)
+        self._protect_giveback_pct = float(getattr(cfg, "protectGivebackPct", 0.0) or 0.0)
+        if self._protect_giveback_pct <= 0:
+            self._protect_giveback_pct = max(self._fee_buf, self._protect_arm_pct - self._protect_lock_pct)
+
+        # first layer: if the trade moves enough in our favor, lock a small gain
+        self.protectArmed = self.high >= (self.entry * (1.0 + self._protect_arm_pct))
+        if self.protectArmed:
+            protect_floor = self.entry * (1.0 + self._protect_lock_pct)
+            protect_stop = self.high * (1.0 - self._protect_giveback_pct)
+            if protect_stop < protect_floor:
+                protect_stop = protect_floor
+            self._raise_stop(protect_stop, tick)
+
+        # second layer: regular trailing once the move is strong enough
+        self.armed = self.high >= (self.entry * (1.0 + arm_pct))
+        if self.armed:
+            be_stop = self.entry * (1.0 + fee_buf)
+            self._raise_stop(be_stop, tick)
+            trail_stop = self.high * (1.0 - self._trail_pct)
+            if trail_stop < be_stop:
+                trail_stop = be_stop
+            self._raise_stop(trail_stop, tick)
 
     def update(self, price: float, cfg, profile, tick: float):
         if price <= 0:
@@ -72,6 +108,17 @@ class Position:
 
         if price > self.high:
             self.high = price
+
+        # first protection layer before the main trailing is armed
+        if not self.protectArmed and self.high >= (self.entry * (1.0 + self._protect_arm_pct)):
+            self.protectArmed = True
+
+        if self.protectArmed and not self.armed:
+            protect_floor = self.entry * (1.0 + self._protect_lock_pct)
+            protect_stop = self.high * (1.0 - self._protect_giveback_pct)
+            if protect_stop < protect_floor:
+                protect_stop = protect_floor
+            self._raise_stop(protect_stop, tick)
 
         # arm trailing only after profit threshold
         if not self.armed and self.high >= (self.entry * (1.0 + self._arm_pct)):
@@ -104,7 +151,11 @@ class Position:
 
         # stop
         if price <= self.stop:
-            return "TRAIL" if self.armed else "STOP"
+            if self.armed:
+                return "TRAIL"
+            if self.protectArmed:
+                return "PROTECT"
+            return "STOP"
 
         # time stop
         max_hold = float(getattr(cfg, "maxPosTime", 15 * 60))

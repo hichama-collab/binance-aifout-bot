@@ -6,7 +6,7 @@
   <title>{% if title %}{{ title }} | {{ app_title }}{% else %}{{ app_title }}{% endif %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Sora:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}"/>
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
@@ -22,39 +22,43 @@
   <div class="app">
     <aside class="sidebar" id="sidebar">
       <div class="brand-shell">
-        <a class="brand" href="/">
+        <div class="brand">
           <div class="logo">
             <img class="logo-mark" src="{{ url_for('static', filename='logo-ha.svg') }}" alt="" aria-hidden="true"/>
           </div>
           <div class="brand-text">
-            <div class="brand-name">Hicham AIFOUT</div>
-            <div class="brand-sub">Trading dashboard</div>
+            <div class="brand-name">{{ app_title }}</div>
+            <div class="brand-sub">pilotage trading spot</div>
           </div>
-        </a>
+        </div>
+        <div class="host-card">
+          <div class="host-label">Instance</div>
+          <div class="host-value" id="hdr-host">--</div>
+        </div>
       </div>
 
       <nav class="nav-group">
-        <div class="nav-label">Main</div>
+        <div class="nav-label">Pilotage</div>
         <div class="nav">
           <a class="nav-item {% if active=='dashboard' %}active{% endif %}" href="/" data-nav="dashboard">
-            <span class="nav-icon nav-icon-orange"></span>
+            <span class="nav-icon nav-icon-blue"></span>
             <span class="nav-copy">
-              <span class="nav-title">Dashboard</span>
-              <span class="nav-sub">wallet, position, decisions</span>
+              <span class="nav-title">Vue générale</span>
+              <span class="nav-sub">wallet, position, décisions</span>
             </span>
           </a>
           <a class="nav-item {% if active=='statistics' %}active{% endif %}" href="/statistics" data-nav="statistics">
-            <span class="nav-icon nav-icon-blue"></span>
+            <span class="nav-icon nav-icon-purple"></span>
             <span class="nav-copy">
               <span class="nav-title">Performance</span>
-              <span class="nav-sub">PnL, qualite, equity</span>
+              <span class="nav-sub">PnL, qualité, equity</span>
             </span>
           </a>
         </div>
       </nav>
 
       <nav class="nav-group">
-        <div class="nav-label">Operations</div>
+        <div class="nav-label">Exploitation</div>
         <div class="nav">
           <a class="nav-item {% if active=='services' %}active{% endif %}" href="/services" data-nav="services">
             <span class="nav-icon nav-icon-green"></span>
@@ -66,7 +70,7 @@
           <a class="nav-item {% if active=='logs' %}active{% endif %}" href="/logs" data-nav="logs">
             <span class="nav-icon nav-icon-amber"></span>
             <span class="nav-copy">
-              <span class="nav-title">Logs</span>
+              <span class="nav-title">Historique</span>
               <span class="nav-sub">fichiers, traces, diagnostics</span>
             </span>
           </a>
@@ -75,24 +79,11 @@
 
       <div class="sidebar-footer">
         <div class="footer-card">
-          <div class="footer-title">Runtime</div>
-          <div class="runtime-stack">
-            <div class="runtime-row">
-              <span class="runtime-label">Instance</span>
-              <span class="runtime-value" id="hdr-host">--</span>
-            </div>
-            <div class="runtime-row">
-              <span class="runtime-label">Base</span>
-              <span class="runtime-value" id="kv-base">--</span>
-            </div>
-            <div class="runtime-row">
-              <span class="runtime-label">Logs</span>
-              <span class="runtime-value" id="kv-logs">--</span>
-            </div>
-            <div class="runtime-row">
-              <span class="runtime-label">FX</span>
-              <span class="runtime-value" id="kv-fx">--</span>
-            </div>
+          <div class="footer-title">Contexte</div>
+          <div class="kv">
+            <div class="k">Base</div><div class="v" id="kv-base">--</div>
+            <div class="k">Logs</div><div class="v" id="kv-logs">--</div>
+            <div class="k">FX</div><div class="v" id="kv-fx">--</div>
           </div>
         </div>
       </div>
@@ -107,28 +98,15 @@
         </div>
 
         <div class="topbar-actions">
-          <div class="header-chip header-chip-soft">
-            <span class="header-chip-label">Host</span>
-            <span class="header-chip-value" id="hdr-host-top">--</span>
-          </div>
-          <div class="header-chip header-chip-soft">
+          <div class="header-chip">
             <span class="header-chip-label">UTC</span>
             <span class="header-chip-value" id="hdr-utc">--</span>
           </div>
-          <div class="header-chip header-chip-accent">
+          <div class="header-chip">
             <span class="header-chip-label">Statut</span>
             <span class="header-chip-value" id="footer-status">--</span>
           </div>
           <button class="btn btn-ghost" id="btn-refresh">Rafraichir</button>
-          <button class="icon-btn" type="button" aria-label="notifications">
-            <span class="icon-btn-dot"></span>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 4a4 4 0 0 1 4 4v2.6c0 .7.2 1.4.6 2l1.2 1.8c.4.6 0 1.6-.8 1.6H7c-.8 0-1.2-1-.8-1.6l1.2-1.8c.4-.6.6-1.3.6-2V8a4 4 0 0 1 4-4Zm0 15a2.5 2.5 0 0 0 2.4-2h-4.8A2.5 2.5 0 0 0 12 19Z"/>
-            </svg>
-          </button>
-          <div class="avatar-chip" aria-label="profil">
-            <span>HA</span>
-          </div>
         </div>
       </header>
 

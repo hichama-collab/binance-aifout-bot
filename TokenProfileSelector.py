@@ -15,6 +15,9 @@ WINDOW_MINUTES = 10
 HTTP_TIMEOUT = 5
 MAX_WORKERS = 16
 SELECTOR_MAX_SPREAD_PCT = float(os.getenv("SELECTOR_MAX_SPREAD_PCT", "0.0025"))
+SELECTOR_MIN_PRICE_USDC = float(os.getenv("SELECTOR_MIN_PRICE_USDC", "0.05"))
+SELECTOR_MIN_QUOTE_VOLUME_USDC_24H = float(os.getenv("SELECTOR_MIN_QUOTE_VOLUME_USDC_24H", "1000000"))
+SELECTOR_MIN_TRADE_COUNT_24H = int(os.getenv("SELECTOR_MIN_TRADE_COUNT_24H", "5000"))
 DEFAULT_PROFILE = (os.getenv("SELECTOR_PROFILE", "major") or "major").strip()
 
 # Universe
@@ -82,6 +85,29 @@ def get_spread_map():
             continue
     return out
 
+
+def get_market_stats_map():
+    out = {}
+    r = _SESSION.get(f"{BASE_URL}/api/v3/ticker/24hr", timeout=HTTP_TIMEOUT)
+    r.raise_for_status()
+    data = r.json()
+    if not isinstance(data, list):
+        return out
+    for row in data:
+        try:
+            sym = str(row.get("symbol") or "")
+            if not sym or not _is_symbol_safe(sym):
+                continue
+            out[sym] = {
+                "last_price": float(row.get("lastPrice") or 0.0),
+                "quote_volume_24h": float(row.get("quoteVolume") or 0.0),
+                "trade_count_24h": int(row.get("count") or 0),
+                "change_pct_24h": float(row.get("priceChangePercent") or 0.0),
+            }
+        except Exception:
+            continue
+    return out
+
 def change_window_pct(symbol: str):
     # WINDOW_MINUTES based on 1m klines
     r = _SESSION.get(
@@ -102,16 +128,51 @@ def change_window_pct(symbol: str):
 def collect_positive_candidates():
     symbols = get_symbols_usdc_trading()
     spread_map = get_spread_map()
-    symbols = [
-        sym for sym in symbols
-        if spread_map.get(sym) is not None and spread_map[sym] <= SELECTOR_MAX_SPREAD_PCT
-    ]
+    market_map = get_market_stats_map()
+    filter_counts = {
+        "spread": 0,
+        "market": 0,
+        "price": 0,
+        "quote_volume": 0,
+        "trade_count": 0,
+    }
+    eligible_symbols = []
+    for sym in symbols:
+        spread = spread_map.get(sym)
+        if spread is None or spread > SELECTOR_MAX_SPREAD_PCT:
+            filter_counts["spread"] += 1
+            continue
+        market = market_map.get(sym)
+        if market is None:
+            filter_counts["market"] += 1
+            continue
+        if float(market["last_price"]) < SELECTOR_MIN_PRICE_USDC:
+            filter_counts["price"] += 1
+            continue
+        if float(market["quote_volume_24h"]) < SELECTOR_MIN_QUOTE_VOLUME_USDC_24H:
+            filter_counts["quote_volume"] += 1
+            continue
+        if int(market["trade_count_24h"]) < SELECTOR_MIN_TRADE_COUNT_24H:
+            filter_counts["trade_count"] += 1
+            continue
+        eligible_symbols.append(sym)
+
+    print(
+        "TOKEN_SELECTOR: universe "
+        f"total={len(symbols)} eligible={len(eligible_symbols)} "
+        f"reject_spread={filter_counts['spread']} reject_market={filter_counts['market']} "
+        f"reject_price={filter_counts['price']} reject_quote_volume={filter_counts['quote_volume']} "
+        f"reject_trade_count={filter_counts['trade_count']} "
+        f"min_price={SELECTOR_MIN_PRICE_USDC:.4f} "
+        f"min_quote_volume_24h={SELECTOR_MIN_QUOTE_VOLUME_USDC_24H:.0f} "
+        f"min_trade_count_24h={SELECTOR_MIN_TRADE_COUNT_24H}"
+    )
     candidates = []
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         future_to_symbol = {
             pool.submit(change_window_pct, sym): sym
-            for sym in symbols
+            for sym in eligible_symbols
         }
         for future in as_completed(future_to_symbol):
             try:
@@ -121,10 +182,15 @@ def collect_positive_candidates():
             if pct is None or pct <= 0:
                 continue
             sym = future_to_symbol[future]
+            market = market_map.get(sym) or {}
             candidates.append({
                 "symbol": sym,
                 "pct": pct,
                 "spread_pct": float(spread_map.get(sym, 0.0)) * 100.0,
+                "last_price": float(market.get("last_price") or 0.0),
+                "quote_volume_24h": float(market.get("quote_volume_24h") or 0.0),
+                "trade_count_24h": int(market.get("trade_count_24h") or 0),
+                "change_pct_24h": float(market.get("change_pct_24h") or 0.0),
             })
     candidates.sort(key=lambda item: (item["pct"], -item["spread_pct"], item["symbol"]), reverse=True)
     return candidates
@@ -182,6 +248,8 @@ def log_selector_memory_state(sync_info, ranked):
             "TOKEN_SELECTOR: "
             f"cand#{idx} {item['symbol']} var={item['pct']:.2f}% bonus={item['history_bonus']:+.2f} "
             f"score={item['final_score']:.2f} closed={item['closed_trades']} "
+            f"price={item.get('last_price', 0.0):.6f} "
+            f"qv24h={item.get('quote_volume_24h', 0.0):.0f} trades24h={item.get('trade_count_24h', 0)} "
             f"pnl5={0.0 if pnl_usdc_5 is None else float(pnl_usdc_5):+.4f} "
             f"win5={'--' if winrate is None else f'{float(winrate):.1f}%'}"
             f"{toxic}"
@@ -243,7 +311,10 @@ def main():
     if not chosen:
         print(
             f"TOKEN_SELECTOR: no eligible positive {QUOTE_ASSET} symbol found "
-            f"({WINDOW_MINUTES}m window, max_spread={SELECTOR_MAX_SPREAD_PCT*100:.2f}%)"
+            f"({WINDOW_MINUTES}m window, max_spread={SELECTOR_MAX_SPREAD_PCT*100:.2f}% "
+            f"min_price={SELECTOR_MIN_PRICE_USDC:.4f} "
+            f"min_quote_volume_24h={SELECTOR_MIN_QUOTE_VOLUME_USDC_24H:.0f} "
+            f"min_trade_count_24h={SELECTOR_MIN_TRADE_COUNT_24H})"
         )
         return 0
     raw_top = ranked[0] if ranked else None
@@ -254,7 +325,10 @@ def main():
         )
     print(
         f"TOKEN_SELECTOR: selected {chosen['symbol']} "
-        f"var={chosen['pct']:.2f}% bonus={chosen['history_bonus']:+.2f} score={chosen['final_score']:.2f}"
+        f"var={chosen['pct']:.2f}% bonus={chosen['history_bonus']:+.2f} score={chosen['final_score']:.2f} "
+        f"price={chosen.get('last_price', 0.0):.6f} "
+        f"qv24h={chosen.get('quote_volume_24h', 0.0):.0f} "
+        f"trades24h={chosen.get('trade_count_24h', 0)}"
     )
     write_service_env(chosen["symbol"], chosen["pct"], DEFAULT_PROFILE)
     return 0

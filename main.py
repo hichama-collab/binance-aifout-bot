@@ -207,7 +207,7 @@ from execution.orders import placeLimit, waitFillOrCancel
 from state.wallet_sync import walletSyncEvery
 from state.position import Position
 
-from indicators.basic import fmt
+from indicators.basic import fmt, computeSignals
 
 
 def round_step(qty: float, step: float) -> float:
@@ -234,11 +234,11 @@ def round_tick_up(price: float, tick: float) -> float:
     dtick = Decimal(str(tick))
     q = (dprice / dtick).to_integral_value(rounding=ROUND_CEILING)
     return float(q * dtick)
-def compute_buy_price(best_ask: float, _range_pct: float) -> float:
-    """Return a BUY price at the current ask (LIMIT), so the order can fill immediately.
-    (Still LIMIT; we just cross the spread.)
-    """
-    return best_ask
+def compute_buy_price(best_bid: float, best_ask: float, cross_spread: bool, tick: float) -> float:
+    """Return the BUY price according to the configured aggressiveness."""
+    if cross_spread:
+        return round_tick_up(best_ask, tick)
+    return round_tick_down(best_bid, tick)
 
 
 def get_symbol_filters(bx: Binance, symbol: str):
@@ -435,6 +435,12 @@ def main():
 
         sys.exit(1)
 
+    exchangeMinNotional = float(minNotional)
+    minNotional = max(
+        exchangeMinNotional,
+        float(getattr(cfg, "minOrderNotionalUsdc", 0.0) or 0.0),
+    )
+
     cap = float(getattr(cfg, "maxUsdcPerTrade", 50.0))
 
     # Momentum params (defaults: scalping spot)
@@ -447,7 +453,10 @@ def main():
 
     logTrade(f"SESSION_START symbol={symbol} dry_run={int(bool(getattr(cfg,'dryRun',False)))} profile={profile.name} strategy={getattr(cfg,'strategyName','')} base_url={cfg.baseUrl}")
 
-    print(f"INIT {symbol} tick={tick} step={step} minNotional~{minNotional} cap={cap}USDC")
+    print(
+        f"INIT {symbol} tick={tick} step={step} "
+        f"minNotional~{minNotional}USDC (exchange={exchangeMinNotional}) cap={cap}USDC"
+    )
     print(
         f"PROFILE {profile.name} "
         f"EMA={profile.emaFast}/{profile.emaSlow} "
@@ -482,6 +491,27 @@ def main():
 
     lastHoldCsv = 0.0
     holdCsvEvery = float(getattr(cfg, 'holdCsvEvery', 60))
+    signalCache = {"ts": 0.0, "s1": None, "s5": None}
+    signalRefreshSec = float(getattr(cfg, "signalRefreshSec", 15.0) or 15.0)
+
+    def load_signal_snapshot(now):
+        cached_s1 = signalCache.get("s1")
+        cached_s5 = signalCache.get("s5")
+        if (
+            cached_s1 is not None
+            and cached_s5 is not None
+            and (now - float(signalCache.get("ts", 0.0))) <= signalRefreshSec
+        ):
+            return cached_s1, cached_s5
+        try:
+            s1, s5 = computeSignals(bx, symbol, profile)
+            signalCache["ts"] = now
+            signalCache["s1"] = s1
+            signalCache["s5"] = s5
+            return s1, s5
+        except Exception as e:
+            logErr("SIGNAL_FETCH_FAIL", e)
+            return None, None
 
     def maybe_hold(
         now,
@@ -498,8 +528,10 @@ def main():
         p3,
         p4,
         detail="",
+        signal=None,
     ):
         nonlocal lastHoldCsv
+        signal = signal or {}
         if (now - lastHoldCsv) < holdCsvEvery:
             return
         lastHoldCsv = now
@@ -519,10 +551,10 @@ def main():
                 'mom_pct': float(momPct)*100.0,
                 'mom_range_pct': float(momRangePct)*100.0,
                 'up_ratio': float(upRatio)*100.0,
-                'rsi': '',
-                'ema1_ok': '',
-                'ema5_ok': '',
-                'vol_ok': '',
+                'rsi': '' if signal.get('rsi') is None else float(signal.get('rsi')),
+                'ema1_ok': '' if signal.get('ema1_ok') is None else int(bool(signal.get('ema1_ok'))),
+                'ema5_ok': '' if signal.get('ema5_ok') is None else int(bool(signal.get('ema5_ok'))),
+                'vol_ok': '' if signal.get('vol_ok') is None else int(bool(signal.get('vol_ok'))),
                 'bid': float(bid),
                 'ask': float(ask),
                 'mid': float(mid),
@@ -986,8 +1018,110 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                # BUY LIMIT at ASK (rounded up to tick)
-                buyPx = round_tick_up(float(ask), tick)
+                s1, s5 = load_signal_snapshot(now)
+                if s1 is None or s5 is None:
+                    maybe_hold(
+                        now,
+                        'HOLD_SIGNAL',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
+                rsi_now = float(getattr(s1, "rsi", 0.0))
+                ema1_ok = bool(getattr(s1, "ema_ok", False))
+                ema5_ok = bool(getattr(s5, "ema_ok", False))
+                vol_ok = bool(getattr(s1, "vol_ok", False))
+                signal_state = {
+                    "rsi": rsi_now,
+                    "ema1_ok": ema1_ok,
+                    "ema5_ok": ema5_ok,
+                    "vol_ok": vol_ok,
+                }
+
+                if not ema1_ok or not ema5_ok:
+                    maybe_hold(
+                        now,
+                        'HOLD_EMA',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                        detail=f"ema1={int(ema1_ok)} ema5={int(ema5_ok)}",
+                        signal=signal_state,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
+                rsi_min = float(getattr(profile, "rsiMin", 0.0) or 0.0)
+                rsi_max = min(
+                    float(getattr(profile, "rsiMax", 100.0) or 100.0),
+                    float(getattr(cfg, "rsiBuyMax", 100.0) or 100.0),
+                )
+                if not (rsi_min <= rsi_now <= rsi_max):
+                    maybe_hold(
+                        now,
+                        'HOLD_RSI',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                        detail=f"rsi={rsi_now:.2f} range=[{rsi_min:.2f},{rsi_max:.2f}]",
+                        signal=signal_state,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
+                if not vol_ok:
+                    maybe_hold(
+                        now,
+                        'HOLD_VOL',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                        signal=signal_state,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
+                buyPx = compute_buy_price(
+                    float(bid),
+                    float(ask),
+                    bool(getattr(cfg, "entryCrossSpread", False)),
+                    tick,
+                )
                 qty = round_step(spend / buyPx, step)
                 if qty <= 0 or (qty * buyPx) < float(minNotional):
                     maybe_hold(
@@ -1071,10 +1205,10 @@ def main():
                     "mom_pct": float(momPct) * 100.0,
                     "mom_range_pct": float(momRangePct) * 100.0,
                     "up_ratio": float(upRatio) * 100.0,
-                    "rsi": "",
-                    "ema1_ok": "",
-                    "ema5_ok": "",
-                    "vol_ok": "",
+                    "rsi": rsi_now,
+                    "ema1_ok": int(ema1_ok),
+                    "ema5_ok": int(ema5_ok),
+                    "vol_ok": int(vol_ok),
                     "spread_pct": float(spread) * 100.0,
                     "bid": float(bid),
                     "ask": float(ask),
@@ -1103,9 +1237,10 @@ def main():
                 exitReason = pos.exit_reason(bid, cfg, profile)
 
             # Additional SELL rules (P algo, MID-based)
-            # SELL if (P1 < P3) AND (P3 < entryPrice)
+            # Exit weak losers earlier when the tape is rolling over or stalling too long.
             if exitReason is None and (pos is not None) and (pos.entry > 0):
                 sellSignal = False
+                sellSignalMode = ""
                 if has_new_tick and (P1 is not None) and (P2 is not None) and (P3 is not None):
                     age_sec = max(0.0, time.time() - float(getattr(pos, "ts_entry", time.time())))
                     min_signal_exit_sec = max(
@@ -1117,19 +1252,59 @@ def main():
                         float(getattr(cfg, "psellMinLossPct", 0.0035) or 0.0035),
                         float(getattr(cfg, "feeBufPct", 0.0) or 0.0) * 1.25,
                     )
-                    below_entry_guard = float(pos.entry) * (1.0 - min_loss_pct)
+                    current_loss_pct = float(getattr(cfg, "psellCurrentLossPct", 0.0) or 0.0)
+                    if current_loss_pct <= 0.0:
+                        current_loss_pct = max(
+                            float(getattr(cfg, "feeBufPct", 0.0) or 0.0) * 1.25,
+                            min_loss_pct * 0.85,
+                        )
+                    stale_age_sec = float(getattr(cfg, "psellStaleAgeSec", 0.0) or 0.0)
+                    if stale_age_sec <= 0.0:
+                        stale_age_sec = max(
+                            min_signal_exit_sec * 2.0,
+                            min(120.0, float(getattr(cfg, "maxPosTime", 240.0) or 240.0) * 0.5),
+                        )
+                    stale_loss_pct = float(getattr(cfg, "psellStaleLossPct", 0.0) or 0.0)
+                    if stale_loss_pct <= 0.0:
+                        stale_loss_pct = max(
+                            float(getattr(cfg, "feeBufPct", 0.0) or 0.0) * 1.25,
+                            min_loss_pct * 0.75,
+                        )
+                    current_guard = float(pos.entry) * (1.0 - current_loss_pct)
+                    stale_guard = float(pos.entry) * (1.0 - stale_loss_pct)
                     confirm_ticks = max(3, int(getattr(cfg, "psellConfirmTicks", 4) or 4))
                     descending_tape = (P1 < P2) and (P2 < P3)
                     if confirm_ticks >= 4 and (P4 is not None):
                         descending_tape = descending_tape and (P3 < P4)
-                    sellSignal = (
+                    latest_ref = min(float(bid), float(P1))
+                    fast_signal = (
                         age_sec >= min_signal_exit_sec
                         and descending_tape
-                        and (P3 < below_entry_guard)
+                        and (latest_ref < current_guard)
                         and weak_tape
                     )
+                    stale_signal = (
+                        age_sec >= stale_age_sec
+                        and (latest_ref < stale_guard)
+                        and (weak_tape or descending_tape)
+                    )
+                    if fast_signal:
+                        sellSignal = True
+                        sellSignalMode = (
+                            f"FAST age={age_sec:.1f}s "
+                            f"latest={latest_ref:.8f} guard={current_guard:.8f}"
+                        )
+                    elif stale_signal:
+                        sellSignal = True
+                        sellSignalMode = (
+                            f"STALE age={age_sec:.1f}s "
+                            f"latest={latest_ref:.8f} guard={stale_guard:.8f}"
+                        )
                 if sellSignal:
-                    exitReason = f"PSELL P1={P1} P2={P2} P3={P3} P4={P4} entry={pos.entry}"
+                    exitReason = (
+                        f"PSELL {sellSignalMode} "
+                        f"P1={P1} P2={P2} P3={P3} P4={P4} entry={pos.entry}"
+                    )
             
             if exitReason is None:
                 time.sleep(cfg.idleSleep)
@@ -1215,19 +1390,36 @@ def main():
                 continue
             
             execQty = float(info.get("executedQty", sellQty))
-            quoteQty = float(info.get("cummulativeQuoteQty", execQty * sellPx))
-            exitPx = quoteQty / execQty if execQty > 0 else sellPx
-            pnl = (exitPx - pos.entry) * sellQty
+            filledQty = execQty if execQty > 0 else sellQty
+            quoteQty = float(info.get("cummulativeQuoteQty", filledQty * sellPx))
+            exitPx = quoteQty / filledQty if filledQty > 0 else sellPx
+            pnl = (exitPx - pos.entry) * filledQty
             mid_vs_entry_pct = ((float(mid) - float(pos.entry)) / float(pos.entry) * 100.0) if pos.entry > 0 else ""
+            exit_s1, exit_s5 = load_signal_snapshot(time.time())
+            exit_rsi = ""
+            exit_ema1_ok = ""
+            exit_ema5_ok = ""
+            exit_vol_ok = ""
+            if exit_s1 is not None and exit_s5 is not None:
+                try:
+                    exit_rsi = float(getattr(exit_s1, "rsi", 0.0))
+                    exit_ema1_ok = int(bool(getattr(exit_s1, "ema_ok", False)))
+                    exit_ema5_ok = int(bool(getattr(exit_s5, "ema_ok", False)))
+                    exit_vol_ok = int(bool(getattr(exit_s1, "vol_ok", False)))
+                except Exception:
+                    exit_rsi = ""
+                    exit_ema1_ok = ""
+                    exit_ema5_ok = ""
+                    exit_vol_ok = ""
             
-            print("SELL_FILLED", sellQty, "@", fmt(exitPx), "PNL", fmt(pnl, Decimal('0.0001')), exitReason)
-            logTrade(f"SELL symbol={symbol} qty={sellQty} exit={exitPx} pnl={pnl} reason={exitReason} profile={profile.name}")
+            print("SELL_FILLED", filledQty, "@", fmt(exitPx), "PNL", fmt(pnl, Decimal('0.0001')), exitReason)
+            logTrade(f"SELL symbol={symbol} qty={filledQty} exit={exitPx} pnl={pnl} reason={exitReason} profile={profile.name}")
             logCsv({
                 "ts_utc": local_timestamp(),
                 "symbol": symbol,
                 "event": "SELL_FILLED",
                 "side": "SELL",
-                "qty": sellQty,
+                "qty": filledQty,
                 "price": exitPx,
                 "reason": exitReason,
                 "pnl": pnl,
@@ -1237,10 +1429,10 @@ def main():
                 "mom_pct": float(momPct) * 100.0,
                 "mom_range_pct": float(momRangePct) * 100.0,
                 "up_ratio": float(upRatio) * 100.0,
-                "rsi": "",
-                "ema1_ok": "",
-                "ema5_ok": "",
-                "vol_ok": "",
+                "rsi": exit_rsi,
+                "ema1_ok": exit_ema1_ok,
+                "ema5_ok": exit_ema5_ok,
+                "vol_ok": exit_vol_ok,
                 "bid": float(bid),
                 "ask": float(ask),
                 "mid": float(mid),

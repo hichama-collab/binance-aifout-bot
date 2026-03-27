@@ -99,11 +99,17 @@ class Config:
     # exits (shared)
     riskPct: float = 0.008
     tpPct: float = 0.0
+    tpMinPct: float = 0.0
     armPct: float = 0.0
     trailPct: float = 0.004
     feeBufPct: float = 0.0025
     maxPosTime: float = 15 * 60
     hardMaxPosTime: float = 0.0
+
+    # early profit protection before full trailing is armed
+    protectArmPct: float = 0.0
+    protectLockPct: float = 0.0
+    protectGivebackPct: float = 0.0
     # momentum (entry)
     momWindowSec: float = 30.0
     momMinPct: float = 0.0005
@@ -139,13 +145,30 @@ class Config:
     # early tape-exit (PSELL) guardrails
     psellMinAgeSec: float = 25.0
     psellMinLossPct: float = 0.0035
+    psellCurrentLossPct: float = 0.0
+    psellStaleAgeSec: float = 0.0
+    psellStaleLossPct: float = 0.0
     psellConfirmTicks: int = 4
+
+    # anti-whipsaw re-entry guards
+    reentryLossCooldownSec: float = 90.0
+    reentryTrailCooldownSec: float = 60.0
+    reentryRecoveryPct: float = 0.0015
+
+    # tape asymmetry defense
+    flowDefenseEnabled: bool = False
+    flowLookback: int = 8
+    flowMinRatio: float = 1.2
+    flowMaxSingleDropPct: float = 0.0025
 
     # entry warmup
     allowWarmupEntry: bool = False
 
     # ticks buffer
     ticksKeepMinSec: float = 40.0
+
+    # internal floor above exchange MIN_NOTIONAL when desired
+    minOrderNotionalUsdc: float = 0.0
 
 
     # entry anti-chase (tick microtrend)
@@ -209,11 +232,15 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("cap_usdc", "maxUsdcPerTrade"),
         ("riskPct", "riskPct"),
         ("tpPct", "tpPct"),
+        ("tp_min_pct", "tpMinPct"),
         ("armPct", "armPct"),
         ("trailPct", "trailPct"),
         ("feeBufPct", "feeBufPct"),
         ("maxPosTime", "maxPosTime"),
         ("hardMaxPosTime", "hardMaxPosTime"),
+        ("protect_arm_pct", "protectArmPct"),
+        ("protect_lock_pct", "protectLockPct"),
+        ("protect_giveback_pct", "protectGivebackPct"),
         ("mom_window_sec", "momWindowSec"),
         ("mom_min_pct", "momMinPct"),
         ("mom_min_up_ratio", "momMinUpRatio"),
@@ -240,6 +267,9 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("entry_cross_spread", "entryCrossSpread"),
         ("allow_warmup_entry", "allowWarmupEntry"),
         ("ticks_keep_min_sec", "ticksKeepMinSec"),
+        ("tick_confirmation_enabled", "tickEntryEnabled"),
+        ("tick_confirmation_lookback", "tickEntryLookback"),
+        ("tick_confirmation_min_pct", "tickEntryMinPct"),
         ("tick_entry_enabled", "tickEntryEnabled"),
         ("tick_entry_lookback", "tickEntryLookback"),
         ("tick_entry_min_pct", "tickEntryMinPct"),
@@ -250,7 +280,18 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("mom_relax_mid_mult", "momRelaxMidMult"),
         ("psell_min_age_sec", "psellMinAgeSec"),
         ("psell_min_loss_pct", "psellMinLossPct"),
+        ("psell_current_loss_pct", "psellCurrentLossPct"),
+        ("psell_stale_age_sec", "psellStaleAgeSec"),
+        ("psell_stale_loss_pct", "psellStaleLossPct"),
         ("psell_confirm_ticks", "psellConfirmTicks"),
+        ("reentry_loss_cooldown_sec", "reentryLossCooldownSec"),
+        ("reentry_trail_cooldown_sec", "reentryTrailCooldownSec"),
+        ("reentry_recovery_pct", "reentryRecoveryPct"),
+        ("flow_defense_enabled", "flowDefenseEnabled"),
+        ("flow_lookback", "flowLookback"),
+        ("flow_min_ratio", "flowMinRatio"),
+        ("flow_max_single_drop_pct", "flowMaxSingleDropPct"),
+        ("min_order_notional_usdc", "minOrderNotionalUsdc"),
     ]:
         if k_yaml in p and k_cfg in fields:
             updates[k_cfg] = p[k_yaml]
