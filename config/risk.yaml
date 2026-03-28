@@ -10,7 +10,7 @@ profiles:
     tick_confirmation_enabled: false
     tick_confirmation_lookback: 3
     tick_confirmation_min_pct: 0.0004
-    spread_max: 0.0040
+    spread_max: 0.0025
     rsi_min: 25
     rsi_max: 90
     entry_fill_ttl_sec: 3.0
@@ -40,8 +40,8 @@ profiles:
     psell_min_age_sec: 20
     psell_min_loss_pct: 0.0035
     psell_current_loss_pct: 0.0030
-    psell_stale_age_sec: 120
-    psell_stale_loss_pct: 0.0025
+    psell_stale_age_sec: 90
+    psell_stale_loss_pct: 0.0015
     psell_confirm_ticks: 4
     reentry_loss_cooldown_sec: 90
     reentry_trail_cooldown_sec: 60

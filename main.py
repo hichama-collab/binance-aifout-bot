@@ -217,6 +217,15 @@ def round_step(qty: float, step: float) -> float:
 
 
 
+def round_step_up(qty: float, step: float) -> float:
+    if step <= 0:
+        return float(qty)
+    dqty = Decimal(str(qty))
+    dstep = Decimal(str(step))
+    q = (dqty / dstep).to_integral_value(rounding=ROUND_CEILING)
+    return float(q * dstep)
+
+
 def round_tick_down(price: float, tick: float) -> float:
     """Floor price to tick size."""
     if tick <= 0:
@@ -997,7 +1006,10 @@ def main():
 
                 fee_buf = float(getattr(cfg, "feeBufPct", 0.0) or 0.0)
                 buy_safety_buf = max(fee_buf, 0.0025)
-                spendable_usdc = max(0.0, float(usdc) * (1.0 - buy_safety_buf))
+                reserve_target = float(usdc) * buy_safety_buf
+                reserve_cap = max(0.0, float(usdc) - float(minNotional))
+                quote_reserve = min(reserve_target, reserve_cap)
+                spendable_usdc = max(0.0, float(usdc) - quote_reserve)
                 spend = min(cap, spendable_usdc)
 
                 if spend < float(minNotional):
@@ -1015,7 +1027,10 @@ def main():
                         P2,
                         P3,
                         P4,
-                        detail=f"spend={spend:.8f} min_notional={float(minNotional):.8f}",
+                        detail=(
+                            f"spend={spend:.8f} reserve={quote_reserve:.8f} "
+                            f"min_notional={float(minNotional):.8f}"
+                        ),
                     )
                     time.sleep(cfg.idleSleep)
                     continue
@@ -1124,8 +1139,17 @@ def main():
                     bool(getattr(cfg, "entryCrossSpread", False)),
                     tick,
                 )
+                max_quote_budget = min(float(cap), float(usdc))
                 qty = round_step(spend / buyPx, step)
-                if qty <= 0 or (qty * buyPx) < float(minNotional):
+                notional = qty * buyPx
+                if qty > 0 and notional < float(minNotional):
+                    min_qty = round_step_up(float(minNotional) / buyPx, step)
+                    min_notional = min_qty * buyPx
+                    if min_qty > 0 and min_notional <= (max_quote_budget + 1e-9):
+                        qty = min_qty
+                        notional = min_notional
+
+                if qty <= 0 or notional < float(minNotional):
                     maybe_hold(
                         now,
                         'HOLD_QTY',
@@ -1140,6 +1164,11 @@ def main():
                         P2,
                         P3,
                         P4,
+                        detail=(
+                            f"qty={qty:.8f} notional={notional:.8f} "
+                            f"buy_px={buyPx:.8f} min_notional={float(minNotional):.8f} "
+                            f"budget={max_quote_budget:.8f}"
+                        ),
                     )
                     time.sleep(cfg.idleSleep)
                     continue
