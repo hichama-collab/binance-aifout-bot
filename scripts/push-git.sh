@@ -4,6 +4,11 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_dir}"
 
+trade_ssh_dir="/mnt/data/Trade/.ssh"
+if [ -f "${trade_ssh_dir}/id_ed25519" ]; then
+  export GIT_SSH_COMMAND="ssh -i ${trade_ssh_dir}/id_ed25519 -o IdentitiesOnly=yes"
+fi
+
 if ! command -v git >/dev/null 2>&1; then
   echo "ERR: git not found"
   exit 1
@@ -18,9 +23,21 @@ if [ -z "${branch}" ]; then
 fi
 
 if git rev-parse --abbrev-ref "${branch}@{upstream}" >/dev/null 2>&1; then
-  git push
+  if ! git push; then
+    echo
+    echo "ERR: push rejected."
+    echo "Run: ./git-update.sh ${branch}"
+    echo "Then run: ./push-git.sh"
+    exit 1
+  fi
 else
-  git push -u origin "${branch}"
+  if ! git push -u origin "${branch}"; then
+    echo
+    echo "ERR: push rejected."
+    echo "Run: ./git-update.sh ${branch}"
+    echo "Then run: ./push-git.sh"
+    exit 1
+  fi
 fi
 
 git status -sb
