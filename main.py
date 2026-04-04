@@ -1066,7 +1066,13 @@ def main():
                     "vol_ok": vol_ok,
                 }
 
-                if not ema1_ok or not ema5_ok:
+                strong_trend_resume = (
+                    ema1_ok
+                    and momPct >= max(float(getattr(cfg, "momMinPct", 0.0) or 0.0) * 1.25, 0.0005)
+                    and momRangePct >= max(required_range_pct * 1.15, 0.0008)
+                    and upRatio >= max(float(getattr(cfg, "momMinUpRatio", 0.0) or 0.0), 0.45)
+                )
+                if not ema1_ok or (not ema5_ok and not strong_trend_resume):
                     maybe_hold(
                         now,
                         'HOLD_EMA',
@@ -1081,7 +1087,10 @@ def main():
                         P2,
                         P3,
                         P4,
-                        detail=f"ema1={int(ema1_ok)} ema5={int(ema5_ok)}",
+                        detail=(
+                            f"ema1={int(ema1_ok)} ema5={int(ema5_ok)} "
+                            f"resume={int(strong_trend_resume)}"
+                        ),
                         signal=signal_state,
                     )
                     time.sleep(cfg.idleSleep)

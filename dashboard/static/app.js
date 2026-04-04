@@ -20,6 +20,10 @@
     if (n === null || n === undefined || Number.isNaN(Number(n))) return "--";
     return Number(n).toLocaleString();
   }
+  function td(label, value, className = "") {
+    const extra = className ? ` class="${className}"` : "";
+    return `<td data-label="${escapeHtml(label)}"${extra}>${value}</td>`;
+  }
   function escapeHtml(text) {
     return String(text || "")
       .replaceAll("&", "&amp;")
@@ -238,12 +242,12 @@ function binanceSpotUrl(symbol) {
       if (typeof eur === "number") totalEur += eur;
 
       return `<tr>
-        <td><b>${r.asset}</b></td>
-        <td class="right">${fmt(r.free, 6)}</td>
-        <td class="right">${fmt(r.locked, 6)}</td>
-        <td class="right">${fmt(r.total, 6)}</td>
-        <td class="right">${usdc === null ? "--" : fmt(usdc, 2)}</td>
-        <td class="right">${eur === null ? "--" : fmt(eur, 2)}</td>
+        ${td("Asset", `<b>${r.asset}</b>`)}
+        ${td("Free", fmt(r.free, 6), "right")}
+        ${td("Locked", fmt(r.locked, 6), "right")}
+        ${td("Total", fmt(r.total, 6), "right")}
+        ${td("≈ USDC", usdc === null ? "--" : fmt(usdc, 2), "right")}
+        ${td("≈ EUR", eur === null ? "--" : fmt(eur, 2), "right")}
       </tr>`;
     }).join("");
 
@@ -542,15 +546,15 @@ function binanceSpotUrl(symbol) {
       const period = r.last_ts ? `${r.last_ts}` : "--";
       const pctTxt = pnlPct == null ? "--" : `${fmt(pnlPct, 1)}%`;
       return `<tr>
-        <td><b><a class="link" href="${binanceSpotUrl(r.symbol) || "#"}" target="_blank" rel="noreferrer">${r.symbol}</a></b></td>
-        <td class="muted">${period}</td>
-        <td class="right">${maxOpenUsdc === null ? "--" : fmt(maxOpenUsdc, 2)}</td>
-        <td class="right">${buyUsdc === null ? "--" : fmt(buyUsdc, 2)}</td>
-        <td class="right">${sellUsdc === null ? "--" : fmt(sellUsdc, 2)}</td>
-        <td class="right ${cls}">${fmt(usdc, 2)}</td>
-        <td class="right ${cls}">${eur === null ? "--" : fmt(eur, 2)}</td>
-        <td class="right ${cls}">${pctTxt}</td>
-        <td class="right">${fmtInt(r.trades)}</td>
+        ${td("Token", `<b><a class="link" href="${binanceSpotUrl(r.symbol) || "#"}" target="_blank" rel="noreferrer">${r.symbol}</a></b>`)}
+        ${td("Période", `<span class="muted">${period}</span>`)}
+        ${td("Capital Max", maxOpenUsdc === null ? "--" : fmt(maxOpenUsdc, 2), "right")}
+        ${td("Turnover Achat", buyUsdc === null ? "--" : fmt(buyUsdc, 2), "right")}
+        ${td("Turnover Vente", sellUsdc === null ? "--" : fmt(sellUsdc, 2), "right")}
+        ${td("Net USDC", fmt(usdc, 2), `right ${cls}`.trim())}
+        ${td("Net EUR", eur === null ? "--" : fmt(eur, 2), `right ${cls}`.trim())}
+        ${td("Net %", pctTxt, `right ${cls}`.trim())}
+        ${td("Trades fermés", fmtInt(r.trades), "right")}
       </tr>`;
     }).join("");
     const pill = $("#tr-pill");
@@ -575,13 +579,13 @@ function binanceSpotUrl(symbol) {
       const url = binanceSpotUrl(symbol);
       const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${symbol}</a>` : symbol;
       return `<tr>
-        <td class="muted">${fmtDateTime(ts)}</td>
-        <td><b>${symbolHtml}</b></td>
-        <td><b>${actionLabel(r)}</b></td>
-        <td class="muted">${reasonLabel(r)}</td>
-        <td class="right">${price}</td>
-        <td class="right">${qty}</td>
-        <td class="right ${cls}">${pnl}</td>
+        ${td("Heure", `<span class="muted">${fmtDateTime(ts)}</span>`)}
+        ${td("Token", `<b>${symbolHtml}</b>`)}
+        ${td("Action", `<b>${actionLabel(r)}</b>`)}
+        ${td("Lecture", `<span class="muted">${reasonLabel(r)}</span>`)}
+        ${td("Prix", price, "right")}
+        ${td("Qté", qty, "right")}
+        ${td("Impact", pnl, `right ${cls}`.trim())}
       </tr>`;
     }).join("");
     const pill = $("#dec-pill");

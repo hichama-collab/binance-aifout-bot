@@ -690,7 +690,52 @@ canvas#equityChart{
   .page-title{font-size:28px}
   .card-head{padding:20px 20px 12px}
   .card-title{font-size:21px}
-  .table-wrap{padding:0 14px 14px}
+  .table-wrap{padding:0 14px 14px;overflow:visible}
+  .table{
+    min-width:0;
+    border-spacing:0 12px;
+  }
+  .table thead{
+    display:none;
+  }
+  .table tbody{
+    display:grid;
+    gap:12px;
+  }
+  .table tbody tr{
+    display:block;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:18px;
+    background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+    overflow:hidden;
+  }
+  .table tbody td{
+    display:grid;
+    grid-template-columns:minmax(110px, 42%) minmax(0, 1fr);
+    gap:12px;
+    align-items:start;
+    padding:12px 14px;
+    border-top:1px solid rgba(255,255,255,.06);
+    text-align:left;
+  }
+  .table tbody td:first-child{
+    border-top:none;
+  }
+  .table tbody td::before{
+    content:attr(data-label);
+    color:var(--text-muted);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+  }
+  .table tbody td.right{
+    text-align:left;
+  }
+  .table tbody td[data-label="Token"] b,
+  .table tbody td[data-label="Asset"] b{
+    font-size:16px;
+  }
   .kv2{grid-template-columns:1fr;padding:8px 20px 20px}
   .kv2 .k{margin-top:4px}
   .kpi-row,

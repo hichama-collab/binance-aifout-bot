@@ -1,6 +1,6 @@
 profiles:
   major:
-    mom_min_up_ratio: 0.60
+    mom_min_up_ratio: 0.30
     mom_range_min_pct: 0
     mom_use_instant: false
     mom_lookback: 5
@@ -56,9 +56,9 @@ profiles:
     cap_usdc: 75
     mom_max_pct: 0.0080
     rsi_buy_max: 74
-    mom_min_pct: 0.00045
+    mom_min_pct: 0.00035
     mom_window_sec: 16
-    min_range_entry_pct: 0.0004
+    min_range_entry_pct: 0.0003
     min_range_vs_spread: 0.8
     min_order_notional_usdc: 10.0
 
