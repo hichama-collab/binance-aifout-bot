@@ -149,6 +149,9 @@ class Config:
     psellStaleAgeSec: float = 0.0
     psellStaleLossPct: float = 0.0
     psellConfirmTicks: int = 4
+    psellFailAgeSec: float = 0.0
+    psellFailLossPct: float = 0.0
+    psellFailMaxHighPct: float = 0.0
 
     # anti-whipsaw re-entry guards
     reentryLossCooldownSec: float = 90.0
@@ -284,6 +287,9 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("psell_stale_age_sec", "psellStaleAgeSec"),
         ("psell_stale_loss_pct", "psellStaleLossPct"),
         ("psell_confirm_ticks", "psellConfirmTicks"),
+        ("psell_fail_age_sec", "psellFailAgeSec"),
+        ("psell_fail_loss_pct", "psellFailLossPct"),
+        ("psell_fail_max_high_pct", "psellFailMaxHighPct"),
         ("reentry_loss_cooldown_sec", "reentryLossCooldownSec"),
         ("reentry_trail_cooldown_sec", "reentryTrailCooldownSec"),
         ("reentry_recovery_pct", "reentryRecoveryPct"),

@@ -1310,17 +1310,52 @@ def main():
                             float(getattr(cfg, "feeBufPct", 0.0) or 0.0) * 1.25,
                             min_loss_pct * 0.75,
                         )
+                    fail_age_sec = float(getattr(cfg, "psellFailAgeSec", 0.0) or 0.0)
+                    if fail_age_sec <= 0.0:
+                        fail_age_sec = max(
+                            min_signal_exit_sec + 20.0,
+                            min(60.0, float(getattr(cfg, "maxPosTime", 240.0) or 240.0) * 0.25),
+                        )
+                    fail_loss_pct = float(getattr(cfg, "psellFailLossPct", 0.0) or 0.0)
+                    if fail_loss_pct <= 0.0:
+                        fail_loss_pct = max(
+                            float(getattr(cfg, "feeBufPct", 0.0) or 0.0) * 0.8,
+                            stale_loss_pct * 0.8,
+                        )
+                    fail_max_high_pct = float(getattr(cfg, "psellFailMaxHighPct", 0.0) or 0.0)
+                    if fail_max_high_pct <= 0.0:
+                        fail_max_high_pct = max(
+                            float(getattr(cfg, "feeBufPct", 0.0) or 0.0),
+                            min(
+                                max(
+                                    float(getattr(cfg, "protectArmPct", 0.0) or 0.0) * 0.75,
+                                    float(getattr(cfg, "armPct", 0.0) or 0.0) * 0.33,
+                                ),
+                                0.0020,
+                            ),
+                        )
                     current_guard = float(pos.entry) * (1.0 - current_loss_pct)
                     stale_guard = float(pos.entry) * (1.0 - stale_loss_pct)
+                    fail_guard = float(pos.entry) * (1.0 - fail_loss_pct)
                     confirm_ticks = max(3, int(getattr(cfg, "psellConfirmTicks", 4) or 4))
                     descending_tape = (P1 < P2) and (P2 < P3)
                     if confirm_ticks >= 4 and (P4 is not None):
                         descending_tape = descending_tape and (P3 < P4)
                     latest_ref = min(float(bid), float(P1))
+                    peak_progress_pct = max(
+                        0.0,
+                        (float(getattr(pos, "high", float(pos.entry))) - float(pos.entry)) / float(pos.entry),
+                    )
                     fast_signal = (
                         age_sec >= min_signal_exit_sec
                         and descending_tape
                         and (latest_ref < current_guard)
+                        and weak_tape
+                    )
+                    fail_signal = (
+                        age_sec >= fail_age_sec
+                        and (latest_ref < fail_guard)
+                        and (peak_progress_pct <= fail_max_high_pct)
                         and weak_tape
                     )
                     stale_signal = (
@@ -1333,6 +1368,14 @@ def main():
                         sellSignalMode = (
                             f"FAST age={age_sec:.1f}s "
                             f"latest={latest_ref:.8f} guard={current_guard:.8f}"
+                        )
+                    elif fail_signal:
+                        sellSignal = True
+                        sellSignalMode = (
+                            f"FAIL age={age_sec:.1f}s "
+                            f"latest={latest_ref:.8f} guard={fail_guard:.8f} "
+                            f"high={float(getattr(pos, 'high', pos.entry)):.8f} "
+                            f"peak={peak_progress_pct*100:.4f}%"
                         )
                     elif stale_signal:
                         sellSignal = True

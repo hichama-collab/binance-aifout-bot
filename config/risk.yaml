@@ -10,7 +10,7 @@ profiles:
     tick_confirmation_enabled: false
     tick_confirmation_lookback: 3
     tick_confirmation_min_pct: 0.0004
-    spread_max: 0.0025
+    spread_max: 0.0018
     rsi_min: 25
     rsi_max: 90
     entry_fill_ttl_sec: 3.0
@@ -34,15 +34,18 @@ profiles:
     armPct: 0.006
     trailPct: 0.004
     feeBufPct: 0.0015
-    protect_arm_pct: 0.003
-    protect_lock_pct: 0.0015
-    protect_giveback_pct: 0.0015
-    psell_min_age_sec: 20
+    protect_arm_pct: 0.0024
+    protect_lock_pct: 0.0012
+    protect_giveback_pct: 0.0012
+    psell_min_age_sec: 18
     psell_min_loss_pct: 0.0035
-    psell_current_loss_pct: 0.0030
-    psell_stale_age_sec: 90
-    psell_stale_loss_pct: 0.0015
+    psell_current_loss_pct: 0.0026
+    psell_stale_age_sec: 75
+    psell_stale_loss_pct: 0.0012
     psell_confirm_ticks: 4
+    psell_fail_age_sec: 45
+    psell_fail_loss_pct: 0.0012
+    psell_fail_max_high_pct: 0.0018
     reentry_loss_cooldown_sec: 90
     reentry_trail_cooldown_sec: 60
     reentry_recovery_pct: 0.0015
@@ -54,12 +57,12 @@ profiles:
     maxPosTime: 240
     hardMaxPosTime: 1200
     cap_usdc: 75
-    mom_max_pct: 0.0080
-    rsi_buy_max: 74
+    mom_max_pct: 0.0020
+    rsi_buy_max: 70
     mom_min_pct: 0.00035
     mom_window_sec: 16
-    min_range_entry_pct: 0.0003
-    min_range_vs_spread: 0.8
+    min_range_entry_pct: 0.0002
+    min_range_vs_spread: 0.45
     min_order_notional_usdc: 10.0
 
   midcap:

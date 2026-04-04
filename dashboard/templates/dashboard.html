@@ -5,11 +5,11 @@
 {% block content %}
 
 <div class="grid grid-12 gap-16">
-  <div class="card card-slate col-12">
+  <div class="card card-slate col-12 hero-card">
     <div class="card-head">
       <div>
-        <div class="card-title">Lecture live</div>
-        <div class="card-sub">Les 4 signaux qui doivent te sauter aux yeux a l'ouverture.</div>
+        <div class="card-title">Lecture live prioritaire</div>
+        <div class="card-sub">Version mobile: les 4 infos utiles sont en haut, sans scroller dans tous les sens.</div>
       </div>
     </div>
     <div class="signal-strip">
@@ -40,7 +40,7 @@
     <div class="card-head">
       <div>
         <div class="card-title">Position en cours</div>
-        <div class="card-sub">Lecture directe de l'exposition reelle si un trade est ouvert.</div>
+        <div class="card-sub">Lecture directe de l'exposition reelle, avec le minimum vital pour agir vite.</div>
       </div>
       <div class="pill pill-green" id="pos-pill">--</div>
     </div>
@@ -58,7 +58,7 @@
     <div class="card-head">
       <div>
         <div class="card-title">Pilotage instantane</div>
-        <div class="card-sub">Configuration active et etat des moteurs sans quitter la home.</div>
+        <div class="card-sub">Config active et sante des services sans quitter la home.</div>
       </div>
       <div class="pill pill-amber" id="service-health-pill">--</div>
     </div>
@@ -84,7 +84,7 @@
     <div class="card-head">
       <div>
         <div class="card-title">Capital disponible</div>
-        <div class="card-sub">Le portefeuille reste visible, mais il ne prend plus toute la scene.</div>
+        <div class="card-sub">Le portefeuille reste lisible en desktop, mais devient une vraie liste mobile sur petit ecran.</div>
       </div>
       <div class="pill pill-blue" id="wallet-total">--</div>
     </div>
@@ -107,11 +107,11 @@
     </div>
   </div>
 
-  <div class="card card-red col-12">
+  <div class="card card-red col-12 col-xl-6">
     <div class="card-head">
-        <div>
+      <div>
         <div class="card-title">PnL par token</div>
-        <div class="card-sub">Turnover cumule des trades fermes par token, avec le capital max engage sur une position.</div>
+        <div class="card-sub">Les tokens qui tirent la perf vers le haut ou vers le bas.</div>
       </div>
       <div class="pill pill-red" id="tr-pill">--</div>
     </div>
@@ -137,11 +137,11 @@
     </div>
   </div>
 
-  <div class="card card-slate col-12">
+  <div class="card card-slate col-12 col-xl-6">
     <div class="card-head">
       <div>
         <div class="card-title">Dernieres actions du bot</div>
-        <div class="card-sub">Ce qu'il vient de faire, ou ce qu'il a refuse, avec une raison lisible.</div>
+        <div class="card-sub">Ce qu'il vient de faire, ou ce qu'il vient de refuser, avec une raison lisible.</div>
       </div>
       <div class="pill" id="dec-pill">--</div>
     </div>
