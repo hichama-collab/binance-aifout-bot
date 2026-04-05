@@ -158,6 +158,16 @@ class Config:
     reentryTrailCooldownSec: float = 60.0
     reentryRecoveryPct: float = 0.0015
 
+    # entry quality guards
+    entryHardMinUpRatio: float = 0.0
+    entryMinStrictUps: int = 1
+
+    # 5m rollover exit guard
+    psell5mAgeSec: float = 0.0
+    psell5mLossPct: float = 0.0
+    psell5mDropPct: float = 0.0
+    psell5mNegativeRetPct: float = 0.0
+
     # tape asymmetry defense
     flowDefenseEnabled: bool = False
     flowLookback: int = 8
@@ -293,6 +303,12 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("reentry_loss_cooldown_sec", "reentryLossCooldownSec"),
         ("reentry_trail_cooldown_sec", "reentryTrailCooldownSec"),
         ("reentry_recovery_pct", "reentryRecoveryPct"),
+        ("entry_hard_min_up_ratio", "entryHardMinUpRatio"),
+        ("entry_min_strict_ups", "entryMinStrictUps"),
+        ("psell_5m_age_sec", "psell5mAgeSec"),
+        ("psell_5m_loss_pct", "psell5mLossPct"),
+        ("psell_5m_drop_pct", "psell5mDropPct"),
+        ("psell_5m_negative_ret_pct", "psell5mNegativeRetPct"),
         ("flow_defense_enabled", "flowDefenseEnabled"),
         ("flow_lookback", "flowLookback"),
         ("flow_min_ratio", "flowMinRatio"),

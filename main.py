@@ -207,7 +207,7 @@ from execution.orders import placeLimit, waitFillOrCancel
 from state.wallet_sync import walletSyncEvery
 from state.position import Position
 
-from indicators.basic import fmt, computeSignals
+from indicators.basic import fmt, computeSignals, computeMarketContext
 
 
 def round_step(qty: float, step: float) -> float:
@@ -490,6 +490,7 @@ def main():
     pendingSwitchSymbol = None
     pendingSwitchLogged = None
     lastExitInfo = None
+    blockedSymbols = set()
 
     # ring buffer of (ts, price_ref). We store MID=(bestBid+bestAsk)/2 for P1..P4 logic.
     ticks = []
@@ -500,27 +501,31 @@ def main():
 
     lastHoldCsv = 0.0
     holdCsvEvery = float(getattr(cfg, 'holdCsvEvery', 60))
-    signalCache = {"ts": 0.0, "s1": None, "s5": None}
+    signalCache = {"ts": 0.0, "s1": None, "s5": None, "market": None}
     signalRefreshSec = float(getattr(cfg, "signalRefreshSec", 15.0) or 15.0)
 
     def load_signal_snapshot(now):
         cached_s1 = signalCache.get("s1")
         cached_s5 = signalCache.get("s5")
+        cached_market = signalCache.get("market")
         if (
             cached_s1 is not None
             and cached_s5 is not None
+            and cached_market is not None
             and (now - float(signalCache.get("ts", 0.0))) <= signalRefreshSec
         ):
-            return cached_s1, cached_s5
+            return cached_s1, cached_s5, cached_market
         try:
             s1, s5 = computeSignals(bx, symbol, profile)
+            market = computeMarketContext(bx, symbol)
             signalCache["ts"] = now
             signalCache["s1"] = s1
             signalCache["s5"] = s5
-            return s1, s5
+            signalCache["market"] = market
+            return s1, s5, market
         except Exception as e:
             logErr("SIGNAL_FETCH_FAIL", e)
-            return None, None
+            return None, None, None
 
     def maybe_hold(
         now,
@@ -744,10 +749,32 @@ def main():
                 buySignal = (P1 >= P2) and (P2 >= P3) and (P3 >= P4) and (P1 > P4)
 
             if buySignal:
+                if symbol in blockedSymbols:
+                    maybe_hold(
+                        now,
+                        'HOLD_BLOCKED_SYMBOL',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
                 max_mom_pct = float(getattr(cfg, "momMaxPct", 1.0) or 1.0)
                 min_range_entry_pct = float(getattr(cfg, "minRangeEntryPct", 0.0) or 0.0)
                 min_range_vs_spread = float(getattr(cfg, "minRangeVsSpread", 0.0) or 0.0)
                 required_range_pct = max(min_range_entry_pct, float(spread) * min_range_vs_spread)
+                strict_up_moves = int(P1 > P2) + int(P2 > P3) + int(P3 > P4)
+                entry_min_strict_ups = max(1, int(getattr(cfg, "entryMinStrictUps", 1) or 1))
+                hard_min_up_ratio = float(getattr(cfg, "entryHardMinUpRatio", 0.0) or 0.0)
 
                 if not momOk:
                     maybe_hold(
@@ -764,6 +791,46 @@ def main():
                         P2,
                         P3,
                         P4,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
+                if strict_up_moves < entry_min_strict_ups:
+                    maybe_hold(
+                        now,
+                        'HOLD_TAPE',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                        detail=f"strict_ups={strict_up_moves} need={entry_min_strict_ups}",
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
+                if hard_min_up_ratio > 0 and upRatio < hard_min_up_ratio:
+                    maybe_hold(
+                        now,
+                        'HOLD_UPRATIO',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                        detail=f"hard_min_up_ratio={hard_min_up_ratio*100:.2f}%",
                     )
                     time.sleep(cfg.idleSleep)
                     continue
@@ -1035,8 +1102,8 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                s1, s5 = load_signal_snapshot(now)
-                if s1 is None or s5 is None:
+                s1, s5, market_ctx = load_signal_snapshot(now)
+                if s1 is None or s5 is None or market_ctx is None:
                     maybe_hold(
                         now,
                         'HOLD_SIGNAL',
@@ -1187,12 +1254,26 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                order = placeLimit(
-                    bx, symbol, 'BUY',
-                    qty, buyPx,
-                    stepQ=step, tickQ=tick,
-                    dryRun=getattr(cfg, 'dryRun', False)
-                )
+                try:
+                    order = placeLimit(
+                        bx, symbol, 'BUY',
+                        qty, buyPx,
+                        stepQ=step, tickQ=tick,
+                        dryRun=getattr(cfg, 'dryRun', False)
+                    )
+                except Exception as e:
+                    msg = str(e)
+                    if "not permitted for this account" in msg.lower():
+                        blockedSymbols.add(symbol)
+                        try:
+                            logTrade(f"BLOCK_SYMBOL symbol={symbol} reason=ACCOUNT_PERMISSION")
+                            print("BLOCK_SYMBOL", symbol, "ACCOUNT_PERMISSION")
+                        except Exception:
+                            pass
+                        cooldownUntil = time.time() + max(float(getattr(cfg, 'entryCooldownSec', 30.0)), 60.0)
+                        time.sleep(cfg.idleSleep)
+                        continue
+                    raise
 
                 filled, info = waitFillOrCancel(
                     bx, symbol, order["orderId"],
@@ -1232,6 +1313,11 @@ def main():
                         except Exception:
                             pos.high = float(getattr(pos, 'high', new_entry))
                         pos.init_stops(cfg, profile, tick=tick)
+
+                setattr(pos, "entryRet1m", float(getattr(market_ctx, "ret_1m", 0.0)))
+                setattr(pos, "entryRet3m", float(getattr(market_ctx, "ret_3m", 0.0)))
+                setattr(pos, "entryRet5m", float(getattr(market_ctx, "ret_5m", 0.0)))
+                setattr(pos, "entryRange5m", float(getattr(market_ctx, "range_5m", 0.0)))
 
                 print("BUY_FILLED", getattr(pos, 'qty', ''), "@", fmt(getattr(pos, 'entry', 0.0)), "STOP", fmt(getattr(pos, 'stop', 0.0)))
                 logTrade(f"BUY symbol={symbol} qty={getattr(pos,'qty','')} entry={getattr(pos,'entry','')} P1={P1} P2={P2} P3={P3} P4={P4}")
@@ -1368,6 +1454,26 @@ def main():
                         and (latest_ref < stale_guard)
                         and (weak_tape or descending_tape)
                     )
+                    market_ctx = signalCache.get("market")
+                    five_min_signal = False
+                    if market_ctx is not None:
+                        entry_ret_5m = float(getattr(pos, "entryRet5m", 0.0) or 0.0)
+                        current_ret_5m = float(getattr(market_ctx, "ret_5m", 0.0) or 0.0)
+                        five_min_age_sec = float(getattr(cfg, "psell5mAgeSec", 0.0) or 0.0)
+                        five_min_loss_pct = float(getattr(cfg, "psell5mLossPct", 0.0) or 0.0)
+                        five_min_drop_pct = float(getattr(cfg, "psell5mDropPct", 0.0) or 0.0)
+                        five_min_negative_ret_pct = float(getattr(cfg, "psell5mNegativeRetPct", 0.0) or 0.0)
+                        five_min_guard = float(pos.entry) * (1.0 - five_min_loss_pct)
+                        five_min_signal = (
+                            five_min_age_sec > 0.0
+                            and age_sec >= five_min_age_sec
+                            and latest_ref < five_min_guard
+                            and weak_tape
+                            and (
+                                current_ret_5m <= five_min_negative_ret_pct
+                                or current_ret_5m <= (entry_ret_5m - five_min_drop_pct)
+                            )
+                        )
                     if fast_signal:
                         sellSignal = True
                         sellSignalMode = (
@@ -1387,6 +1493,14 @@ def main():
                         sellSignalMode = (
                             f"STALE age={age_sec:.1f}s "
                             f"latest={latest_ref:.8f} guard={stale_guard:.8f}"
+                        )
+                    elif five_min_signal:
+                        sellSignal = True
+                        sellSignalMode = (
+                            f"ROLL5 age={age_sec:.1f}s "
+                            f"latest={latest_ref:.8f} "
+                            f"ret5m={current_ret_5m*100:.4f}% "
+                            f"entry5m={entry_ret_5m*100:.4f}%"
                         )
                 if sellSignal:
                     exitReason = (
@@ -1483,7 +1597,7 @@ def main():
             exitPx = quoteQty / filledQty if filledQty > 0 else sellPx
             pnl = (exitPx - pos.entry) * filledQty
             mid_vs_entry_pct = ((float(mid) - float(pos.entry)) / float(pos.entry) * 100.0) if pos.entry > 0 else ""
-            exit_s1, exit_s5 = load_signal_snapshot(time.time())
+            exit_s1, exit_s5, _ = load_signal_snapshot(time.time())
             exit_rsi = ""
             exit_ema1_ok = ""
             exit_ema5_ok = ""

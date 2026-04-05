@@ -46,9 +46,15 @@ profiles:
     psell_fail_age_sec: 45
     psell_fail_loss_pct: 0.0012
     psell_fail_max_high_pct: 0.0018
+    psell_5m_age_sec: 20
+    psell_5m_loss_pct: 0.0010
+    psell_5m_drop_pct: 0.0010
+    psell_5m_negative_ret_pct: -0.0002
     reentry_loss_cooldown_sec: 90
     reentry_trail_cooldown_sec: 60
     reentry_recovery_pct: 0.0015
+    entry_hard_min_up_ratio: 0.35
+    entry_min_strict_ups: 2
     flow_defense_enabled: false
     flow_lookback: 8
     flow_min_ratio: 1.15
