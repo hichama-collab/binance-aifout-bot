@@ -63,7 +63,7 @@ profiles:
     mom_window_sec: 16
     min_range_entry_pct: 0.0002
     min_range_vs_spread: 0.45
-    min_order_notional_usdc: 10.0
+    min_order_notional_usdc: 5.0
 
   midcap:
     cap_usdc: 10000
@@ -105,7 +105,7 @@ profiles:
     tp_min_pct: 0.004
     maxPosTime: 300
     hardMaxPosTime: 1200
-    min_order_notional_usdc: 10.0
+    min_order_notional_usdc: 5.0
 
   wide_spread:
     cap_usdc: 10000
@@ -147,7 +147,7 @@ profiles:
     tp_min_pct: 0.004
     maxPosTime: 360
     hardMaxPosTime: 1200
-    min_order_notional_usdc: 10.0
+    min_order_notional_usdc: 5.0
 
   fast_momo:
     cap_usdc: 90
@@ -192,7 +192,7 @@ profiles:
     tp_min_pct: 0.004
     maxPosTime: 240
     hardMaxPosTime: 900
-    min_order_notional_usdc: 10.0
+    min_order_notional_usdc: 5.0
 
   cap: 20
 

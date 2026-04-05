@@ -1151,14 +1151,17 @@ def main():
                 max_quote_budget = min(float(cap), float(usdc))
                 qty = round_step(spend / buyPx, step)
                 notional = qty * buyPx
+                min_qty = 0.0
+                required_quote = 0.0
                 if qty > 0 and notional < float(minNotional):
                     min_qty = round_step_up(float(minNotional) / buyPx, step)
-                    min_notional = min_qty * buyPx
-                    if min_qty > 0 and min_notional <= (max_quote_budget + 1e-9):
+                    required_quote = min_qty * buyPx
+                    if min_qty > 0 and required_quote <= (max_quote_budget + 1e-9):
                         qty = min_qty
-                        notional = min_notional
+                        notional = required_quote
 
                 if qty <= 0 or notional < float(minNotional):
+                    missing_quote = max(0.0, required_quote - max_quote_budget) if required_quote > 0 else 0.0
                     maybe_hold(
                         now,
                         'HOLD_QTY',
@@ -1176,7 +1179,9 @@ def main():
                         detail=(
                             f"qty={qty:.8f} notional={notional:.8f} "
                             f"buy_px={buyPx:.8f} min_notional={float(minNotional):.8f} "
-                            f"budget={max_quote_budget:.8f}"
+                            f"budget={max_quote_budget:.8f} "
+                            f"required_qty={min_qty:.8f} required_quote={required_quote:.8f} "
+                            f"missing_quote={missing_quote:.8f}"
                         ),
                     )
                     time.sleep(cfg.idleSleep)
