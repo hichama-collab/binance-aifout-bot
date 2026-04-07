@@ -1359,6 +1359,12 @@ def main():
                 continue
 
             # ===== EXIT =====
+            position_market_ctx = signalCache.get("market")
+            if pos.entry > 0:
+                _, _, refreshed_market_ctx = load_signal_snapshot(time.time())
+                if refreshed_market_ctx is not None:
+                    position_market_ctx = refreshed_market_ctx
+
             # If position was adopted from wallet (entry=0), treat as untracked.
             # We do not fabricate an entry; we liquidate when sellable, otherwise we clear as dust.
             if pos.entry <= 0:
@@ -1454,25 +1460,26 @@ def main():
                         and (latest_ref < stale_guard)
                         and (weak_tape or descending_tape)
                     )
-                    market_ctx = signalCache.get("market")
                     five_min_signal = False
-                    if market_ctx is not None:
+                    if position_market_ctx is not None:
                         entry_ret_5m = float(getattr(pos, "entryRet5m", 0.0) or 0.0)
-                        current_ret_5m = float(getattr(market_ctx, "ret_5m", 0.0) or 0.0)
+                        current_ret_5m = float(getattr(position_market_ctx, "ret_5m", 0.0) or 0.0)
                         five_min_age_sec = float(getattr(cfg, "psell5mAgeSec", 0.0) or 0.0)
                         five_min_loss_pct = float(getattr(cfg, "psell5mLossPct", 0.0) or 0.0)
                         five_min_drop_pct = float(getattr(cfg, "psell5mDropPct", 0.0) or 0.0)
                         five_min_negative_ret_pct = float(getattr(cfg, "psell5mNegativeRetPct", 0.0) or 0.0)
                         five_min_guard = float(pos.entry) * (1.0 - five_min_loss_pct)
+                        five_min_rolled_negative = (
+                            entry_ret_5m > five_min_negative_ret_pct
+                            and current_ret_5m <= five_min_negative_ret_pct
+                        )
+                        five_min_dropped = current_ret_5m <= (entry_ret_5m - five_min_drop_pct)
                         five_min_signal = (
                             five_min_age_sec > 0.0
                             and age_sec >= five_min_age_sec
                             and latest_ref < five_min_guard
                             and weak_tape
-                            and (
-                                current_ret_5m <= five_min_negative_ret_pct
-                                or current_ret_5m <= (entry_ret_5m - five_min_drop_pct)
-                            )
+                            and (five_min_rolled_negative or five_min_dropped)
                         )
                     if fast_signal:
                         sellSignal = True
@@ -1500,7 +1507,8 @@ def main():
                             f"ROLL5 age={age_sec:.1f}s "
                             f"latest={latest_ref:.8f} "
                             f"ret5m={current_ret_5m*100:.4f}% "
-                            f"entry5m={entry_ret_5m*100:.4f}%"
+                            f"entry5m={entry_ret_5m*100:.4f}% "
+                            f"delta5m={(current_ret_5m-entry_ret_5m)*100:.4f}%"
                         )
                 if sellSignal:
                     exitReason = (
