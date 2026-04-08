@@ -71,6 +71,7 @@ class Config:
     obImbalanceMinRatio: float = 1.8
     obDepthLevels: int = 5
     entryCrossSpread: bool = False
+    entryAutoCrossSpreadPct: float = 0.0
 
     idleSleep: float = 0.5
     chkEvery: float = 0.5
@@ -88,6 +89,7 @@ class Config:
     dataDir: Path = Path("data")
     tradesCsv: Path = Path("data/trades.csv")
     riskYaml: Path = Path("config/risk.yaml")
+    blockedSymbolsFile: Path = Path("data/blocked_symbols.txt")
 
     dryRun: bool = False
     strategyName: str = 'momentum'
@@ -161,6 +163,8 @@ class Config:
     # entry quality guards
     entryHardMinUpRatio: float = 0.0
     entryMinStrictUps: int = 1
+    entryMinTapeProgressPct: float = 0.0
+    entryMinTapeProgressVsSpread: float = 0.0
 
     # 5m rollover exit guard
     psell5mAgeSec: float = 0.0
@@ -278,6 +282,7 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("ob_imbalance_min_ratio", "obImbalanceMinRatio"),
         ("ob_depth_levels", "obDepthLevels"),
         ("entry_cross_spread", "entryCrossSpread"),
+        ("entry_auto_cross_spread_pct", "entryAutoCrossSpreadPct"),
         ("allow_warmup_entry", "allowWarmupEntry"),
         ("ticks_keep_min_sec", "ticksKeepMinSec"),
         ("tick_confirmation_enabled", "tickEntryEnabled"),
@@ -305,6 +310,8 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("reentry_recovery_pct", "reentryRecoveryPct"),
         ("entry_hard_min_up_ratio", "entryHardMinUpRatio"),
         ("entry_min_strict_ups", "entryMinStrictUps"),
+        ("entry_min_tape_progress_pct", "entryMinTapeProgressPct"),
+        ("entry_min_tape_progress_vs_spread", "entryMinTapeProgressVsSpread"),
         ("psell_5m_age_sec", "psell5mAgeSec"),
         ("psell_5m_loss_pct", "psell5mLossPct"),
         ("psell_5m_drop_pct", "psell5mDropPct"),

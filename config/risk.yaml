@@ -16,6 +16,7 @@ profiles:
     entry_fill_ttl_sec: 3.0
     entry_cooldown_sec: 20
     entry_cross_spread: false
+    entry_auto_cross_spread_pct: 0.0006
     hold_csv_every: 10
     hold_log_every: 5
     dust_cooldown_sec: 30
@@ -55,6 +56,8 @@ profiles:
     reentry_recovery_pct: 0.0015
     entry_hard_min_up_ratio: 0.35
     entry_min_strict_ups: 2
+    entry_min_tape_progress_pct: 0.0002
+    entry_min_tape_progress_vs_spread: 0.85
     flow_defense_enabled: false
     flow_lookback: 8
     flow_min_ratio: 1.15

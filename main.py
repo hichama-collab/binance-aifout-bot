@@ -250,6 +250,33 @@ def compute_buy_price(best_bid: float, best_ask: float, cross_spread: bool, tick
     return round_tick_down(best_bid, tick)
 
 
+def load_blocked_symbols(path: Path) -> set[str]:
+    try:
+        if not path.exists():
+            return set()
+        blocked = set()
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            symbol = line.strip().upper()
+            if symbol:
+                blocked.add(symbol)
+        return blocked
+    except Exception:
+        return set()
+
+
+def persist_blocked_symbol(path: Path, symbol: str) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        blocked = load_blocked_symbols(path)
+        symbol = (symbol or "").strip().upper()
+        if not symbol or symbol in blocked:
+            return
+        with path.open("a", encoding="utf-8") as f:
+            f.write(symbol + "\n")
+    except Exception:
+        pass
+
+
 def get_symbol_filters(bx: Binance, symbol: str):
     try:
         exch = bx.get("/api/v3/exchangeInfo", {"symbol": symbol})
@@ -491,6 +518,13 @@ def main():
     pendingSwitchLogged = None
     lastExitInfo = None
     blockedSymbols = set()
+    blocked_symbols_file = Path(getattr(cfg, "blockedSymbolsFile", Path("data/blocked_symbols.txt")))
+    blockedSymbols.update(load_blocked_symbols(blocked_symbols_file))
+    if symbol in blockedSymbols:
+        msg = f"SYMBOL_BLOCKED_PERSISTED symbol={symbol} file={blocked_symbols_file}"
+        print(msg)
+        logTrade(msg)
+        sys.exit(0)
 
     # ring buffer of (ts, price_ref). We store MID=(bestBid+bestAsk)/2 for P1..P4 logic.
     ticks = []
@@ -775,6 +809,13 @@ def main():
                 strict_up_moves = int(P1 > P2) + int(P2 > P3) + int(P3 > P4)
                 entry_min_strict_ups = max(1, int(getattr(cfg, "entryMinStrictUps", 1) or 1))
                 hard_min_up_ratio = float(getattr(cfg, "entryHardMinUpRatio", 0.0) or 0.0)
+                tape_progress_pct = ((float(P1) - float(P4)) / float(P4)) if float(P4) > 0 else 0.0
+                min_tape_progress_pct = float(getattr(cfg, "entryMinTapeProgressPct", 0.0) or 0.0)
+                min_tape_progress_vs_spread = float(getattr(cfg, "entryMinTapeProgressVsSpread", 0.0) or 0.0)
+                required_tape_progress_pct = max(
+                    min_tape_progress_pct,
+                    float(spread) * min_tape_progress_vs_spread,
+                )
 
                 if not momOk:
                     maybe_hold(
@@ -811,6 +852,29 @@ def main():
                         P3,
                         P4,
                         detail=f"strict_ups={strict_up_moves} need={entry_min_strict_ups}",
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
+                if required_tape_progress_pct > 0 and tape_progress_pct < required_tape_progress_pct:
+                    maybe_hold(
+                        now,
+                        'HOLD_TAPE',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                        detail=(
+                            f"tape_progress={tape_progress_pct*100:.4f}% "
+                            f"required={required_tape_progress_pct*100:.4f}%"
+                        ),
                     )
                     time.sleep(cfg.idleSleep)
                     continue
@@ -1209,10 +1273,15 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
+                auto_cross_spread_pct = float(getattr(cfg, "entryAutoCrossSpreadPct", 0.0) or 0.0)
+                cross_spread = bool(getattr(cfg, "entryCrossSpread", False))
+                if (not cross_spread) and auto_cross_spread_pct > 0 and float(spread) <= auto_cross_spread_pct:
+                    cross_spread = True
+
                 buyPx = compute_buy_price(
                     float(bid),
                     float(ask),
-                    bool(getattr(cfg, "entryCrossSpread", False)),
+                    cross_spread,
                     tick,
                 )
                 max_quote_budget = min(float(cap), float(usdc))
@@ -1265,6 +1334,7 @@ def main():
                     msg = str(e)
                     if "not permitted for this account" in msg.lower():
                         blockedSymbols.add(symbol)
+                        persist_blocked_symbol(blocked_symbols_file, symbol)
                         try:
                             logTrade(f"BLOCK_SYMBOL symbol={symbol} reason=ACCOUNT_PERMISSION")
                             print("BLOCK_SYMBOL", symbol, "ACCOUNT_PERMISSION")
