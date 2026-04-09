@@ -197,7 +197,7 @@ def orderbook_imbalance_ok(bx, symbol: str, min_ratio: float, depth_levels: int)
 
 
 from core.config import loadConfig, pickProfile, applyRiskConfig
-from core.logging import tradeLogger, tradeCsvLogger, errorLogger, ensureCsvHeader, local_timestamp
+from core.logging import LogDayContext, tradeLogger, tradeCsvLogger, errorLogger, ensureCsvHeader, local_timestamp
 from services.ipguard import vpnCheckOrDie
 
 from exchange.binance import Binance
@@ -452,10 +452,11 @@ def main():
     )
 
     stream = Stream(cfg, symbol)
-    logTrade = tradeLogger(cfg, symbol)
-    logCsv = tradeCsvLogger(cfg, symbol)
-    logErr = errorLogger(cfg, symbol)
-    ensureCsvHeader(cfg, symbol)
+    logDayCtx = LogDayContext()
+    logTrade = tradeLogger(cfg, symbol, logDayCtx)
+    logCsv = tradeCsvLogger(cfg, symbol, logDayCtx)
+    logErr = errorLogger(cfg, symbol, logDayCtx)
+    ensureCsvHeader(cfg, symbol, logDayCtx)
 
     try:
 
@@ -537,6 +538,12 @@ def main():
     holdCsvEvery = float(getattr(cfg, 'holdCsvEvery', 60))
     signalCache = {"ts": 0.0, "s1": None, "s5": None, "market": None}
     signalRefreshSec = float(getattr(cfg, "signalRefreshSec", 15.0) or 15.0)
+
+    def sync_log_day_anchor(position):
+        if position is None:
+            logDayCtx.clear_anchor()
+            return
+        logDayCtx.ensure_anchor_today()
 
     def load_signal_snapshot(now):
         cached_s1 = signalCache.get("s1")
@@ -693,6 +700,8 @@ def main():
                         pos.init_stops(cfg, profile, tick=tick)
                     except Exception:
                         pass
+
+            sync_log_day_anchor(pos)
 
             
             spread = (ask - bid) / bid if bid > 0 else 1.0
@@ -1389,6 +1398,7 @@ def main():
                 setattr(pos, "entryRet5m", float(getattr(market_ctx, "ret_5m", 0.0)))
                 setattr(pos, "entryRange5m", float(getattr(market_ctx, "range_5m", 0.0)))
 
+                sync_log_day_anchor(pos)
                 print("BUY_FILLED", getattr(pos, 'qty', ''), "@", fmt(getattr(pos, 'entry', 0.0)), "STOP", fmt(getattr(pos, 'stop', 0.0)))
                 logTrade(f"BUY symbol={symbol} qty={getattr(pos,'qty','')} entry={getattr(pos,'entry','')} P1={P1} P2={P2} P3={P3} P4={P4}")
                 entry_vs_mid_pct = ((float(getattr(pos, 'entry', 0.0)) - float(mid)) / float(mid) * 100.0) if mid > 0 else ""

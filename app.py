@@ -235,8 +235,8 @@ def _parse_trade_logs(bot_log_dir: Path) -> list[dict]:
 
     def _artifact_symbol(name: str, kind: str) -> str:
         pats = {
-            "trades_log": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}-\d{4,6}))?_trades\.log$",
-            "trades_csv": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}-\d{4,6}))?_trades\.csv$",
+            "trades_log": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<stamp>\d{8}(?:-\d{4,6})?))?_trades\.log$",
+            "trades_csv": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<stamp>\d{8}(?:-\d{4,6})?))?_trades\.csv$",
         }
         m = re.match(pats[kind], name)
         if m:
@@ -244,7 +244,7 @@ def _parse_trade_logs(bot_log_dir: Path) -> list[dict]:
         suffix = "_trades.log" if kind == "trades_log" else "_trades.csv"
         return name.split(suffix)[0]
 
-    for log_path in sorted(bot_log_dir.glob("*_trades.log")):
+    for log_path in sorted(bot_log_dir.rglob("*_trades.log")):
         symbol = _artifact_symbol(log_path.name, "trades_log")
         try:
             with log_path.open("r", encoding="utf-8", errors="replace") as f:
@@ -296,7 +296,7 @@ def load_trades_csv() -> tuple[list[dict], dict]:
     if not LOG_DIR or not LOG_DIR.exists():
         return trades, meta
 
-    for csv_path in sorted(LOG_DIR.glob("*_trades.csv")):
+    for csv_path in sorted(LOG_DIR.rglob("*_trades.csv")):
         meta["files"].append(str(csv_path.name))
         symbol_from_file = _artifact_symbol(csv_path.name, "trades_csv")
 
@@ -475,7 +475,7 @@ def list_recent_logs(limit: int = 40) -> List[Dict[str, Any]]:
     try:
         files = []
         for pat in ("*_trades.log", "*_errors.log", "*.log", "*.csv"):
-            files.extend(LOG_DIR.glob(pat))
+            files.extend(LOG_DIR.rglob(pat))
         # unique
         uniq = {}
         for p in files:

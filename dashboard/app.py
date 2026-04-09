@@ -216,7 +216,7 @@ def find_latest(directory_or_pattern, pattern: str | None = None):
         else:
             directory = Path(directory_or_pattern)
             pat = str(pattern)
-        files = sorted(directory.glob(pat), key=lambda p: p.stat().st_mtime, reverse=True)
+        files = sorted(directory.rglob(pat), key=lambda p: p.stat().st_mtime, reverse=True)
         return files[0] if files else None
     except Exception:
         return None
@@ -336,9 +336,9 @@ def parse_last_indicators(lines):
 
 def parse_log_artifact_name(name: str, kind: str):
     patterns = {
-        "trades_csv": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}-\d{4,6}))?_trades\.csv$",
-        "trades_log": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}-\d{4,6}))?_trades\.log$",
-        "errors_log": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}-\d{4,6}))?_errors\.log$",
+        "trades_csv": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}(?:-\d{4,6})?))?_trades\.csv$",
+        "trades_log": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}(?:-\d{4,6})?))?_trades\.log$",
+        "errors_log": r"^(?P<symbol>[A-Z0-9]+)(?:_(?P<run>\d{8}(?:-\d{4,6})?))?_errors\.log$",
     }
     pat = patterns.get(kind)
     if not pat:
@@ -357,7 +357,7 @@ def load_trades_csv(csv_path: Path | None = None, max_rows: int | None = 1500):
     cols = []
     paths = []
     if csv_path is None:
-        paths = sorted(LOG_DIR.glob("*_trades.csv"))
+        paths = sorted(LOG_DIR.rglob("*_trades.csv"))
     elif csv_path.exists():
         paths = [csv_path]
 
