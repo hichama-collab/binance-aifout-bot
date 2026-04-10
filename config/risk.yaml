@@ -62,6 +62,24 @@ profiles:
     flow_lookback: 8
     flow_min_ratio: 1.15
     flow_max_single_drop_pct: 0.0025
+    burst_entry_enabled: true
+    burst_lookback_ticks: 4
+    burst_max_window_sec: 4.0
+    burst_min_return_pct: 0.00020
+    burst_min_move_vs_spread: 4.0
+    burst_min_velocity_pct_per_sec: 0.00005
+    burst_min_efficiency: 0.55
+    burst_min_pressure_ratio: 1.8
+    burst_max_single_drop_pct: 0.00010
+    burst_spread_max_mult: 1.6
+    burst_force_cross_spread: true
+    burst_exit_confirm_ticks: 3
+    burst_exit_giveback_mult: 0.55
+    burst_exit_min_drawdown_pct: 0.00010
+    burst_exit_drawdown_vs_spread: 6.0
+    burst_follow_ttl_sec: 4.0
+    burst_follow_min_extension_pct: 0.00008
+    burst_exit_under_entry_pct: 0.00004
     tp_min_pct: 0.004
     maxPosTime: 240
     hardMaxPosTime: 1200

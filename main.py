@@ -172,6 +172,148 @@ def flow_pressure_ok(ticks, lookback: int, min_ratio: float, max_single_drop_pct
     return ok, flow_ratio, worst_drop_pct, net_pct
 
 
+def descending_tape_ok(ticks, confirm_ticks: int) -> bool:
+    confirm_ticks = max(2, int(confirm_ticks))
+    if not ticks or len(ticks) < confirm_ticks:
+        return False
+    recent = [float(px) for _, px in ticks[-confirm_ticks:]]
+    for i in range(1, len(recent)):
+        if recent[i] >= recent[i - 1]:
+            return False
+    return True
+
+
+def burst_entry_signal(ticks, spread: float, cfg):
+    stats = {
+        "return_pct": 0.0,
+        "elapsed_sec": 0.0,
+        "velocity_pct_per_sec": 0.0,
+        "efficiency": 0.0,
+        "pressure_ratio": 0.0,
+        "max_single_drop_pct": 0.0,
+        "required_return_pct": 0.0,
+        "start_px": 0.0,
+        "end_px": 0.0,
+    }
+    if not bool(getattr(cfg, "burstEntryEnabled", False)):
+        return False, stats
+
+    lookback = max(3, int(getattr(cfg, "burstLookbackTicks", 4) or 4))
+    if not ticks or len(ticks) < lookback:
+        return False, stats
+
+    recent = ticks[-lookback:]
+    t0 = float(recent[0][0])
+    t1 = float(recent[-1][0])
+    p0 = float(recent[0][1])
+    p1 = float(recent[-1][1])
+    elapsed = max(0.0, t1 - t0)
+
+    stats["elapsed_sec"] = elapsed
+    stats["start_px"] = p0
+    stats["end_px"] = p1
+
+    if p0 <= 0 or p1 <= 0:
+        return False, stats
+
+    max_window_sec = float(getattr(cfg, "burstMaxWindowSec", 0.0) or 0.0)
+    if max_window_sec > 0 and elapsed > max_window_sec:
+        return False, stats
+
+    net_ret = (p1 - p0) / p0
+    up_energy = 0.0
+    down_energy = 0.0
+    total_abs = 0.0
+    max_single_drop = 0.0
+    last = p0
+    for _, px in recent[1:]:
+        px = float(px)
+        if last <= 0:
+            last = px
+            continue
+        step_ret = (px - last) / last
+        if step_ret > 0:
+            up_energy += step_ret
+        elif step_ret < 0:
+            mag = -step_ret
+            down_energy += mag
+            if mag > max_single_drop:
+                max_single_drop = mag
+        total_abs += abs(step_ret)
+        last = px
+
+    pressure_ratio = (up_energy / down_energy) if down_energy > 0 else (999.0 if up_energy > 0 else 0.0)
+    efficiency = (net_ret / total_abs) if total_abs > 0 and net_ret > 0 else 0.0
+    velocity = (net_ret / elapsed) if elapsed > 0 else (999.0 if net_ret > 0 else 0.0)
+    min_return = float(getattr(cfg, "burstMinReturnPct", 0.0) or 0.0)
+    min_move_vs_spread = float(getattr(cfg, "burstMinMoveVsSpread", 0.0) or 0.0)
+    required_return = max(min_return, float(spread) * min_move_vs_spread)
+
+    stats["return_pct"] = net_ret
+    stats["velocity_pct_per_sec"] = velocity
+    stats["efficiency"] = efficiency
+    stats["pressure_ratio"] = pressure_ratio
+    stats["max_single_drop_pct"] = max_single_drop
+    stats["required_return_pct"] = required_return
+
+    ok = (
+        net_ret >= required_return
+        and velocity >= float(getattr(cfg, "burstMinVelocityPctPerSec", 0.0) or 0.0)
+        and efficiency >= float(getattr(cfg, "burstMinEfficiency", 0.0) or 0.0)
+        and pressure_ratio >= float(getattr(cfg, "burstMinPressureRatio", 0.0) or 0.0)
+        and max_single_drop <= float(getattr(cfg, "burstMaxSingleDropPct", 1.0) or 1.0)
+    )
+    return ok, stats
+
+
+def burst_exit_reason(pos, ticks, bid: float, spread: float, cfg):
+    if pos is None or not bool(getattr(pos, "burstMode", False)):
+        return None
+    entry = float(getattr(pos, "entry", 0.0) or 0.0)
+    if entry <= 0 or bid <= 0:
+        return None
+
+    age_sec = max(0.0, time.time() - float(getattr(pos, "ts_entry", time.time())))
+    peak = max(float(getattr(pos, "high", bid) or bid), float(bid))
+    extension_pct = ((peak - entry) / entry) if entry > 0 else 0.0
+    drawdown_pct = ((peak - float(bid)) / peak) if peak > 0 else 0.0
+    confirm_ticks = max(2, int(getattr(cfg, "burstExitConfirmTicks", 3) or 3))
+    descending = descending_tape_ok(ticks, confirm_ticks)
+    base_return_pct = max(0.0, float(getattr(pos, "burstBaseReturnPct", 0.0) or 0.0))
+
+    drawdown_trigger = max(
+        float(getattr(cfg, "burstExitMinDrawdownPct", 0.0) or 0.0),
+        base_return_pct * float(getattr(cfg, "burstExitGivebackMult", 0.0) or 0.0),
+        float(spread) * float(getattr(cfg, "burstExitDrawdownVsSpread", 0.0) or 0.0),
+    )
+    follow_ttl = float(getattr(cfg, "burstFollowTtlSec", 0.0) or 0.0)
+    follow_min_extension = float(getattr(cfg, "burstFollowMinExtensionPct", 0.0) or 0.0)
+    under_entry_pct = max(
+        float(getattr(cfg, "burstExitUnderEntryPct", 0.0) or 0.0),
+        float(getattr(cfg, "feeBufPct", 0.0) or 0.0) * 0.25,
+    )
+    under_entry = float(bid) <= (entry * (1.0 - under_entry_pct))
+
+    if follow_ttl > 0 and age_sec <= follow_ttl and descending and extension_pct < follow_min_extension and under_entry:
+        return (
+            f"BURST_FAIL age={age_sec:.2f}s ext={extension_pct*100:.4f}% "
+            f"need={follow_min_extension*100:.4f}% bid={bid:.8f} entry={entry:.8f}"
+        )
+
+    if descending and drawdown_pct >= drawdown_trigger:
+        return (
+            f"BURST_REVERSAL age={age_sec:.2f}s drawdown={drawdown_pct*100:.4f}% "
+            f"trigger={drawdown_trigger*100:.4f}% ext={extension_pct*100:.4f}%"
+        )
+
+    if follow_ttl > 0 and age_sec > follow_ttl and extension_pct < follow_min_extension and under_entry:
+        return (
+            f"BURST_STALL age={age_sec:.2f}s ext={extension_pct*100:.4f}% "
+            f"need={follow_min_extension*100:.4f}% bid={bid:.8f} entry={entry:.8f}"
+        )
+    return None
+
+
 def ticks_fresh(ticks, max_age_sec: float) -> bool:
     if not ticks:
         return False
@@ -527,8 +669,11 @@ def main():
         logTrade(msg)
         sys.exit(0)
 
-    # ring buffer of (ts, price_ref). We store MID=(bestBid+bestAsk)/2 for P1..P4 logic.
+    # ring buffers:
+    # - ticks uses MID for legacy P1..P4 logic
+    # - bidTicks uses BID for burst mode and fast exits
     ticks = []
+    bidTicks = []
 
     stream.start()
     lastChk = 0.0
@@ -653,11 +798,14 @@ def main():
             if has_new_tick:
                 lastTickSeq = tick_seq
                 ticks.append((float(tick_ts or now), float(mid)))
+                bidTicks.append((float(tick_ts or now), float(bid)))
                 # prune: keep last max(window, 40s)
                 keep_sec = max(momWindowSec, float(getattr(cfg, "ticksKeepMinSec", 40.0)))
                 cutoff = now - keep_sec
                 while ticks and ticks[0][0] < cutoff:
                     ticks.pop(0)
+                while bidTicks and bidTicks[0][0] < cutoff:
+                    bidTicks.pop(0)
             
             # cooldown log so it doesn't look frozen
             if now < cooldownUntil:
@@ -727,6 +875,13 @@ def main():
                     bool(getattr(cfg, 'allowWarmupEntry', False)),
                 )
 
+            burstOk, burstStats = burst_entry_signal(bidTicks, spread, cfg)
+            market_ctx = signalCache.get("market")
+            rsi_now = None
+            ema1_ok = None
+            ema5_ok = None
+            vol_ok = None
+
             # P1..P4 (MID-based)
             def _get_p(tl, n_from_end: int):
                 try:
@@ -776,22 +931,27 @@ def main():
                 pendingSwitchSymbol = None
                 pendingSwitchLogged = None
 
-            # ===== ENTRY (P algo, MID-based) =====
-# BUY if (P1 >= P2 >= P3 >= P4)
+            # ===== ENTRY =====
             buySignal = False
-            if (
-                pos is None
-                and not pendingSwitchSymbol
-                and has_new_tick
-                and (P1 is not None)
-                and (P2 is not None)
-                and (P3 is not None)
-                and (P4 is not None)
-            ):
-                # Require a rising tape with actual progress, not just flat equal ticks.
-                buySignal = (P1 >= P2) and (P2 >= P3) and (P3 >= P4) and (P1 > P4)
+            entryMode = ""
+            if pos is None and not pendingSwitchSymbol and has_new_tick:
+                if burstOk:
+                    buySignal = True
+                    entryMode = "BURST"
+                elif (
+                    (P1 is not None)
+                    and (P2 is not None)
+                    and (P3 is not None)
+                    and (P4 is not None)
+                ):
+                    # Require a rising tape with actual progress, not just flat equal ticks.
+                    buySignal = (P1 >= P2) and (P2 >= P3) and (P3 >= P4) and (P1 > P4)
+                    if buySignal:
+                        entryMode = "P"
 
             if buySignal:
+                burstOverride = entryMode == "BURST"
+
                 if symbol in blockedSymbols:
                     maybe_hold(
                         now,
@@ -818,7 +978,7 @@ def main():
                 strict_up_moves = int(P1 > P2) + int(P2 > P3) + int(P3 > P4)
                 entry_min_strict_ups = max(1, int(getattr(cfg, "entryMinStrictUps", 1) or 1))
                 hard_min_up_ratio = float(getattr(cfg, "entryHardMinUpRatio", 0.0) or 0.0)
-                tape_progress_pct = ((float(P1) - float(P4)) / float(P4)) if float(P4) > 0 else 0.0
+                tape_progress_pct = ((float(P1) - float(P4)) / float(P4)) if (P1 is not None and P4 is not None and float(P4) > 0) else 0.0
                 min_tape_progress_pct = float(getattr(cfg, "entryMinTapeProgressPct", 0.0) or 0.0)
                 min_tape_progress_vs_spread = float(getattr(cfg, "entryMinTapeProgressVsSpread", 0.0) or 0.0)
                 required_tape_progress_pct = max(
@@ -826,7 +986,40 @@ def main():
                     float(spread) * min_tape_progress_vs_spread,
                 )
 
-                if not momOk:
+                if burstOverride:
+                    burst_spread_limit = float(spreadLimit) * float(getattr(cfg, "burstSpreadMaxMult", 1.0) or 1.0)
+                    if burst_spread_limit > 0 and spread > burst_spread_limit:
+                        maybe_hold(
+                            now,
+                            'HOLD_BURST_SPREAD',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            detail=f"spread_limit={burst_spread_limit*100:.4f}%",
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+                    burst_msg = (
+                        f"BURST_TRIGGER ret={burstStats['return_pct']*100:.4f}% "
+                        f"need={burstStats['required_return_pct']*100:.4f}% "
+                        f"vel={burstStats['velocity_pct_per_sec']*100:.4f}%/s "
+                        f"eff={burstStats['efficiency']:.3f} "
+                        f"pressure={burstStats['pressure_ratio']:.2f} "
+                        f"drop={burstStats['max_single_drop_pct']*100:.4f}% "
+                        f"dt={burstStats['elapsed_sec']:.3f}s"
+                    )
+                    print(burst_msg)
+                    logTrade(burst_msg)
+
+                if (not burstOverride) and (not momOk):
                     maybe_hold(
                         now,
                         'HOLD_MOM',
@@ -845,7 +1038,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if strict_up_moves < entry_min_strict_ups:
+                if (not burstOverride) and strict_up_moves < entry_min_strict_ups:
                     maybe_hold(
                         now,
                         'HOLD_TAPE',
@@ -865,7 +1058,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if required_tape_progress_pct > 0 and tape_progress_pct < required_tape_progress_pct:
+                if (not burstOverride) and required_tape_progress_pct > 0 and tape_progress_pct < required_tape_progress_pct:
                     maybe_hold(
                         now,
                         'HOLD_TAPE',
@@ -888,7 +1081,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if hard_min_up_ratio > 0 and upRatio < hard_min_up_ratio:
+                if (not burstOverride) and hard_min_up_ratio > 0 and upRatio < hard_min_up_ratio:
                     maybe_hold(
                         now,
                         'HOLD_UPRATIO',
@@ -908,7 +1101,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if bool(getattr(cfg, "tickEntryEnabled", False)):
+                if (not burstOverride) and bool(getattr(cfg, "tickEntryEnabled", False)):
                     tick_ok, tick_prog = tick_confirmation_ok(
                         ticks,
                         int(getattr(cfg, "tickEntryLookback", 3)),
@@ -934,7 +1127,7 @@ def main():
                         time.sleep(cfg.idleSleep)
                         continue
 
-                if bool(getattr(cfg, "flowDefenseEnabled", False)):
+                if (not burstOverride) and bool(getattr(cfg, "flowDefenseEnabled", False)):
                     flow_ok, flow_ratio, worst_drop_pct, flow_net_pct = flow_pressure_ok(
                         ticks,
                         int(getattr(cfg, "flowLookback", 8)),
@@ -965,7 +1158,7 @@ def main():
                         time.sleep(cfg.idleSleep)
                         continue
 
-                if lastExitInfo and lastExitInfo.get("symbol") == symbol:
+                if (not burstOverride) and lastExitInfo and lastExitInfo.get("symbol") == symbol:
                     last_reason = str(lastExitInfo.get("reason") or "")
                     last_pnl = float(lastExitInfo.get("pnl", 0.0) or 0.0)
                     last_exit_ts = float(lastExitInfo.get("ts", 0.0) or 0.0)
@@ -1040,7 +1233,7 @@ def main():
                             time.sleep(cfg.idleSleep)
                             continue
 
-                if max_mom_pct > 0 and momPct > max_mom_pct:
+                if (not burstOverride) and max_mom_pct > 0 and momPct > max_mom_pct:
                     maybe_hold(
                         now,
                         'HOLD_CHASE',
@@ -1059,7 +1252,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if required_range_pct > 0 and momRangePct < required_range_pct:
+                if (not burstOverride) and required_range_pct > 0 and momRangePct < required_range_pct:
                     maybe_hold(
                         now,
                         'HOLD_RANGE',
@@ -1079,7 +1272,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if spread > spreadLimit:
+                if (not burstOverride) and spread > spreadLimit:
                     maybe_hold(
                         now,
                         'HOLD_SPREAD',
@@ -1098,6 +1291,114 @@ def main():
                     )
                     time.sleep(cfg.idleSleep)
                     continue
+
+                if not burstOverride:
+                    s1, s5, market_ctx = load_signal_snapshot(now)
+                    if s1 is None or s5 is None or market_ctx is None:
+                        maybe_hold(
+                            now,
+                            'HOLD_SIGNAL',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+
+                    rsi_now = float(getattr(s1, "rsi", 0.0))
+                    ema1_ok = bool(getattr(s1, "ema_ok", False))
+                    ema5_ok = bool(getattr(s5, "ema_ok", False))
+                    vol_ok = bool(getattr(s1, "vol_ok", False))
+                    signal_state = {
+                        "rsi": rsi_now,
+                        "ema1_ok": ema1_ok,
+                        "ema5_ok": ema5_ok,
+                        "vol_ok": vol_ok,
+                    }
+
+                    strong_trend_resume = (
+                        ema1_ok
+                        and momPct >= max(float(getattr(cfg, "momMinPct", 0.0) or 0.0) * 1.25, 0.0005)
+                        and momRangePct >= max(required_range_pct * 1.15, 0.0008)
+                        and upRatio >= max(float(getattr(cfg, "momMinUpRatio", 0.0) or 0.0), 0.45)
+                    )
+                    if not ema1_ok or (not ema5_ok and not strong_trend_resume):
+                        maybe_hold(
+                            now,
+                            'HOLD_EMA',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            detail=(
+                                f"ema1={int(ema1_ok)} ema5={int(ema5_ok)} "
+                                f"resume={int(strong_trend_resume)}"
+                            ),
+                            signal=signal_state,
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+
+                    rsi_min = float(getattr(profile, "rsiMin", 0.0) or 0.0)
+                    rsi_max = min(
+                        float(getattr(profile, "rsiMax", 100.0) or 100.0),
+                        float(getattr(cfg, "rsiBuyMax", 100.0) or 100.0),
+                    )
+                    if not (rsi_min <= rsi_now <= rsi_max):
+                        maybe_hold(
+                            now,
+                            'HOLD_RSI',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            detail=f"rsi={rsi_now:.2f} range=[{rsi_min:.2f},{rsi_max:.2f}]",
+                            signal=signal_state,
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+
+                    if not vol_ok:
+                        maybe_hold(
+                            now,
+                            'HOLD_VOL',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            signal=signal_state,
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
 
                 # Refresh quote balance right before entry checks so a stale cached
                 # wallet snapshot cannot incorrectly block a valid trade.
@@ -1175,115 +1476,10 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                s1, s5, market_ctx = load_signal_snapshot(now)
-                if s1 is None or s5 is None or market_ctx is None:
-                    maybe_hold(
-                        now,
-                        'HOLD_SIGNAL',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        bid,
-                        ask,
-                        mid,
-                        P1,
-                        P2,
-                        P3,
-                        P4,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
-
-                rsi_now = float(getattr(s1, "rsi", 0.0))
-                ema1_ok = bool(getattr(s1, "ema_ok", False))
-                ema5_ok = bool(getattr(s5, "ema_ok", False))
-                vol_ok = bool(getattr(s1, "vol_ok", False))
-                signal_state = {
-                    "rsi": rsi_now,
-                    "ema1_ok": ema1_ok,
-                    "ema5_ok": ema5_ok,
-                    "vol_ok": vol_ok,
-                }
-
-                strong_trend_resume = (
-                    ema1_ok
-                    and momPct >= max(float(getattr(cfg, "momMinPct", 0.0) or 0.0) * 1.25, 0.0005)
-                    and momRangePct >= max(required_range_pct * 1.15, 0.0008)
-                    and upRatio >= max(float(getattr(cfg, "momMinUpRatio", 0.0) or 0.0), 0.45)
-                )
-                if not ema1_ok or (not ema5_ok and not strong_trend_resume):
-                    maybe_hold(
-                        now,
-                        'HOLD_EMA',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        bid,
-                        ask,
-                        mid,
-                        P1,
-                        P2,
-                        P3,
-                        P4,
-                        detail=(
-                            f"ema1={int(ema1_ok)} ema5={int(ema5_ok)} "
-                            f"resume={int(strong_trend_resume)}"
-                        ),
-                        signal=signal_state,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
-
-                rsi_min = float(getattr(profile, "rsiMin", 0.0) or 0.0)
-                rsi_max = min(
-                    float(getattr(profile, "rsiMax", 100.0) or 100.0),
-                    float(getattr(cfg, "rsiBuyMax", 100.0) or 100.0),
-                )
-                if not (rsi_min <= rsi_now <= rsi_max):
-                    maybe_hold(
-                        now,
-                        'HOLD_RSI',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        bid,
-                        ask,
-                        mid,
-                        P1,
-                        P2,
-                        P3,
-                        P4,
-                        detail=f"rsi={rsi_now:.2f} range=[{rsi_min:.2f},{rsi_max:.2f}]",
-                        signal=signal_state,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
-
-                if not vol_ok:
-                    maybe_hold(
-                        now,
-                        'HOLD_VOL',
-                        spread,
-                        momPct,
-                        momRangePct,
-                        upRatio,
-                        bid,
-                        ask,
-                        mid,
-                        P1,
-                        P2,
-                        P3,
-                        P4,
-                        signal=signal_state,
-                    )
-                    time.sleep(cfg.idleSleep)
-                    continue
-
                 auto_cross_spread_pct = float(getattr(cfg, "entryAutoCrossSpreadPct", 0.0) or 0.0)
                 cross_spread = bool(getattr(cfg, "entryCrossSpread", False))
+                if burstOverride and bool(getattr(cfg, "burstForceCrossSpread", True)):
+                    cross_spread = True
                 if (not cross_spread) and auto_cross_spread_pct > 0 and float(spread) <= auto_cross_spread_pct:
                     cross_spread = True
 
@@ -1393,14 +1589,32 @@ def main():
                             pos.high = float(getattr(pos, 'high', new_entry))
                         pos.init_stops(cfg, profile, tick=tick)
 
-                setattr(pos, "entryRet1m", float(getattr(market_ctx, "ret_1m", 0.0)))
-                setattr(pos, "entryRet3m", float(getattr(market_ctx, "ret_3m", 0.0)))
-                setattr(pos, "entryRet5m", float(getattr(market_ctx, "ret_5m", 0.0)))
-                setattr(pos, "entryRange5m", float(getattr(market_ctx, "range_5m", 0.0)))
+                setattr(pos, "burstMode", bool(burstOverride))
+                setattr(pos, "burstBaseReturnPct", float(burstStats.get("return_pct", 0.0) or 0.0))
+                setattr(pos, "burstTriggerElapsedSec", float(burstStats.get("elapsed_sec", 0.0) or 0.0))
+                setattr(pos, "burstEntryMode", entryMode)
+                entry_market = market_ctx if market_ctx is not None else object()
+                setattr(pos, "entryRet1m", float(getattr(entry_market, "ret_1m", 0.0)))
+                setattr(pos, "entryRet3m", float(getattr(entry_market, "ret_3m", 0.0)))
+                setattr(pos, "entryRet5m", float(getattr(entry_market, "ret_5m", 0.0)))
+                setattr(pos, "entryRange5m", float(getattr(entry_market, "range_5m", 0.0)))
 
                 sync_log_day_anchor(pos)
+                if burstOverride:
+                    entry_reason = (
+                        f"BURST ret={burstStats['return_pct']*100:.4f}% "
+                        f"vel={burstStats['velocity_pct_per_sec']*100:.4f}%/s "
+                        f"eff={burstStats['efficiency']:.3f} "
+                        f"pressure={burstStats['pressure_ratio']:.2f} "
+                        f"drop={burstStats['max_single_drop_pct']*100:.4f}%"
+                    )
+                else:
+                    entry_reason = f"PBUY P1={P1} P2={P2} P3={P3} P4={P4}"
                 print("BUY_FILLED", getattr(pos, 'qty', ''), "@", fmt(getattr(pos, 'entry', 0.0)), "STOP", fmt(getattr(pos, 'stop', 0.0)))
-                logTrade(f"BUY symbol={symbol} qty={getattr(pos,'qty','')} entry={getattr(pos,'entry','')} P1={P1} P2={P2} P3={P3} P4={P4}")
+                logTrade(
+                    f"BUY symbol={symbol} qty={getattr(pos,'qty','')} entry={getattr(pos,'entry','')} "
+                    f"mode={entryMode} reason={entry_reason} P1={P1} P2={P2} P3={P3} P4={P4}"
+                )
                 entry_vs_mid_pct = ((float(getattr(pos, 'entry', 0.0)) - float(mid)) / float(mid) * 100.0) if mid > 0 else ""
                 logCsv({
                     "ts_utc": local_timestamp(),
@@ -1409,17 +1623,17 @@ def main():
                     "side": "BUY",
                     "qty": getattr(pos, 'qty', ''),
                     "price": getattr(pos, 'entry', ''),
-                    "reason": f"PBUY P1={P1} P2={P2} P3={P3} P4={P4}",
+                    "reason": entry_reason,
                     "pnl": "",
                     "profile": profile.name,
                     "dry_run": int(getattr(cfg, "dryRun", False)),
                     "mom_pct": float(momPct) * 100.0,
                     "mom_range_pct": float(momRangePct) * 100.0,
                     "up_ratio": float(upRatio) * 100.0,
-                    "rsi": rsi_now,
-                    "ema1_ok": int(ema1_ok),
-                    "ema5_ok": int(ema5_ok),
-                    "vol_ok": int(vol_ok),
+                    "rsi": "" if rsi_now is None else rsi_now,
+                    "ema1_ok": "" if ema1_ok is None else int(bool(ema1_ok)),
+                    "ema5_ok": "" if ema5_ok is None else int(bool(ema5_ok)),
+                    "vol_ok": "" if vol_ok is None else int(bool(vol_ok)),
                     "spread_pct": float(spread) * 100.0,
                     "bid": float(bid),
                     "ask": float(ask),
@@ -1452,6 +1666,11 @@ def main():
             else:
                 pos.update(bid, cfg, profile, tick=tick)
                 exitReason = pos.exit_reason(bid, cfg, profile)
+
+            if exitReason is None and pos is not None and pos.entry > 0:
+                burstExit = burst_exit_reason(pos, bidTicks, bid, spread, cfg)
+                if burstExit:
+                    exitReason = burstExit
 
             # Additional SELL rules (P algo, MID-based)
             # Exit weak losers earlier when the tape is rolling over or stalling too long.

@@ -178,6 +178,26 @@ class Config:
     flowMinRatio: float = 1.2
     flowMaxSingleDropPct: float = 0.0025
 
+    # burst mode: catch fast impulsive moves and bypass slow entry gates
+    burstEntryEnabled: bool = False
+    burstLookbackTicks: int = 4
+    burstMaxWindowSec: float = 4.0
+    burstMinReturnPct: float = 0.00020
+    burstMinMoveVsSpread: float = 4.0
+    burstMinVelocityPctPerSec: float = 0.00005
+    burstMinEfficiency: float = 0.55
+    burstMinPressureRatio: float = 1.8
+    burstMaxSingleDropPct: float = 0.00010
+    burstSpreadMaxMult: float = 1.5
+    burstForceCrossSpread: bool = True
+    burstExitConfirmTicks: int = 3
+    burstExitGivebackMult: float = 0.55
+    burstExitMinDrawdownPct: float = 0.00010
+    burstExitDrawdownVsSpread: float = 6.0
+    burstFollowTtlSec: float = 4.0
+    burstFollowMinExtensionPct: float = 0.00008
+    burstExitUnderEntryPct: float = 0.00004
+
     # entry warmup
     allowWarmupEntry: bool = False
 
@@ -320,6 +340,24 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("flow_lookback", "flowLookback"),
         ("flow_min_ratio", "flowMinRatio"),
         ("flow_max_single_drop_pct", "flowMaxSingleDropPct"),
+        ("burst_entry_enabled", "burstEntryEnabled"),
+        ("burst_lookback_ticks", "burstLookbackTicks"),
+        ("burst_max_window_sec", "burstMaxWindowSec"),
+        ("burst_min_return_pct", "burstMinReturnPct"),
+        ("burst_min_move_vs_spread", "burstMinMoveVsSpread"),
+        ("burst_min_velocity_pct_per_sec", "burstMinVelocityPctPerSec"),
+        ("burst_min_efficiency", "burstMinEfficiency"),
+        ("burst_min_pressure_ratio", "burstMinPressureRatio"),
+        ("burst_max_single_drop_pct", "burstMaxSingleDropPct"),
+        ("burst_spread_max_mult", "burstSpreadMaxMult"),
+        ("burst_force_cross_spread", "burstForceCrossSpread"),
+        ("burst_exit_confirm_ticks", "burstExitConfirmTicks"),
+        ("burst_exit_giveback_mult", "burstExitGivebackMult"),
+        ("burst_exit_min_drawdown_pct", "burstExitMinDrawdownPct"),
+        ("burst_exit_drawdown_vs_spread", "burstExitDrawdownVsSpread"),
+        ("burst_follow_ttl_sec", "burstFollowTtlSec"),
+        ("burst_follow_min_extension_pct", "burstFollowMinExtensionPct"),
+        ("burst_exit_under_entry_pct", "burstExitUnderEntryPct"),
         ("min_order_notional_usdc", "minOrderNotionalUsdc"),
     ]:
         if k_yaml in p and k_cfg in fields:
