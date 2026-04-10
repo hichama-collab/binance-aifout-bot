@@ -77,6 +77,10 @@ profiles:
     burst_exit_giveback_mult: 0.55
     burst_exit_min_drawdown_pct: 0.00010
     burst_exit_drawdown_vs_spread: 6.0
+    burst_fail_ttl_sec: 8.0
+    burst_fail_loss_pct: 0.0025
+    burst_fail_loss_vs_spread: 2.5
+    burst_reversal_min_peak_pct: 0.0012
     burst_follow_ttl_sec: 4.0
     burst_follow_min_extension_pct: 0.00008
     burst_exit_under_entry_pct: 0.00004

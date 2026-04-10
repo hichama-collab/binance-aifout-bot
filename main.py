@@ -266,7 +266,7 @@ def burst_entry_signal(ticks, spread: float, cfg):
     return ok, stats
 
 
-def burst_exit_reason(pos, ticks, bid: float, spread: float, cfg):
+def burst_exit_reason(pos, ticks, bid: float, spread: float, cfg, logger=None):
     if pos is None or not bool(getattr(pos, "burstMode", False)):
         return None
     entry = float(getattr(pos, "entry", 0.0) or 0.0)
@@ -277,40 +277,71 @@ def burst_exit_reason(pos, ticks, bid: float, spread: float, cfg):
     peak = max(float(getattr(pos, "high", bid) or bid), float(bid))
     extension_pct = ((peak - entry) / entry) if entry > 0 else 0.0
     drawdown_pct = ((peak - float(bid)) / peak) if peak > 0 else 0.0
+    loss_pct = max(0.0, (entry - float(bid)) / entry) if entry > 0 else 0.0
     confirm_ticks = max(2, int(getattr(cfg, "burstExitConfirmTicks", 3) or 3))
     descending = descending_tape_ok(ticks, confirm_ticks)
     base_return_pct = max(0.0, float(getattr(pos, "burstBaseReturnPct", 0.0) or 0.0))
+    fail_ttl = float(getattr(cfg, "burstFailTtlSec", 0.0) or 0.0)
+    fail_loss_trigger = max(
+        float(getattr(cfg, "burstFailLossPct", 0.0) or 0.0),
+        float(spread) * float(getattr(cfg, "burstFailLossVsSpread", 0.0) or 0.0),
+    )
 
     drawdown_trigger = max(
         float(getattr(cfg, "burstExitMinDrawdownPct", 0.0) or 0.0),
         base_return_pct * float(getattr(cfg, "burstExitGivebackMult", 0.0) or 0.0),
         float(spread) * float(getattr(cfg, "burstExitDrawdownVsSpread", 0.0) or 0.0),
     )
-    follow_ttl = float(getattr(cfg, "burstFollowTtlSec", 0.0) or 0.0)
     follow_min_extension = float(getattr(cfg, "burstFollowMinExtensionPct", 0.0) or 0.0)
+    reversal_peak_pct = max(
+        follow_min_extension,
+        float(getattr(cfg, "burstReversalMinPeakPct", 0.0) or 0.0),
+        base_return_pct * 0.5,
+    )
     under_entry_pct = max(
         float(getattr(cfg, "burstExitUnderEntryPct", 0.0) or 0.0),
         float(getattr(cfg, "feeBufPct", 0.0) or 0.0) * 0.25,
     )
     under_entry = float(bid) <= (entry * (1.0 - under_entry_pct))
 
-    if follow_ttl > 0 and age_sec <= follow_ttl and descending and extension_pct < follow_min_extension and under_entry:
+    if (
+        fail_ttl > 0
+        and age_sec <= fail_ttl
+        and descending
+        and extension_pct < reversal_peak_pct
+        and under_entry
+        and loss_pct >= fail_loss_trigger
+    ):
         return (
-            f"BURST_FAIL age={age_sec:.2f}s ext={extension_pct*100:.4f}% "
-            f"need={follow_min_extension*100:.4f}% bid={bid:.8f} entry={entry:.8f}"
+            f"BURST_FAIL age={age_sec:.2f}s loss={loss_pct*100:.4f}% "
+            f"trigger={fail_loss_trigger*100:.4f}% ext={extension_pct*100:.4f}% "
+            f"need={reversal_peak_pct*100:.4f}% bid={bid:.8f} entry={entry:.8f}"
         )
 
-    if descending and drawdown_pct >= drawdown_trigger:
+    if (
+        extension_pct >= reversal_peak_pct
+        and descending
+        and drawdown_pct >= drawdown_trigger
+    ):
         return (
             f"BURST_REVERSAL age={age_sec:.2f}s drawdown={drawdown_pct*100:.4f}% "
-            f"trigger={drawdown_trigger*100:.4f}% ext={extension_pct*100:.4f}%"
+            f"trigger={drawdown_trigger*100:.4f}% ext={extension_pct*100:.4f}% "
+            f"peak={peak:.8f} bid={bid:.8f}"
         )
 
-    if follow_ttl > 0 and age_sec > follow_ttl and extension_pct < follow_min_extension and under_entry:
-        return (
-            f"BURST_STALL age={age_sec:.2f}s ext={extension_pct*100:.4f}% "
-            f"need={follow_min_extension*100:.4f}% bid={bid:.8f} entry={entry:.8f}"
+    if (
+        logger is not None
+        and fail_ttl > 0
+        and age_sec >= fail_ttl
+        and not bool(getattr(pos, "burstHandoffLogged", False))
+    ):
+        logger(
+            f"BURST_HANDOFF age={age_sec:.2f}s ext={extension_pct*100:.4f}% "
+            f"loss={loss_pct*100:.4f}% peak={peak:.8f} stop={float(getattr(pos, 'stop', 0.0) or 0.0):.8f} "
+            f"protect={int(bool(getattr(pos, 'protectArmed', False)))} "
+            f"trail={int(bool(getattr(pos, 'armed', False)))}"
         )
+        setattr(pos, "burstHandoffLogged", True)
     return None
 
 
@@ -1593,6 +1624,7 @@ def main():
                 setattr(pos, "burstBaseReturnPct", float(burstStats.get("return_pct", 0.0) or 0.0))
                 setattr(pos, "burstTriggerElapsedSec", float(burstStats.get("elapsed_sec", 0.0) or 0.0))
                 setattr(pos, "burstEntryMode", entryMode)
+                setattr(pos, "burstHandoffLogged", False)
                 entry_market = market_ctx if market_ctx is not None else object()
                 setattr(pos, "entryRet1m", float(getattr(entry_market, "ret_1m", 0.0)))
                 setattr(pos, "entryRet3m", float(getattr(entry_market, "ret_3m", 0.0)))
@@ -1668,7 +1700,7 @@ def main():
                 exitReason = pos.exit_reason(bid, cfg, profile)
 
             if exitReason is None and pos is not None and pos.entry > 0:
-                burstExit = burst_exit_reason(pos, bidTicks, bid, spread, cfg)
+                burstExit = burst_exit_reason(pos, bidTicks, bid, spread, cfg, logger=logTrade)
                 if burstExit:
                     exitReason = burstExit
 

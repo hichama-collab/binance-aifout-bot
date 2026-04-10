@@ -194,6 +194,10 @@ class Config:
     burstExitGivebackMult: float = 0.55
     burstExitMinDrawdownPct: float = 0.00010
     burstExitDrawdownVsSpread: float = 6.0
+    burstFailTtlSec: float = 8.0
+    burstFailLossPct: float = 0.0025
+    burstFailLossVsSpread: float = 2.5
+    burstReversalMinPeakPct: float = 0.0012
     burstFollowTtlSec: float = 4.0
     burstFollowMinExtensionPct: float = 0.00008
     burstExitUnderEntryPct: float = 0.00004
@@ -355,6 +359,10 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("burst_exit_giveback_mult", "burstExitGivebackMult"),
         ("burst_exit_min_drawdown_pct", "burstExitMinDrawdownPct"),
         ("burst_exit_drawdown_vs_spread", "burstExitDrawdownVsSpread"),
+        ("burst_fail_ttl_sec", "burstFailTtlSec"),
+        ("burst_fail_loss_pct", "burstFailLossPct"),
+        ("burst_fail_loss_vs_spread", "burstFailLossVsSpread"),
+        ("burst_reversal_min_peak_pct", "burstReversalMinPeakPct"),
         ("burst_follow_ttl_sec", "burstFollowTtlSec"),
         ("burst_follow_min_extension_pct", "burstFollowMinExtensionPct"),
         ("burst_exit_under_entry_pct", "burstExitUnderEntryPct"),
