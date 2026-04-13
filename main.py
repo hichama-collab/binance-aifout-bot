@@ -246,8 +246,10 @@ def burst_entry_signal(ticks, spread: float, cfg):
     efficiency = (net_ret / total_abs) if total_abs > 0 and net_ret > 0 else 0.0
     velocity = (net_ret / elapsed) if elapsed > 0 else (999.0 if net_ret > 0 else 0.0)
     min_return = float(getattr(cfg, "burstMinReturnPct", 0.0) or 0.0)
+    min_return_vs_fee_buf = float(getattr(cfg, "burstMinReturnVsFeeBuf", 0.0) or 0.0)
     min_move_vs_spread = float(getattr(cfg, "burstMinMoveVsSpread", 0.0) or 0.0)
-    required_return = max(min_return, float(spread) * min_move_vs_spread)
+    fee_buf_floor = float(getattr(cfg, "feeBufPct", 0.0) or 0.0) * min_return_vs_fee_buf
+    required_return = max(min_return, float(spread) * min_move_vs_spread, fee_buf_floor)
 
     stats["return_pct"] = net_ret
     stats["velocity_pct_per_sec"] = velocity
@@ -967,11 +969,12 @@ def main():
             # ===== ENTRY =====
             buySignal = False
             entryMode = ""
+            pEntryEnabled = bool(getattr(cfg, "pEntryEnabled", True))
             if pos is None and not pendingSwitchSymbol and has_new_tick:
                 if burstOk:
                     buySignal = True
                     entryMode = "BURST"
-                elif (
+                elif pEntryEnabled and (
                     (P1 is not None)
                     and (P2 is not None)
                     and (P3 is not None)

@@ -54,6 +54,7 @@ profiles:
     reentry_loss_cooldown_sec: 90
     reentry_trail_cooldown_sec: 60
     reentry_recovery_pct: 0.0015
+    p_entry_enabled: false
     entry_hard_min_up_ratio: 0.35
     entry_min_strict_ups: 2
     entry_min_tape_progress_pct: 0.0002
@@ -66,8 +67,9 @@ profiles:
     burst_lookback_ticks: 4
     burst_max_window_sec: 4.0
     burst_min_return_pct: 0.00020
+    burst_min_return_vs_fee_buf: 0.8
     burst_min_move_vs_spread: 4.0
-    burst_min_velocity_pct_per_sec: 0.00005
+    burst_min_velocity_pct_per_sec: 0.00060
     burst_min_efficiency: 0.55
     burst_min_pressure_ratio: 1.8
     burst_max_single_drop_pct: 0.00010

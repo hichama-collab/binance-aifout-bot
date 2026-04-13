@@ -188,6 +188,7 @@ class Config:
     reentryRecoveryPct: float = 0.0015
 
     # entry quality guards
+    pEntryEnabled: bool = True
     entryHardMinUpRatio: float = 0.0
     entryMinStrictUps: int = 1
     entryMinTapeProgressPct: float = 0.0
@@ -210,6 +211,7 @@ class Config:
     burstLookbackTicks: int = 4
     burstMaxWindowSec: float = 4.0
     burstMinReturnPct: float = 0.00020
+    burstMinReturnVsFeeBuf: float = 0.0
     burstMinMoveVsSpread: float = 4.0
     burstMinVelocityPctPerSec: float = 0.00005
     burstMinEfficiency: float = 0.55
@@ -359,6 +361,7 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("reentry_loss_cooldown_sec", "reentryLossCooldownSec"),
         ("reentry_trail_cooldown_sec", "reentryTrailCooldownSec"),
         ("reentry_recovery_pct", "reentryRecoveryPct"),
+        ("p_entry_enabled", "pEntryEnabled"),
         ("entry_hard_min_up_ratio", "entryHardMinUpRatio"),
         ("entry_min_strict_ups", "entryMinStrictUps"),
         ("entry_min_tape_progress_pct", "entryMinTapeProgressPct"),
@@ -375,6 +378,7 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("burst_lookback_ticks", "burstLookbackTicks"),
         ("burst_max_window_sec", "burstMaxWindowSec"),
         ("burst_min_return_pct", "burstMinReturnPct"),
+        ("burst_min_return_vs_fee_buf", "burstMinReturnVsFeeBuf"),
         ("burst_min_move_vs_spread", "burstMinMoveVsSpread"),
         ("burst_min_velocity_pct_per_sec", "burstMinVelocityPctPerSec"),
         ("burst_min_efficiency", "burstMinEfficiency"),

@@ -99,6 +99,55 @@ Le but est de detecter une impulsion exploitable:
 Repartir des nouveaux logs de test, pas des intuitions.
 La prochaine iteration doit etre du tuning de seuils, pas une re-ecriture complete.
 
+## Analyse du run 2026-04-13
+
+- PnL total observe: environ `-0.3007 USDC`
+- 44 trades fermes
+- Gagnant net principal: `GIGGLEUSDC`
+- Gros point faible: sorties `PSELL`
+
+Sous-total des sorties:
+
+- `PSELL_ROLL5`: tres negatif
+- `PSELL_FAIL`: negatif
+- `PROTECT` et `TRAIL`: positifs
+- `BURST_REVERSAL`: faible impact negatif
+
+Conclusion de lecture:
+
+1. Le probleme principal n'est pas le nouveau `BURST_REVERSAL`.
+2. Le mode `P` reste clairement negatif.
+3. Le mode `BURST` est meilleur que `P`, mais il declenche encore sur des impulsions trop faibles sur les majors.
+4. Les vrais gagnants sont les bursts rapides et forts.
+
+## Correction appliquee apres analyse
+
+Premiere correction posee le 2026-04-13:
+
+- `p_entry_enabled: false` pour `major`
+- `burst_min_return_vs_fee_buf: 0.8`
+- `burst_min_velocity_pct_per_sec: 0.00060`
+
+Intention:
+
+- couper les entrees `P` qui ont sous-performe
+- empecher les bursts trop petits pour couvrir reellement le cout microstructurel
+- filtrer les bursts lents de type `AAVE/ETH/HBAR`
+
+## Hypothese pour le prochain run
+
+Le bot devrait:
+
+- faire moins de trades
+- eviter les bursts trop mous sur majors
+- rester present sur les vraies accelerations
+
+Si le prochain run reste negatif, prochaine etape probable:
+
+- rendre le score burst moins degeneré que `eff=1 / pressure=999`
+- soit avec plus de ticks
+- soit avec une fenetre temps plus riche que les 4 derniers ticks
+
 ## Logique de sortie burst actuelle
 
 - Le burst ne coupe plus un trade uniquement parce qu'il "n'a pas encore decollé".
