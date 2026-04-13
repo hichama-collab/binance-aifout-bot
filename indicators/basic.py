@@ -9,9 +9,14 @@ def ema(s: pd.Series, n: int) -> pd.Series:
 def rsi(s: pd.Series, n: int = 14) -> pd.Series:
     d = s.diff()
     g = d.clip(lower=0)
-    l = -d.clip(upper=0)
-    rs = g.rolling(n).mean() / l.rolling(n).mean()
-    return 100 - (100 / (1 + rs))
+    l = (-d).clip(lower=0)
+    avg_gain = g.ewm(alpha=1 / n, adjust=False, min_periods=n).mean()
+    avg_loss = l.ewm(alpha=1 / n, adjust=False, min_periods=n).mean()
+    rs = avg_gain / avg_loss.replace(0, pd.NA)
+    out = 100 - (100 / (1 + rs))
+    out = out.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
+    out = out.mask((avg_loss == 0) & (avg_gain == 0), 50.0)
+    return out
 
 
 def dec(x) -> Decimal:
@@ -67,11 +72,13 @@ def computeSignals(bx, symbol, profile):
     ema5_ok = ema(c5, profile.emaFast).iloc[-1] > ema(c5, profile.emaSlow).iloc[-1]
 
     rsi1 = float(rsi(c1).iloc[-1])
-    vol_ok = v1.iloc[-1] > v1.mean() * profile.volMult
+    rsi5 = float(rsi(c5).iloc[-1])
+    vol_mult = float(getattr(profile, "volMult", 0.0) or 0.0)
+    vol_ok = True if vol_mult <= 0 else (v1.iloc[-1] > v1.mean() * vol_mult)
 
     return (
         Signals(ema1_ok, rsi1, vol_ok),
-        Signals(ema5_ok, rsi1, vol_ok)
+        Signals(ema5_ok, rsi5, vol_ok)
     )
 
 

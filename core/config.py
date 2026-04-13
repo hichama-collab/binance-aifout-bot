@@ -6,14 +6,41 @@ from dotenv import load_dotenv
 import yaml
 
 
+def resolveServiceEnvPath() -> Path | None:
+    override = (os.getenv("BOT_SERVICE_ENV") or "").strip()
+    project_root = Path(__file__).resolve().parent.parent
+    candidates = []
+
+    if override:
+        candidates.append(Path(override).expanduser())
+
+    candidates.extend([
+        project_root / ".service.env",
+        project_root / "config" / ".service.env",
+        Path.cwd() / ".service.env",
+        Path.cwd() / "config" / ".service.env",
+    ])
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve(strict=False)
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        if resolved.exists():
+            return resolved
+    return None
+
+
 def _load_service_env() -> None:
     """
     Load runtime overrides from .service.env if present.
     .env keeps API secrets; .service.env can override runtime knobs
     like SYMBOL / PROFILE / DRY_RUN when systemd does not export them.
     """
-    service_env = Path(".service.env")
-    if service_env.exists():
+    service_env = resolveServiceEnvPath()
+    if service_env is not None:
         load_dotenv(service_env, override=True)
 
 
@@ -403,6 +430,3 @@ def pickProfile() -> StrategyProfile:
         volMult=float(p.get("vol_mult", base.volMult)),
         spreadMax=float(p.get("spread_max", base.spreadMax)),
     )
-
-# patched default
-idleSleep = 0.3

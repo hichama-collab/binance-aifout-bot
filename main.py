@@ -369,7 +369,7 @@ def orderbook_imbalance_ok(bx, symbol: str, min_ratio: float, depth_levels: int)
         return False, 0.0
 
 
-from core.config import loadConfig, pickProfile, applyRiskConfig
+from core.config import loadConfig, pickProfile, applyRiskConfig, resolveServiceEnvPath
 from core.logging import LogDayContext, tradeLogger, tradeCsvLogger, errorLogger, ensureCsvHeader, local_timestamp
 from services.ipguard import vpnCheckOrDie
 
@@ -542,7 +542,9 @@ def _resolve_start_symbol() -> str | None:
     if env_symbol:
         return env_symbol
 
-    env_path = Path(__file__).resolve().parent / ".service.env"
+    env_path = resolveServiceEnvPath()
+    if env_path is None:
+        return None
     return _read_service_env_symbol(env_path)
 
 
@@ -551,9 +553,9 @@ def _maybe_reexec_on_token_change(current_symbol: str, pos, last_env_mtime: floa
     Hot-reload token only when IDLE (pos is None).
     If .service.env SYMBOL changed -> re-exec current process with new argv.
     """
-    env_path = Path(__file__).resolve().parent / ".service.env"
+    env_path = resolveServiceEnvPath()
     try:
-        if not env_path.exists():
+        if env_path is None or not env_path.exists():
             return current_symbol, last_env_mtime
         mtime = env_path.stat().st_mtime
         if mtime == last_env_mtime:
@@ -587,9 +589,9 @@ def _pending_token_switch(current_symbol: str, last_env_mtime: float):
     Read .service.env and report a requested symbol switch without re-execing yet.
     Returns: (requested_symbol_or_none, updated_mtime)
     """
-    env_path = Path(__file__).resolve().parent / ".service.env"
+    env_path = resolveServiceEnvPath()
     try:
-        if not env_path.exists():
+        if env_path is None or not env_path.exists():
             return None, last_env_mtime
         mtime = env_path.stat().st_mtime
         if mtime == last_env_mtime:
@@ -1035,6 +1037,53 @@ def main():
                             P3,
                             P4,
                             detail=f"spread_limit={burst_spread_limit*100:.4f}%",
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+                    s1, _, market_ctx = load_signal_snapshot(now)
+                    if s1 is None:
+                        maybe_hold(
+                            now,
+                            'HOLD_SIGNAL',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+                    rsi_now = float(getattr(s1, "rsi", 0.0))
+                    ema1_ok = bool(getattr(s1, "ema_ok", False))
+                    vol_ok = bool(getattr(s1, "vol_ok", False))
+                    if not ema1_ok:
+                        maybe_hold(
+                            now,
+                            'HOLD_BURST_EMA',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            detail="ema1=0",
+                            signal={
+                                "rsi": rsi_now,
+                                "ema1_ok": ema1_ok,
+                                "ema5_ok": None,
+                                "vol_ok": vol_ok,
+                            },
                         )
                         time.sleep(cfg.idleSleep)
                         continue
