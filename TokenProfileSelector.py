@@ -142,7 +142,7 @@ def change_window_pct(symbol: str):
         return None
     return (c - o) / o * 100.0
 
-def collect_positive_candidates(excluded_symbols: set[str] | None = None):
+def collect_candidates(excluded_symbols: set[str] | None = None, positive_only: bool = True):
     symbols = get_symbols_usdc_trading()
     spread_map = get_spread_map()
     market_map = get_market_stats_map()
@@ -202,7 +202,9 @@ def collect_positive_candidates(excluded_symbols: set[str] | None = None):
                 pct = future.result()
             except Exception:
                 continue
-            if pct is None or pct <= 0:
+            if pct is None:
+                continue
+            if positive_only and pct <= 0:
                 continue
             sym = future_to_symbol[future]
             market = market_map.get(sym) or {}
@@ -249,12 +251,31 @@ def rank_candidates(candidates, score_map):
 
 
 def pick_best_candidate(score_map, excluded_symbols: set[str] | None = None):
-    candidates = collect_positive_candidates(excluded_symbols=excluded_symbols)
+    candidates = collect_candidates(excluded_symbols=excluded_symbols, positive_only=True)
     if not candidates:
         return None, []
     ranked = rank_candidates(candidates, score_map)
     chosen = next((item for item in ranked if not item["is_toxic"]), None)
     return chosen, ranked
+
+
+def choose_fallback_candidate(score_map, excluded_symbols: set[str] | None = None):
+    positive_candidates = collect_candidates(excluded_symbols=excluded_symbols, positive_only=True)
+    positive_ranked = rank_candidates(positive_candidates, score_map) if positive_candidates else []
+    any_candidates = collect_candidates(excluded_symbols=excluded_symbols, positive_only=False)
+    any_ranked = rank_candidates(any_candidates, score_map) if any_candidates else []
+
+    fallback = None
+    fallback_mode = ""
+
+    if positive_ranked:
+        fallback = positive_ranked[0]
+        fallback_mode = "best_positive_even_if_toxic"
+    elif any_ranked:
+        fallback = next((item for item in any_ranked if not item["is_toxic"]), None) or any_ranked[0]
+        fallback_mode = "best_eligible_any_momentum"
+
+    return fallback, fallback_mode, positive_ranked, any_ranked
 
 def log_selector_memory_state(sync_info, ranked):
     print(
@@ -328,6 +349,8 @@ def write_service_env(symbol: str, pct: float, profile: str):
 def main():
     sync_info = sync_trade_memory()
     score_map = load_token_scores()
+    env_now = _read_env_file(SERVICE_ENV_PATH)
+    current_symbol = (env_now.get("SYMBOL") or "").strip().upper()
     blocked_symbols = load_blocked_symbols(BLOCKED_SYMBOLS_PATH)
     if blocked_symbols:
         print(
@@ -338,6 +361,22 @@ def main():
     log_selector_memory_state(sync_info, ranked)
 
     if not chosen:
+        if current_symbol and current_symbol in blocked_symbols:
+            fallback, fallback_mode, positive_ranked, any_ranked = choose_fallback_candidate(
+                score_map,
+                excluded_symbols=blocked_symbols,
+            )
+            fallback_ranked = positive_ranked if positive_ranked else any_ranked
+            if fallback_ranked:
+                log_selector_memory_state(sync_info, fallback_ranked)
+            if fallback:
+                print(
+                    f"TOKEN_SELECTOR: fallback selected {fallback['symbol']} "
+                    f"mode={fallback_mode} current_blocked={current_symbol} "
+                    f"var={fallback['pct']:.2f}% toxic={int(bool(fallback.get('is_toxic')))}"
+                )
+                write_service_env(fallback["symbol"], fallback["pct"], DEFAULT_PROFILE)
+                return 0
         print(
             f"TOKEN_SELECTOR: no eligible positive {QUOTE_ASSET} symbol found "
             f"({WINDOW_MINUTES}m window, max_spread={SELECTOR_MAX_SPREAD_PCT*100:.2f}% "
