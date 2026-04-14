@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% set title = "Services" %}
 {% set active = "services" %}
-{% set subtitle = "Commandes d'exploitation pour le bot, le selector et le dashboard." %}
+{% set subtitle = "Les commandes critiques doivent etre simples, visibles et accompagnees d'un retour clair." %}
 {% block content %}
 <div class="grid grid-12 gap-16 services-page">
   <div class="card card-slate col-12">
     <div class="card-head">
       <div>
         <div class="card-title">Etat rapide</div>
-        <div class="card-sub">Les 4 unites critiques, lisibles en bloc sur mobile avant toute action.</div>
+        <div class="card-sub">Les unites critiques apparaissent en cartes lisibles avant toute action, pour ne pas confondre service vivant, timer en attente et run ponctuel termine.</div>
       </div>
       <div class="pill" id="svc2-pill">--</div>
     </div>
@@ -17,18 +17,18 @@
     </div>
   </div>
 
-  <div class="card card-amber col-12">
+  <div class="card card-amber col-12 col-xl-7">
     <div class="card-head">
       <div>
         <div class="card-title">Commandes directes</div>
-        <div class="card-sub">Des cartes simples a taper au pouce pour demarrer, stopper ou relancer.</div>
+        <div class="card-sub">Chaque bloc correspond a une vraie intention d'exploitation. Les boutons sont groupés par moteur, pas dispersés dans un tableau.</div>
       </div>
     </div>
 
-    <div class="control-grid">
+    <div class="control-grid control-grid-ops">
       <div class="control">
         <div class="control-title">Main Bot</div>
-        <div class="control-sub muted">Le moteur de trading spot. Action la plus sensible.</div>
+        <div class="control-sub muted">Le moteur de trading spot. C'est l'action la plus sensible.</div>
         <div class="btn-row">
           <button class="btn btn-green" data-unit="binance-aifout-bot.service" data-action="start">Start</button>
           <button class="btn btn-red" data-unit="binance-aifout-bot.service" data-action="stop">Stop</button>
@@ -38,7 +38,7 @@
 
       <div class="control">
         <div class="control-title">Selector Run</div>
-        <div class="control-sub muted">Lance un scan ponctuel du selector, sans attendre le timer.</div>
+        <div class="control-sub muted">Lance un scan ponctuel pour changer le token sans attendre le timer.</div>
         <div class="btn-row">
           <button class="btn btn-green" data-unit="token-profile-selector.service" data-action="start">Run now</button>
           <button class="btn btn-blue" data-unit="token-profile-selector.service" data-action="restart">Restart</button>
@@ -47,7 +47,7 @@
 
       <div class="control">
         <div class="control-title">Selector Timer</div>
-        <div class="control-sub muted">Planifie le scan automatique toutes les 5 minutes.</div>
+        <div class="control-sub muted">Planifie le scan automatique. Il peut etre vivant alors que le run ponctuel est dead, et c'est normal.</div>
         <div class="btn-row">
           <button class="btn btn-green" data-unit="token-profile-selector.timer" data-action="start">Start</button>
           <button class="btn btn-red" data-unit="token-profile-selector.timer" data-action="stop">Stop</button>
@@ -57,7 +57,7 @@
 
       <div class="control">
         <div class="control-title">Dashboard</div>
-        <div class="control-sub muted">L'interface de pilotage, utile si la page ne repond plus.</div>
+        <div class="control-sub muted">L'interface elle-meme, utile si la page ne repond plus ou si le service web a saute.</div>
         <div class="btn-row">
           <button class="btn btn-green" data-unit="botdash.service" data-action="start">Start</button>
           <button class="btn btn-red" data-unit="botdash.service" data-action="stop">Stop</button>
@@ -67,11 +67,11 @@
     </div>
   </div>
 
-  <div class="card card-purple col-12 col-lg-5">
+  <div class="card card-purple col-12 col-xl-5">
     <div class="card-head">
       <div>
-        <div class="card-title">Derniere commande</div>
-        <div class="card-sub">Retour clair apres une action, sans JSON brut en plein milieu.</div>
+        <div class="card-title">Retour de commande</div>
+        <div class="card-sub">Le feedback doit etre compréhensible sans relire du JSON brut ni partir dans les logs.</div>
       </div>
     </div>
     <div class="action-result" id="ctl-out">
@@ -79,18 +79,15 @@
     </div>
   </div>
 
-  <div class="card card-slate col-12 col-lg-7">
+  <div class="card card-slate col-12">
     <div class="card-head">
       <div>
         <div class="card-title">Etat detaille des unites</div>
-        <div class="card-sub">Confirmation ligne par ligne de ce qui tourne vraiment.</div>
+        <div class="card-sub">Une vue ligne par ligne, mais rendue en cartes lisibles plutot qu'en table froide pour ne plus cacher l'information importante.</div>
       </div>
     </div>
-    <div class="table-wrap">
-      <table class="table" id="services-table">
-        <thead><tr><th>Service</th><th>État</th><th>Depuis</th><th>Détails</th></tr></thead>
-        <tbody><tr><td colspan="4" class="muted">Chargement...</td></tr></tbody>
-      </table>
+    <div class="service-panel-grid" id="services-grid">
+      <div class="empty-state">Chargement des unites...</div>
     </div>
   </div>
 </div>

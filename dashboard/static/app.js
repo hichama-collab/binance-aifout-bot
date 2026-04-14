@@ -3,6 +3,7 @@
   const $ = (sel) => document.querySelector(sel);
   let currentLogName = "";
   let serviceControlsBound = false;
+  let logControlsBound = false;
 
   const UNIT_LABELS = {
     "botdash.service": "Dashboard",
@@ -214,7 +215,7 @@ function binanceSpotUrl(symbol) {
 
   function renderWallet(data) {
     const tbl = $("#wallet-table tbody");
-    if (!tbl) return;
+    const stack = $("#wallet-stack");
 
     const rows = (data.rows || []).filter((r) => {
       const values = [
@@ -231,25 +232,60 @@ function binanceSpotUrl(symbol) {
     let totalEur = 0;
 
     if (!rows.length) {
-      tbl.innerHTML = `<tr><td colspan="6" class="muted">wallet vide</td></tr>`;
+      if (tbl) tbl.innerHTML = `<tr><td colspan="6" class="muted">wallet vide</td></tr>`;
+      if (stack) stack.innerHTML = `<div class="empty-state">Aucune ligne portefeuille exploitable pour l'instant.</div>`;
       return;
     }
 
-    tbl.innerHTML = rows.map(r => {
+    const mappedRows = rows.map((r) => {
       const usdc = (r.value_usdc ?? r.usdc_value ?? null);
       const eur = (r.value_eur ?? r.eur_value ?? null);
       if (typeof usdc === "number") totalUsdc += usdc;
       if (typeof eur === "number") totalEur += eur;
 
-      return `<tr>
+      return {
+        rowHtml: `<tr>
         ${td("Asset", `<b>${r.asset}</b>`)}
         ${td("Free", fmt(r.free, 6), "right")}
         ${td("Locked", fmt(r.locked, 6), "right")}
         ${td("Total", fmt(r.total, 6), "right")}
         ${td("≈ USDC", usdc === null ? "--" : fmt(usdc, 2), "right")}
         ${td("≈ EUR", eur === null ? "--" : fmt(eur, 2), "right")}
-      </tr>`;
-    }).join("");
+      </tr>`,
+        asset: r.asset,
+        free: r.free,
+        locked: r.locked,
+        total: r.total,
+        usdc,
+        eur,
+      };
+    });
+
+    if (tbl) {
+      tbl.innerHTML = mappedRows.map((item) => item.rowHtml).join("");
+    }
+
+    if (stack) {
+      const baseTotal = totalUsdc > 0 ? totalUsdc : mappedRows.reduce((acc, item) => acc + Math.max(Number(item.usdc || 0), 0), 0);
+      stack.innerHTML = mappedRows.slice(0, 10).map((item) => {
+        const share = (baseTotal > 0 && item.usdc != null) ? ((Number(item.usdc) / baseTotal) * 100.0) : null;
+        return `<div class="asset-card">
+          <div class="asset-head">
+            <div>
+              <span class="asset-meta">Asset</span>
+              <span class="asset-title">${escapeHtml(item.asset || "--")}</span>
+            </div>
+            <span class="pill ${pnlClass(item.usdc) === "pos-bad" ? "pill-red" : "pill-blue"}">${item.usdc == null ? "--" : fmt(item.usdc, 2) + " USDC"}</span>
+          </div>
+          <div class="asset-metrics">
+            <div class="asset-metric"><span>Total</span><span>${fmt(item.total, 6)}</span></div>
+            <div class="asset-metric"><span>Libre / bloque</span><span>${fmt(item.free, 6)} / ${fmt(item.locked, 6)}</span></div>
+            <div class="asset-metric"><span>Valeur EUR</span><span>${item.eur == null ? "--" : fmt(item.eur, 2) + " EUR"}</span></div>
+            <div class="asset-metric"><span>Poids</span><span>${share == null ? "--" : fmt(share, 1) + "%"}</span></div>
+          </div>
+        </div>`;
+      }).join("");
+    }
 
     const totalText = `Total ≈ ${fmt(totalUsdc, 2)} USDC | ${fmt(totalEur, 2)} EUR`;
     const pill = $("#wallet-total");
@@ -329,23 +365,48 @@ function binanceSpotUrl(symbol) {
 
   function renderServices(units) {
     const tbl = $("#services-table tbody");
-    if (!tbl) return;
+    const grid = $("#services-grid");
     const rows = units || [];
     if (!rows.length) {
-      tbl.innerHTML = `<tr><td colspan="4" class="muted">aucun service</td></tr>`;
+      if (tbl) tbl.innerHTML = `<tr><td colspan="4" class="muted">aucun service</td></tr>`;
+      if (grid) grid.innerHTML = `<div class="empty-state">Aucune unite remontee par le backend.</div>`;
       return;
     }
-    tbl.innerHTML = rows.map(u => {
-      const st = (u.state || "--");
-      const since = u.since ? fmtDateTime(u.since) : "--";
-      const details = u.details || "";
-      return `<tr>
+
+    if (tbl) {
+      tbl.innerHTML = rows.map(u => {
+        const st = (u.state || "--");
+        const since = u.since ? fmtDateTime(u.since) : "--";
+        const details = u.details || "";
+        return `<tr>
         <td><b>${unitLabel(u.unit)}</b><div class="service-chip-unit">${u.unit}</div></td>
         <td>${badgeState(st)}</td>
         <td>${since}</td>
         <td class="muted">${details}</td>
       </tr>`;
-    }).join("");
+      }).join("");
+    }
+
+    if (grid) {
+      grid.innerHTML = rows.map((u) => {
+        const st = (u.state || "--");
+        const since = u.since ? fmtDateTime(u.since) : "--";
+        const details = u.details || "etat non remonte";
+        return `<div class="service-panel">
+          <div class="service-panel-head">
+            <div>
+              <div class="service-panel-title">${unitLabel(u.unit)}</div>
+              <div class="service-panel-unit">${u.unit}</div>
+            </div>
+            ${badgeState(st)}
+          </div>
+          <div class="service-panel-body">
+            <div class="service-line"><span>Depuis</span><span>${since}</span></div>
+            <div class="service-line"><span>Lecture</span><span>${escapeHtml(details)}</span></div>
+          </div>
+        </div>`;
+      }).join("");
+    }
 
     const pill = $("#svc-pill");
     if (pill) pill.textContent = `${rows.length} unités`;
@@ -434,53 +495,97 @@ function binanceSpotUrl(symbol) {
   }
 
   function renderStatsRankings(rankings) {
-    const tbl = $("#stats-tokens-table tbody");
-    if (!tbl) return;
     const top = rankings?.top || [];
     const bottom = rankings?.bottom || [];
+    const tbl = $("#stats-tokens-table tbody");
+    const topBox = $("#stats-top-list");
+    const bottomBox = $("#stats-bottom-list");
     const rows = [
       ...top.map((r) => ({ ...r, bucket: "Top" })),
       ...bottom.map((r) => ({ ...r, bucket: "Flop" })),
     ];
     if (!rows.length) {
-      tbl.innerHTML = `<tr><td colspan="5" class="muted">pas assez d'historique</td></tr>`;
+      if (tbl) tbl.innerHTML = `<tr><td colspan="5" class="muted">pas assez d'historique</td></tr>`;
+      if (topBox) topBox.innerHTML = `<div class="empty-state compact">Pas assez d'historique.</div>`;
+      if (bottomBox) bottomBox.innerHTML = `<div class="empty-state compact">Pas assez d'historique.</div>`;
       return;
     }
-    tbl.innerHTML = rows.map((r) => {
-      const cls = r.bucket === "Top" ? "rank-good" : "rank-bad";
-      const url = binanceSpotUrl(r.symbol);
-      const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${r.symbol}</a>` : r.symbol;
-      return `<tr>
+
+    if (tbl) {
+      tbl.innerHTML = rows.map((r) => {
+        const cls = r.bucket === "Top" ? "rank-good" : "rank-bad";
+        const url = binanceSpotUrl(r.symbol);
+        const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${r.symbol}</a>` : r.symbol;
+        return `<tr>
         <td class="${cls}">${r.bucket}</td>
         <td><b>${symbolHtml}</b></td>
         <td class="right ${pnlClass(r.pnl_usdc)}">${fmt(r.pnl_usdc, 2)}</td>
         <td class="right">${fmtInt(r.trades)}</td>
         <td class="muted">${fmtDateTime(r.last_ts)}</td>
       </tr>`;
-    }).join("");
+      }).join("");
+    }
+
+    const buildScoreCards = (list, tone) => {
+      if (!list.length) return `<div class="empty-state compact">Aucune ligne.</div>`;
+      return list.map((r) => {
+        const url = binanceSpotUrl(r.symbol);
+        const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${escapeHtml(r.symbol)}</a>` : escapeHtml(r.symbol);
+        return `<div class="score-card">
+          <div class="score-head">
+            <div>
+              <span class="score-meta">${tone === "good" ? "Top" : "Flop"}</span>
+              <span class="score-title">${symbolHtml}</span>
+            </div>
+            <span class="pill ${tone === "good" ? "pill-green" : "pill-red"}">${fmt(r.pnl_usdc, 2)} USDC</span>
+          </div>
+          <div class="score-foot">${fmtInt(r.trades)} trades | dernier trade ${fmtDateTime(r.last_ts)}</div>
+        </div>`;
+      }).join("");
+    };
+
+    if (topBox) topBox.innerHTML = buildScoreCards(top, "good");
+    if (bottomBox) bottomBox.innerHTML = buildScoreCards(bottom, "bad");
     const pill = $("#stats-token-pill");
     if (pill) pill.textContent = `${top.length} top | ${bottom.length} flop`;
   }
 
   function renderRecentClosed(rows) {
     const tbl = $("#stats-recent-table tbody");
-    if (!tbl) return;
+    const feed = $("#stats-recent-feed");
     const list = rows || [];
     if (!list.length) {
-      tbl.innerHTML = `<tr><td colspan="5" class="muted">aucun trade ferme</td></tr>`;
+      if (tbl) tbl.innerHTML = `<tr><td colspan="5" class="muted">aucun trade ferme</td></tr>`;
+      if (feed) feed.innerHTML = `<div class="empty-state">Aucun trade ferme a afficher.</div>`;
       return;
     }
-    tbl.innerHTML = list.map((r) => {
-      const url = binanceSpotUrl(r.symbol);
-      const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${r.symbol}</a>` : r.symbol;
-      return `<tr>
+
+    if (tbl) {
+      tbl.innerHTML = list.map((r) => {
+        const url = binanceSpotUrl(r.symbol);
+        const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${r.symbol}</a>` : r.symbol;
+        return `<tr>
         <td class="muted">${fmtDateTime(r.ts)}</td>
         <td><b>${symbolHtml}</b></td>
         <td class="right ${pnlClass(r.pnl_usdc)}">${fmt(r.pnl_usdc, 2)}</td>
         <td>${r.event || "--"}</td>
         <td class="muted">${r.src || "--"}</td>
       </tr>`;
-    }).join("");
+      }).join("");
+    }
+
+    if (feed) {
+      feed.innerHTML = list.map((r) => {
+        const url = binanceSpotUrl(r.symbol);
+        const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${escapeHtml(r.symbol)}</a>` : escapeHtml(r.symbol);
+        return `<div class="trade-card">
+          <div class="trade-meta">${fmtDateTime(r.ts)}</div>
+          <div class="trade-title">${symbolHtml}</div>
+          <div class="trade-body">${escapeHtml(r.event || "--")} | ${escapeHtml(r.src || "--")}</div>
+          <div class="decision-impact ${pnlClass(r.pnl_usdc)}">${fmt(r.pnl_usdc, 2)} USDC</div>
+        </div>`;
+      }).join("");
+    }
     const pill = $("#stats-recent-pill");
     if (pill) pill.textContent = `${list.length} lignes`;
   }
@@ -529,23 +634,29 @@ function binanceSpotUrl(symbol) {
 
   function renderTokensTable(summary) {
     const tbl = $("#tokens-table tbody");
-    if (!tbl) return;
-    const rows = (summary.rows || []).slice(0, 10);
+    const topBox = $("#token-top-list");
+    const riskBox = $("#token-risk-list");
+    const allRows = (summary.rows || []).filter((r) => Number(r.pnl_usdc ?? 0) || Number(r.trades ?? 0));
+    const rows = allRows.slice(0, 10);
     if (!rows.length) {
-      tbl.innerHTML = `<tr><td colspan="9" class="muted">aucun trade</td></tr>`;
+      if (tbl) tbl.innerHTML = `<tr><td colspan="9" class="muted">aucun trade</td></tr>`;
+      if (topBox) topBox.innerHTML = `<div class="empty-state compact">Aucune contribution positive.</div>`;
+      if (riskBox) riskBox.innerHTML = `<div class="empty-state compact">Aucun point faible.</div>`;
       return;
     }
-    tbl.innerHTML = rows.map(r => {
-      const usdc = r.pnl_usdc ?? 0;
-      const eur = r.pnl_eur ?? null;
-      const maxOpenUsdc = r.max_open_usdc ?? null;
-      const buyUsdc = r.buy_usdc ?? null;
-      const sellUsdc = r.sell_usdc ?? null;
-      const pnlPct = r.pnl_pct ?? null;
-      const cls = pnlClass(usdc);
-      const period = r.last_ts ? `${r.last_ts}` : "--";
-      const pctTxt = pnlPct == null ? "--" : `${fmt(pnlPct, 1)}%`;
-      return `<tr>
+
+    if (tbl) {
+      tbl.innerHTML = rows.map(r => {
+        const usdc = r.pnl_usdc ?? 0;
+        const eur = r.pnl_eur ?? null;
+        const maxOpenUsdc = r.max_open_usdc ?? null;
+        const buyUsdc = r.buy_usdc ?? null;
+        const sellUsdc = r.sell_usdc ?? null;
+        const pnlPct = r.pnl_pct ?? null;
+        const cls = pnlClass(usdc);
+        const period = r.last_ts ? `${r.last_ts}` : "--";
+        const pctTxt = pnlPct == null ? "--" : `${fmt(pnlPct, 1)}%`;
+        return `<tr>
         ${td("Token", `<b><a class="link" href="${binanceSpotUrl(r.symbol) || "#"}" target="_blank" rel="noreferrer">${r.symbol}</a></b>`)}
         ${td("Période", `<span class="muted">${period}</span>`)}
         ${td("Capital Max", maxOpenUsdc === null ? "--" : fmt(maxOpenUsdc, 2), "right")}
@@ -556,29 +667,65 @@ function binanceSpotUrl(symbol) {
         ${td("Net %", pctTxt, `right ${cls}`.trim())}
         ${td("Trades fermés", fmtInt(r.trades), "right")}
       </tr>`;
-    }).join("");
+      }).join("");
+    }
+
+    const topRows = [...allRows]
+      .sort((a, b) => Number(b.pnl_usdc || 0) - Number(a.pnl_usdc || 0))
+      .filter((r) => Number(r.pnl_usdc || 0) > 0)
+      .slice(0, 5);
+    const riskRows = [...allRows]
+      .sort((a, b) => Number(a.pnl_usdc || 0) - Number(b.pnl_usdc || 0))
+      .filter((r) => Number(r.pnl_usdc || 0) < 0)
+      .slice(0, 5);
+
+    const buildTokenList = (list, tone) => {
+      if (!list.length) return `<div class="empty-state compact">${tone === "good" ? "Aucun contributeur positif." : "Aucune perte par token."}</div>`;
+      return list.map((r) => {
+        const url = binanceSpotUrl(r.symbol);
+        const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${escapeHtml(r.symbol)}</a>` : escapeHtml(r.symbol);
+        const pctTxt = r.pnl_pct == null ? "--" : `${fmt(r.pnl_pct, 1)}%`;
+        return `<div class="score-card">
+          <div class="score-head">
+            <div>
+              <span class="score-meta">${tone === "good" ? "Contribution +" : "Contribution -"}</span>
+              <span class="score-title">${symbolHtml}</span>
+            </div>
+            <span class="pill ${tone === "good" ? "pill-green" : "pill-red"}">${fmt(r.pnl_usdc, 2)} USDC</span>
+          </div>
+          <div class="score-foot">${fmtInt(r.trades)} trades fermes | ${pctTxt} | dernier passage ${fmtDateTime(r.last_ts)}</div>
+        </div>`;
+      }).join("");
+    };
+
+    if (topBox) topBox.innerHTML = buildTokenList(topRows, "good");
+    if (riskBox) riskBox.innerHTML = buildTokenList(riskRows, "bad");
+
     const pill = $("#tr-pill");
-    if (pill) pill.textContent = `${rows.length} tokens`;
+    if (pill) pill.textContent = `${allRows.length} tokens`;
   }
 
   function renderDecisions(trades) {
     const tbl = $("#decisions-table tbody");
-    if (!tbl) return;
-    const rows = (trades.rows || []).slice(0, 10);
+    const feed = $("#decisions-feed");
+    const rows = (trades.rows || []).slice(0, 12);
     if (!rows.length) {
-      tbl.innerHTML = `<tr><td colspan="7" class="muted">pas de décisions</td></tr>`;
+      if (tbl) tbl.innerHTML = `<tr><td colspan="7" class="muted">pas de décisions</td></tr>`;
+      if (feed) feed.innerHTML = `<div class="empty-state">Pas encore de decision exploitable dans les trades.</div>`;
       return;
     }
-    tbl.innerHTML = rows.map(r => {
-      const ts = r.ts_utc || r.ts || "--";
-      const symbol = r.symbol || "--";
-      const price = r.price == null || r.price === "" ? "--" : fmt(r.price, 8);
-      const qty = r.qty == null || r.qty === "" ? "--" : fmt(r.qty, 6);
-      const pnl = r.pnl == null || r.pnl === "" ? "--" : fmt(r.pnl, 2);
-      const cls = pnlClass(r.pnl);
-      const url = binanceSpotUrl(symbol);
-      const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${symbol}</a>` : symbol;
-      return `<tr>
+
+    if (tbl) {
+      tbl.innerHTML = rows.map(r => {
+        const ts = r.ts_utc || r.ts || "--";
+        const symbol = r.symbol || "--";
+        const price = r.price == null || r.price === "" ? "--" : fmt(r.price, 8);
+        const qty = r.qty == null || r.qty === "" ? "--" : fmt(r.qty, 6);
+        const pnl = r.pnl == null || r.pnl === "" ? "--" : fmt(r.pnl, 2);
+        const cls = pnlClass(r.pnl);
+        const url = binanceSpotUrl(symbol);
+        const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${symbol}</a>` : symbol;
+        return `<tr>
         ${td("Heure", `<span class="muted">${fmtDateTime(ts)}</span>`)}
         ${td("Token", `<b>${symbolHtml}</b>`)}
         ${td("Action", `<b>${actionLabel(r)}</b>`)}
@@ -587,7 +734,25 @@ function binanceSpotUrl(symbol) {
         ${td("Qté", qty, "right")}
         ${td("Impact", pnl, `right ${cls}`.trim())}
       </tr>`;
-    }).join("");
+      }).join("");
+    }
+
+    if (feed) {
+      feed.innerHTML = rows.map((r) => {
+        const ts = r.ts_utc || r.ts || "--";
+        const symbol = r.symbol || "--";
+        const url = binanceSpotUrl(symbol);
+        const symbolHtml = url ? `<a class="link" href="${url}" target="_blank" rel="noreferrer">${escapeHtml(symbol)}</a>` : escapeHtml(symbol);
+        const impact = r.pnl == null || r.pnl === "" ? "--" : `${fmt(r.pnl, 2)} USDC`;
+        return `<div class="decision-card">
+          <div class="decision-meta">${fmtDateTime(ts)}</div>
+          <div class="decision-title">${actionLabel(r)} | ${symbolHtml}</div>
+          <div class="decision-body">${escapeHtml(reasonLabel(r))}</div>
+          <div class="decision-body">Prix ${r.price == null || r.price === "" ? "--" : fmt(r.price, 8)} | Qte ${r.qty == null || r.qty === "" ? "--" : fmt(r.qty, 6)}</div>
+          <div class="decision-impact ${pnlClass(r.pnl)}">${impact}</div>
+        </div>`;
+      }).join("");
+    }
     const pill = $("#dec-pill");
     if (pill) pill.textContent = `${rows.length} lignes`;
   }
@@ -691,7 +856,7 @@ function binanceSpotUrl(symbol) {
 
   async function loadLogsPage() {
     const tbl = $("#logs-table tbody");
-    if (!tbl) return;
+    const listBox = $("#logs-list");
     const j = await jget("/api/logs");
     const rows = j.files || [];
     if (currentLogName && !rows.some((row) => row.name === currentLogName)) currentLogName = "";
@@ -699,19 +864,42 @@ function binanceSpotUrl(symbol) {
     if (pill) pill.textContent = `${rows.length} fichiers`;
     renderQuickLogs(rows);
     if (!rows.length) {
-      tbl.innerHTML = `<tr><td colspan="4" class="muted">aucun fichier</td></tr>`;
+      if (tbl) tbl.innerHTML = `<tr><td colspan="4" class="muted">aucun fichier</td></tr>`;
+      if (listBox) listBox.innerHTML = `<div class="empty-state">Aucun fichier de log detecte dans ${escapeHtml(j.logs || "")}.</div>`;
       setText("log-current", "Aucun fichier");
       return;
     }
-    tbl.innerHTML = rows.slice(0, 50).map(f => {
-      const name = f.name;
-      return `<tr class="${name === currentLogName ? "is-selected" : ""}">
+
+    const visibleRows = rows.slice(0, 50);
+    if (tbl) {
+      tbl.innerHTML = visibleRows.map(f => {
+        const name = f.name;
+        return `<tr class="${name === currentLogName ? "is-selected" : ""}">
         <td><b>${name}</b></td>
         <td class="right">${fmtInt(f.size || 0)}</td>
         <td class="muted">${fmtDateTime(f.mtime)}</td>
         <td><button class="btn btn-blue" data-log="${name}">Lire</button></td>
       </tr>`;
-    }).join("");
+      }).join("");
+    }
+
+    if (listBox) {
+      listBox.innerHTML = visibleRows.map((f) => {
+        const name = f.name;
+        return `<div class="log-item ${name === currentLogName ? "is-selected" : ""}">
+          <div class="log-item-head">
+            <div>
+              <div class="log-title">${escapeHtml(name)}</div>
+              <div class="log-meta">${fmtDateTime(f.mtime)}</div>
+            </div>
+            <span class="pill">${fmtInt(f.size || 0)} o</span>
+          </div>
+          <div class="log-item-actions">
+            <button class="btn btn-blue" data-log="${escapeHtml(name)}">Lire</button>
+          </div>
+        </div>`;
+      }).join("");
+    }
 
     document.querySelectorAll("button[data-log]").forEach(b => {
       b.addEventListener("click", async () => {
@@ -751,6 +939,28 @@ function binanceSpotUrl(symbol) {
       await openLog(rows[0].name, 200);
       await loadLogsPage();
     }
+
+    bindLogControls();
+  }
+
+  function bindLogControls() {
+    if (logControlsBound) return;
+    const bindTail = (id, lines) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.addEventListener("click", async () => {
+        if (!currentLogName) return;
+        btn.disabled = true;
+        try {
+          await openLog(currentLogName, lines);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    };
+    bindTail("btnTail200", 200);
+    bindTail("btnTail600", 600);
+    logControlsBound = true;
   }
 
   async function loadStatisticsPage() {

@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% set title = "Statistiques" %}
 {% set active = "statistics" %}
-{% set subtitle = "Vue realisee du PnL, de l'equity et de la qualite d'execution." %}
+{% set subtitle = "Une page qui raconte la performance du bot: resultat, qualite, drawdown et derniers trades vraiment utiles." %}
 {% block content %}
 <div class="grid grid-12 gap-16">
   <div class="card card-blue col-12">
     <div class="card-head">
       <div>
         <div class="card-title">Performance realisee</div>
-        <div class="card-sub">Vue synthese du resultat: rythme court terme, cadence et courbe d'equity, avec une vraie hierarchie mobile.</div>
+        <div class="card-sub">Les chiffres de synthese restent en haut, mais la page ne laisse plus le graphe ecraser tout le reste. On voit la performance et son contexte d'execution ensemble.</div>
       </div>
       <div class="pill" id="pnl-pill">--</div>
     </div>
@@ -18,23 +18,23 @@
       <div class="kpi"><div class="kpi-k">Session</div><div class="kpi-v" id="kpi-session">--</div></div>
       <div class="kpi"><div class="kpi-k">Semaine</div><div class="kpi-v" id="kpi-week">--</div></div>
       <div class="kpi"><div class="kpi-k">Mois</div><div class="kpi-v" id="kpi-month">--</div></div>
-      <div class="kpi"><div class="kpi-k">Année</div><div class="kpi-v" id="kpi-year">--</div></div>
+      <div class="kpi"><div class="kpi-k">Annee</div><div class="kpi-v" id="kpi-year">--</div></div>
       <div class="kpi"><div class="kpi-k">Trades</div><div class="kpi-v" id="kpi-trades">--</div></div>
       <div class="kpi"><div class="kpi-k">Winrate</div><div class="kpi-v" id="kpi-winrate">--</div></div>
       <div class="kpi"><div class="kpi-k">Profit Factor</div><div class="kpi-v" id="kpi-pf">--</div></div>
     </div>
 
-    <div class="chart-wrap">
+    <div class="chart-wrap chart-wrap-tight">
       <canvas id="equityChart"></canvas>
     </div>
-    <div class="stats-foot muted small">Graph: equity realisee calculee a partir des trades fermes presents dans les logs.</div>
+    <div class="stats-foot muted small">La courbe vient des trades fermes seulement. Elle doit servir de diagnostic, pas de decoration.</div>
   </div>
 
   <div class="card card-purple col-12 col-lg-6">
     <div class="card-head">
       <div>
         <div class="card-title">Qualite d'execution</div>
-        <div class="card-sub">Comment le bot gagne, ce qu'il perd, et a quelle vitesse il s'enfonce quand ca derape.</div>
+        <div class="card-sub">On lit ici comment le bot gagne, comment il perd et a quelle vitesse il se deteriore quand le regime de marche change.</div>
       </div>
       <div class="pill pill-purple" id="quality-pill">--</div>
     </div>
@@ -54,7 +54,7 @@
     <div class="card-head">
       <div>
         <div class="card-title">Dernier trade ferme</div>
-        <div class="card-sub">Dernier resultat concret visible dans les logs, avec fraicheur des donnees.</div>
+        <div class="card-sub">Le dernier resultat concret, avec sa fraicheur. Cette carte doit permettre de savoir tout de suite si on est en train de regarder un dashboard vivant ou un historique stale.</div>
       </div>
       <div class="pill pill-green" id="lasttrade-pill">--</div>
     </div>
@@ -70,35 +70,40 @@
     </div>
   </div>
 
-  <div class="card card-red col-12 col-lg-6">
+  <div class="card card-red col-12">
     <div class="card-head">
       <div>
-        <div class="card-title">Tokens forts / faibles</div>
-        <div class="card-sub">Les meilleurs et les plus faibles contributeurs au PnL realise.</div>
+        <div class="card-title">Top et flops</div>
+        <div class="card-sub">La page de statistiques doit dire quels tokens meritent de rester dans la boucle, et lesquels doivent etre regardes avec mefiance.</div>
       </div>
       <div class="pill pill-red" id="stats-token-pill">--</div>
     </div>
-    <div class="table-wrap">
-      <table class="table" id="stats-tokens-table">
-        <thead><tr><th>Classement</th><th>Token</th><th class="right">PnL USDC</th><th class="right">Trades</th><th>Dernier trade</th></tr></thead>
-        <tbody><tr><td colspan="5" class="muted">Chargement...</td></tr></tbody>
-      </table>
+    <div class="board-grid">
+      <div class="board-panel">
+        <div class="section-kicker">Top</div>
+        <div class="score-list" id="stats-top-list">
+          <div class="empty-state compact">Chargement...</div>
+        </div>
+      </div>
+      <div class="board-panel">
+        <div class="section-kicker">Flops</div>
+        <div class="score-list" id="stats-bottom-list">
+          <div class="empty-state compact">Chargement...</div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div class="card card-slate col-12 col-lg-6">
+  <div class="card card-slate col-12">
     <div class="card-head">
       <div>
         <div class="card-title">Derniers trades fermes</div>
-        <div class="card-sub">Les lignes qui impactent directement l'equity et le resultat du jour.</div>
+        <div class="card-sub">Une lecture compacte des lignes qui alimentent reellement l'equity, sans tableau trop large ni colonnes secondaires inutiles.</div>
       </div>
       <div class="pill" id="stats-recent-pill">--</div>
     </div>
-    <div class="table-wrap">
-      <table class="table" id="stats-recent-table">
-        <thead><tr><th>Heure</th><th>Token</th><th class="right">PnL USDC</th><th>Evenement</th><th>Source</th></tr></thead>
-        <tbody><tr><td colspan="5" class="muted">Chargement...</td></tr></tbody>
-      </table>
+    <div class="trade-feed" id="stats-recent-feed">
+      <div class="empty-state">Chargement des trades fermes...</div>
     </div>
   </div>
 </div>

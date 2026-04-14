@@ -1,34 +1,39 @@
 {% extends "base.html" %}
 {% set title = "Dashboard" %}
 {% set active = "dashboard" %}
-{% set subtitle = "Cockpit live du bot, du token cible et des decisions recentes." %}
+{% set subtitle = "Que fait le bot maintenant, sur quel token, avec quel capital et quelle derniere decision utile." %}
 {% block content %}
 
 <div class="grid grid-12 gap-16">
-  <div class="card card-slate col-12 hero-card">
-    <div class="card-head">
+  <div class="card card-slate col-12 hero-card hero-card--dense">
+    <div class="card-head hero-head">
       <div>
-        <div class="card-title">Lecture live prioritaire</div>
-        <div class="card-sub">Version mobile: les 4 infos utiles sont en haut, sans scroller dans tous les sens.</div>
+        <div class="card-title">Centre de controle</div>
+        <div class="card-sub">La home doit repondre a quatre questions sans te noyer: est-ce que le bot tourne, sur quoi il est branche, s'il est expose, et ce qu'il vient de faire.</div>
+      </div>
+      <div class="hero-actions">
+        <a class="mini-link" href="/statistics">Voir la perf</a>
+        <a class="mini-link" href="/services">Agir sur les services</a>
+        <a class="mini-link" href="/logs">Ouvrir les logs</a>
       </div>
     </div>
-    <div class="signal-strip">
-      <div class="signal-card">
+    <div class="signal-strip signal-strip-hero">
+      <div class="signal-card signal-card-strong">
         <div class="signal-label">Bot</div>
         <div class="signal-value" id="sig-bot-value">--</div>
         <div class="signal-meta" id="sig-bot-meta">Etat du moteur principal.</div>
       </div>
-      <div class="signal-card">
+      <div class="signal-card signal-card-strong">
         <div class="signal-label">Token actif</div>
         <div class="signal-value" id="sig-token-value">--</div>
         <div class="signal-meta" id="sig-token-meta">Configuration de trading en cours.</div>
       </div>
-      <div class="signal-card">
+      <div class="signal-card signal-card-strong">
         <div class="signal-label">Position</div>
         <div class="signal-value" id="sig-position-value">--</div>
         <div class="signal-meta" id="sig-position-meta">Exposition actuelle du bot.</div>
       </div>
-      <div class="signal-card">
+      <div class="signal-card signal-card-strong">
         <div class="signal-label">Derniere action</div>
         <div class="signal-value" id="sig-last-value">--</div>
         <div class="signal-meta" id="sig-last-meta">Derniere decision lue dans les trades.</div>
@@ -36,11 +41,11 @@
     </div>
   </div>
 
-  <div class="card card-green col-12 col-lg-6">
+  <div class="card card-green col-12 col-xl-4">
     <div class="card-head">
       <div>
-        <div class="card-title">Position en cours</div>
-        <div class="card-sub">Lecture directe de l'exposition reelle, avec le minimum vital pour agir vite.</div>
+        <div class="card-title">Position ouverte</div>
+        <div class="card-sub">Lecture directe de l'exposition reelle, avec uniquement les champs utiles pour decider si on laisse vivre ou si on coupe.</div>
       </div>
       <div class="pill pill-green" id="pos-pill">--</div>
     </div>
@@ -49,22 +54,22 @@
       <div class="k">Qty</div><div class="v" id="pos-qty">--</div>
       <div class="k">Entry</div><div class="v" id="pos-entry">--</div>
       <div class="k">Bid / Ask</div><div class="v" id="pos-ba">--</div>
-      <div class="k">PnL (≈)</div><div class="v" id="pos-pnl">--</div>
-      <div class="k">Dernière raison</div><div class="v" id="pos-reason">--</div>
+      <div class="k">PnL latent</div><div class="v" id="pos-pnl">--</div>
+      <div class="k">Derniere raison</div><div class="v" id="pos-reason">--</div>
     </div>
   </div>
 
-  <div class="card card-amber col-12 col-lg-6">
+  <div class="card card-amber col-12 col-xl-4">
     <div class="card-head">
       <div>
-        <div class="card-title">Pilotage instantane</div>
-        <div class="card-sub">Config active et sante des services sans quitter la home.</div>
+        <div class="card-title">Contexte actif</div>
+        <div class="card-sub">Le minimum pour comprendre sur quoi le bot est regle et quels moteurs tournent sans partir sur la page Services.</div>
       </div>
       <div class="pill pill-amber" id="service-health-pill">--</div>
     </div>
-    <div class="pilot-grid">
+    <div class="pilot-grid pilot-grid-tight">
       <div class="pilot-block">
-        <div class="section-kicker">Configuration active</div>
+        <div class="section-kicker">Configuration courante</div>
         <div class="kv2 kv2-compact" id="token-now">
           <div class="k">Symbol</div><div class="v" id="tn-symbol">--</div>
           <div class="k">Profile</div><div class="v" id="tn-profile">--</div>
@@ -72,7 +77,7 @@
         </div>
       </div>
       <div class="pilot-block">
-        <div class="section-kicker">Moteurs actifs</div>
+        <div class="section-kicker">Services critiques</div>
         <div class="service-health" id="service-health">
           <div class="muted">Chargement...</div>
         </div>
@@ -80,91 +85,78 @@
     </div>
   </div>
 
-  <div class="card card-blue col-12">
+  <div class="card card-purple col-12 col-xl-4">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Raccourcis utiles</div>
+        <div class="card-sub">Quand le diagnostic est pose, la bonne page doit etre a un clic, sans aller fouiller un menu plein de bruit.</div>
+      </div>
+    </div>
+    <div class="shortcut-grid">
+      <a class="shortcut-card" href="/statistics">
+        <span class="shortcut-kicker">Performance</span>
+        <span class="shortcut-title">Lire la courbe, le drawdown et le dernier trade ferme</span>
+      </a>
+      <a class="shortcut-card" href="/services">
+        <span class="shortcut-kicker">Operations</span>
+        <span class="shortcut-title">Demarrer, stopper ou relancer le bot et le selector</span>
+      </a>
+      <a class="shortcut-card" href="/logs">
+        <span class="shortcut-kicker">Logs</span>
+        <span class="shortcut-title">Ouvrir le fichier qui explique vraiment le comportement courant</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="card card-blue col-12 col-xl-6">
     <div class="card-head">
       <div>
         <div class="card-title">Capital disponible</div>
-        <div class="card-sub">Le portefeuille reste lisible en desktop, mais devient une vraie liste mobile sur petit ecran.</div>
+        <div class="card-sub">Le portefeuille n'est plus un grand tableau froid. On commence par les lignes qui portent vraiment la valeur.</div>
       </div>
       <div class="pill pill-blue" id="wallet-total">--</div>
     </div>
-    <div class="table-wrap">
-      <table class="table" id="wallet-table">
-        <thead>
-          <tr>
-            <th>Asset</th>
-            <th class="right">Free</th>
-            <th class="right">Locked</th>
-            <th class="right">Total</th>
-            <th class="right">≈ USDC</th>
-            <th class="right">≈ EUR</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td colspan="6" class="muted">Chargement...</td></tr>
-        </tbody>
-      </table>
+    <div class="asset-stack" id="wallet-stack">
+      <div class="empty-state">Chargement du portefeuille...</div>
     </div>
   </div>
 
   <div class="card card-red col-12 col-xl-6">
     <div class="card-head">
       <div>
-        <div class="card-title">PnL par token</div>
-        <div class="card-sub">Les tokens qui tirent la perf vers le haut ou vers le bas.</div>
+        <div class="card-title">Contribution par token</div>
+        <div class="card-sub">On separe clairement ce qui aide le PnL de ce qui l'abime, au lieu d'entasser neuf colonnes dans un tableau trop large.</div>
       </div>
       <div class="pill pill-red" id="tr-pill">--</div>
     </div>
-    <div class="table-wrap">
-      <table class="table" id="tokens-table">
-        <thead>
-          <tr>
-            <th>Token</th>
-            <th>Période</th>
-            <th class="right">Capital Max</th>
-            <th class="right">Turnover Achat</th>
-            <th class="right">Turnover Vente</th>
-            <th class="right">Net USDC</th>
-            <th class="right">Net EUR</th>
-            <th class="right">Net %</th>
-            <th class="right">Trades fermés</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td colspan="9" class="muted">Chargement...</td></tr>
-        </tbody>
-      </table>
+    <div class="board-grid">
+      <div class="board-panel">
+        <div class="section-kicker">Meilleurs contributeurs</div>
+        <div class="score-list" id="token-top-list">
+          <div class="empty-state compact">Chargement...</div>
+        </div>
+      </div>
+      <div class="board-panel">
+        <div class="section-kicker">Points faibles</div>
+        <div class="score-list" id="token-risk-list">
+          <div class="empty-state compact">Chargement...</div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div class="card card-slate col-12 col-xl-6">
+  <div class="card card-slate col-12">
     <div class="card-head">
       <div>
-        <div class="card-title">Dernieres actions du bot</div>
-        <div class="card-sub">Ce qu'il vient de faire, ou ce qu'il vient de refuser, avec une raison lisible.</div>
+        <div class="card-title">Dernieres decisions du bot</div>
+        <div class="card-sub">Une vraie lecture narrative de ce qui vient de se passer, avec raison lisible et impact visible sans scroller horizontalement.</div>
       </div>
       <div class="pill" id="dec-pill">--</div>
     </div>
-    <div class="table-wrap">
-      <table class="table" id="decisions-table">
-        <thead>
-          <tr>
-            <th>Heure</th>
-            <th>Token</th>
-            <th>Action</th>
-            <th>Lecture</th>
-            <th class="right">Prix</th>
-            <th class="right">Qté</th>
-            <th class="right">Impact</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td colspan="7" class="muted">Chargement...</td></tr>
-        </tbody>
-      </table>
+    <div class="decision-feed" id="decisions-feed">
+      <div class="empty-state">Chargement des dernieres decisions...</div>
     </div>
   </div>
-
 </div>
 
 {% endblock %}

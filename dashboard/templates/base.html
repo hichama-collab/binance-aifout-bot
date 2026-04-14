@@ -6,7 +6,7 @@
   <title>{% if title %}{{ title }} | {{ app_title }}{% else %}{{ app_title }}{% endif %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}"/>
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
@@ -27,7 +27,7 @@
         </div>
         <div class="brand-text">
           <div class="brand-name">{{ app_title }}</div>
-          <div class="brand-sub">dashboard mobile-first inspire de Sneat</div>
+          <div class="brand-sub">poste de pilotage clair, dense et vraiment exploitable</div>
         </div>
       </div>
 
@@ -42,15 +42,15 @@
           <a class="nav-item {% if active == 'dashboard' %}active{% endif %}" href="/" data-nav="dashboard">
             <span class="nav-icon nav-icon-blue"></span>
             <span class="nav-copy">
-              <span class="nav-title">Overview</span>
-              <span class="nav-sub">position, capital, signaux</span>
+              <span class="nav-title">Vue Live</span>
+              <span class="nav-sub">etat du bot, capital, dernieres decisions</span>
             </span>
           </a>
           <a class="nav-item {% if active == 'statistics' %}active{% endif %}" href="/statistics" data-nav="statistics">
             <span class="nav-icon nav-icon-purple"></span>
             <span class="nav-copy">
-              <span class="nav-title">Performance</span>
-              <span class="nav-sub">pnl, quality, equity</span>
+              <span class="nav-title">Statistiques</span>
+              <span class="nav-sub">pnl, drawdown, qualite d'execution</span>
             </span>
           </a>
         </nav>
@@ -63,14 +63,14 @@
             <span class="nav-icon nav-icon-green"></span>
             <span class="nav-copy">
               <span class="nav-title">Services</span>
-              <span class="nav-sub">bot, selector, restart</span>
+              <span class="nav-sub">actions systeme, etat, relances</span>
             </span>
           </a>
           <a class="nav-item {% if active == 'logs' %}active{% endif %}" href="/logs" data-nav="logs">
             <span class="nav-icon nav-icon-amber"></span>
             <span class="nav-copy">
               <span class="nav-title">Logs</span>
-              <span class="nav-sub">lecture rapide des fichiers</span>
+              <span class="nav-sub">ouvrir vite le bon fichier et le lire bien</span>
             </span>
           </a>
         </nav>
@@ -97,14 +97,14 @@
             </div>
             <div>
               <div class="mobile-brand-name">{{ app_title }}</div>
-              <div class="mobile-brand-sub">trade cockpit</div>
+              <div class="mobile-brand-sub">cockpit du bot</div>
             </div>
           </div>
 
           <div class="topbar-title">
             <div class="eyebrow">Bot Trading Spot</div>
             <div class="page-title">{{ title or "Dashboard" }}</div>
-            <div class="page-sub">{{ subtitle or "Lecture live pour piloter le bot, le selector et les diagnostics utiles." }}</div>
+            <div class="page-sub">{{ subtitle or "Une lecture directe de l'etat du bot, des services et des signaux qui comptent vraiment." }}</div>
           </div>
         </div>
 
@@ -126,22 +126,22 @@
       </section>
 
       <footer class="footer">
-        <span>Pilotage simplifie pour mobile. Les details bruts restent disponibles dans les logs et les tableaux.</span>
+        <span>Le dashboard met l'accent sur la decision rapide. Les donnees brutes restent accessibles, mais elles ne doivent plus enterrer l'information utile.</span>
       </footer>
     </main>
   </div>
 
   <nav class="bottom-nav" aria-label="navigation mobile">
     <a class="bnav-item {% if active == 'dashboard' %}active{% endif %}" href="/">
-      <span class="bnav-icon">O</span>
-      <span class="bnav-label">Home</span>
+      <span class="bnav-icon">V</span>
+      <span class="bnav-label">Live</span>
     </a>
     <a class="bnav-item {% if active == 'statistics' %}active{% endif %}" href="/statistics">
-      <span class="bnav-icon">P</span>
-      <span class="bnav-label">PnL</span>
+      <span class="bnav-icon">S</span>
+      <span class="bnav-label">Stats</span>
     </a>
     <a class="bnav-item {% if active == 'services' %}active{% endif %}" href="/services">
-      <span class="bnav-icon">S</span>
+      <span class="bnav-icon">O</span>
       <span class="bnav-label">Ops</span>
     </a>
     <a class="bnav-item {% if active == 'logs' %}active{% endif %}" href="/logs">
