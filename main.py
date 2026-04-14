@@ -699,10 +699,13 @@ def main():
     blocked_symbols_file = Path(getattr(cfg, "blockedSymbolsFile", Path("data/blocked_symbols.txt")))
     blockedSymbols.update(load_blocked_symbols(blocked_symbols_file))
     if symbol in blockedSymbols:
-        msg = f"SYMBOL_BLOCKED_PERSISTED symbol={symbol} file={blocked_symbols_file}"
+        # Stay alive and wait for a new symbol instead of triggering a restart loop.
+        msg = (
+            f"SYMBOL_BLOCKED_PERSISTED symbol={symbol} "
+            f"file={blocked_symbols_file} action=WAIT_FOR_SWITCH"
+        )
         print(msg)
         logTrade(msg)
-        sys.exit(0)
 
     # ring buffers:
     # - ticks uses MID for legacy P1..P4 logic

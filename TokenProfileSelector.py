@@ -11,6 +11,9 @@ from core.trade_memory import load_token_scores, sync_trade_memory
 BASE_URL = "https://api.binance.com"
 ROOT_PATH = Path((os.getenv("BOT_ROOT_DIR") or str(Path(__file__).resolve().parent)).strip()).resolve()
 SERVICE_ENV_PATH = str(Path(os.getenv("BOT_SERVICE_ENV_PATH") or (ROOT_PATH / ".service.env")).resolve())
+BLOCKED_SYMBOLS_PATH = Path(
+    (os.getenv("BOT_BLOCKED_SYMBOLS_PATH") or str(ROOT_PATH / "data" / "blocked_symbols.txt")).strip()
+).resolve()
 WINDOW_MINUTES = 10
 HTTP_TIMEOUT = 5
 MAX_WORKERS = 16
@@ -25,6 +28,20 @@ QUOTE_ASSET = "USDC"
 EXCLUDED = {"USDCUSDT", "USDTUSDC"}
 
 _SESSION = requests.Session()
+
+
+def load_blocked_symbols(path: Path) -> set[str]:
+    try:
+        if not path.exists():
+            return set()
+        blocked = set()
+        for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            symbol = raw.strip().upper()
+            if symbol:
+                blocked.add(symbol)
+        return blocked
+    except Exception:
+        return set()
 
 def _read_env_file(path: str) -> dict:
     out = {}
@@ -125,11 +142,13 @@ def change_window_pct(symbol: str):
         return None
     return (c - o) / o * 100.0
 
-def collect_positive_candidates():
+def collect_positive_candidates(excluded_symbols: set[str] | None = None):
     symbols = get_symbols_usdc_trading()
     spread_map = get_spread_map()
     market_map = get_market_stats_map()
+    excluded_symbols = {str(sym).strip().upper() for sym in (excluded_symbols or set()) if str(sym).strip()}
     filter_counts = {
+        "blocked": 0,
         "spread": 0,
         "market": 0,
         "price": 0,
@@ -138,6 +157,9 @@ def collect_positive_candidates():
     }
     eligible_symbols = []
     for sym in symbols:
+        if sym in excluded_symbols:
+            filter_counts["blocked"] += 1
+            continue
         spread = spread_map.get(sym)
         if spread is None or spread > SELECTOR_MAX_SPREAD_PCT:
             filter_counts["spread"] += 1
@@ -160,6 +182,7 @@ def collect_positive_candidates():
     print(
         "TOKEN_SELECTOR: universe "
         f"total={len(symbols)} eligible={len(eligible_symbols)} "
+        f"reject_blocked={filter_counts['blocked']} "
         f"reject_spread={filter_counts['spread']} reject_market={filter_counts['market']} "
         f"reject_price={filter_counts['price']} reject_quote_volume={filter_counts['quote_volume']} "
         f"reject_trade_count={filter_counts['trade_count']} "
@@ -225,8 +248,8 @@ def rank_candidates(candidates, score_map):
     return ranked
 
 
-def pick_best_candidate(score_map):
-    candidates = collect_positive_candidates()
+def pick_best_candidate(score_map, excluded_symbols: set[str] | None = None):
+    candidates = collect_positive_candidates(excluded_symbols=excluded_symbols)
     if not candidates:
         return None, []
     ranked = rank_candidates(candidates, score_map)
@@ -305,7 +328,13 @@ def write_service_env(symbol: str, pct: float, profile: str):
 def main():
     sync_info = sync_trade_memory()
     score_map = load_token_scores()
-    chosen, ranked = pick_best_candidate(score_map)
+    blocked_symbols = load_blocked_symbols(BLOCKED_SYMBOLS_PATH)
+    if blocked_symbols:
+        print(
+            f"TOKEN_SELECTOR: loaded blocked symbols count={len(blocked_symbols)} "
+            f"file={BLOCKED_SYMBOLS_PATH}"
+        )
+    chosen, ranked = pick_best_candidate(score_map, excluded_symbols=blocked_symbols)
     log_selector_memory_state(sync_info, ranked)
 
     if not chosen:
