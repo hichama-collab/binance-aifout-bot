@@ -14,18 +14,28 @@ SERVICE_ENV_PATH = str(Path(os.getenv("BOT_SERVICE_ENV_PATH") or (ROOT_PATH / ".
 BLOCKED_SYMBOLS_PATH = Path(
     (os.getenv("BOT_BLOCKED_SYMBOLS_PATH") or str(ROOT_PATH / "data" / "blocked_symbols.txt")).strip()
 ).resolve()
-WINDOW_MINUTES = 10
+WINDOW_MINUTES = max(3, int(os.getenv("SELECTOR_WINDOW_MINUTES", "10")))
 HTTP_TIMEOUT = 5
 MAX_WORKERS = 16
 SELECTOR_MAX_SPREAD_PCT = float(os.getenv("SELECTOR_MAX_SPREAD_PCT", "0.0025"))
 SELECTOR_MIN_PRICE_USDC = float(os.getenv("SELECTOR_MIN_PRICE_USDC", "0.05"))
 SELECTOR_MIN_QUOTE_VOLUME_USDC_24H = float(os.getenv("SELECTOR_MIN_QUOTE_VOLUME_USDC_24H", "1000000"))
 SELECTOR_MIN_TRADE_COUNT_24H = int(os.getenv("SELECTOR_MIN_TRADE_COUNT_24H", "5000"))
+SELECTOR_MIN_WINDOW_PCT = float(os.getenv("SELECTOR_MIN_WINDOW_PCT", "0.08"))
+SELECTOR_MAX_WINDOW_PCT = float(os.getenv("SELECTOR_MAX_WINDOW_PCT", "1.80"))
+SELECTOR_MAX_WINDOW_PCT_UNKNOWN = float(os.getenv("SELECTOR_MAX_WINDOW_PCT_UNKNOWN", "1.20"))
+SELECTOR_MIN_24H_CHANGE_PCT = float(os.getenv("SELECTOR_MIN_24H_CHANGE_PCT", "-8.0"))
+SELECTOR_MAX_24H_CHANGE_PCT = float(os.getenv("SELECTOR_MAX_24H_CHANGE_PCT", "12.0"))
+SELECTOR_UNKNOWN_SCORE_PENALTY = float(os.getenv("SELECTOR_UNKNOWN_SCORE_PENALTY", "0.05"))
 DEFAULT_PROFILE = (os.getenv("SELECTOR_PROFILE", "major") or "major").strip()
 
 # Universe
 QUOTE_ASSET = "USDC"
 EXCLUDED = {"USDCUSDT", "USDTUSDC"}
+EXCLUDED_BASE_ASSETS = {
+    "USDC", "USDT", "FDUSD", "TUSD", "USDP", "USDS", "USDE", "DAI", "PYUSD",
+    "EUR", "EURC", "AEUR", "USD1",
+}
 
 _SESSION = requests.Session()
 
@@ -61,6 +71,12 @@ def _is_symbol_safe(sym: str) -> bool:
     # Exclude any non-ASCII symbols (e.g. Chinese characters) and empty values.
     # Binance symbols we want are plain ASCII like ABCUSDC.
     return bool(sym) and sym.isascii()
+
+
+def _base_asset(symbol: str) -> str:
+    if symbol.endswith(QUOTE_ASSET):
+        return symbol[:-len(QUOTE_ASSET)]
+    return symbol
 
 def get_symbols_usdc_trading():
     r = _SESSION.get(f"{BASE_URL}/api/v3/exchangeInfo", timeout=HTTP_TIMEOUT)
@@ -149,16 +165,21 @@ def collect_candidates(excluded_symbols: set[str] | None = None, positive_only: 
     excluded_symbols = {str(sym).strip().upper() for sym in (excluded_symbols or set()) if str(sym).strip()}
     filter_counts = {
         "blocked": 0,
+        "base_excluded": 0,
         "spread": 0,
         "market": 0,
         "price": 0,
         "quote_volume": 0,
         "trade_count": 0,
+        "change_24h": 0,
     }
     eligible_symbols = []
     for sym in symbols:
         if sym in excluded_symbols:
             filter_counts["blocked"] += 1
+            continue
+        if _base_asset(sym) in EXCLUDED_BASE_ASSETS:
+            filter_counts["base_excluded"] += 1
             continue
         spread = spread_map.get(sym)
         if spread is None or spread > SELECTOR_MAX_SPREAD_PCT:
@@ -177,15 +198,21 @@ def collect_candidates(excluded_symbols: set[str] | None = None, positive_only: 
         if int(market["trade_count_24h"]) < SELECTOR_MIN_TRADE_COUNT_24H:
             filter_counts["trade_count"] += 1
             continue
+        change_24h = float(market["change_pct_24h"])
+        if change_24h < SELECTOR_MIN_24H_CHANGE_PCT or change_24h > SELECTOR_MAX_24H_CHANGE_PCT:
+            filter_counts["change_24h"] += 1
+            continue
         eligible_symbols.append(sym)
 
     print(
         "TOKEN_SELECTOR: universe "
         f"total={len(symbols)} eligible={len(eligible_symbols)} "
         f"reject_blocked={filter_counts['blocked']} "
+        f"reject_base={filter_counts['base_excluded']} "
         f"reject_spread={filter_counts['spread']} reject_market={filter_counts['market']} "
         f"reject_price={filter_counts['price']} reject_quote_volume={filter_counts['quote_volume']} "
-        f"reject_trade_count={filter_counts['trade_count']} "
+        f"reject_trade_count={filter_counts['trade_count']} reject_change24h={filter_counts['change_24h']} "
+        f"min_window={SELECTOR_MIN_WINDOW_PCT:.2f}% max_window={SELECTOR_MAX_WINDOW_PCT:.2f}% "
         f"min_price={SELECTOR_MIN_PRICE_USDC:.4f} "
         f"min_quote_volume_24h={SELECTOR_MIN_QUOTE_VOLUME_USDC_24H:.0f} "
         f"min_trade_count_24h={SELECTOR_MIN_TRADE_COUNT_24H}"
@@ -205,6 +232,10 @@ def collect_candidates(excluded_symbols: set[str] | None = None, positive_only: 
             if pct is None:
                 continue
             if positive_only and pct <= 0:
+                continue
+            if abs(pct) < SELECTOR_MIN_WINDOW_PCT:
+                continue
+            if abs(pct) > SELECTOR_MAX_WINDOW_PCT:
                 continue
             sym = future_to_symbol[future]
             market = market_map.get(sym) or {}
@@ -226,15 +257,20 @@ def rank_candidates(candidates, score_map):
     for candidate in candidates:
         symbol = candidate["symbol"]
         memory = score_map.get(symbol, {})
+        closed_trades = int(memory.get("closed_trades") or 0)
+        if closed_trades <= 0 and abs(float(candidate["pct"])) > SELECTOR_MAX_WINDOW_PCT_UNKNOWN:
+            continue
         history_bonus = float(memory.get("history_bonus") or 0.0)
-        final_score = float(candidate["pct"]) + history_bonus
+        unknown_penalty = SELECTOR_UNKNOWN_SCORE_PENALTY if closed_trades <= 0 else 0.0
+        final_score = float(candidate["pct"]) + history_bonus - unknown_penalty
         ranked.append({
             **candidate,
             "final_score": final_score,
             "history_bonus": history_bonus,
+            "unknown_penalty": unknown_penalty,
             "is_toxic": bool(memory.get("is_toxic")),
             "toxic_reasons": str(memory.get("toxic_reasons") or ""),
-            "closed_trades": int(memory.get("closed_trades") or 0),
+            "closed_trades": closed_trades,
             "winrate_5": memory.get("winrate_5"),
             "pnl_usdc_5": memory.get("pnl_usdc_5"),
             "avg_pnl_pct_5": memory.get("avg_pnl_pct_5"),
@@ -268,11 +304,8 @@ def choose_fallback_candidate(score_map, excluded_symbols: set[str] | None = Non
     fallback = None
     fallback_mode = ""
 
-    if positive_ranked:
-        fallback = positive_ranked[0]
-        fallback_mode = "best_positive_even_if_toxic"
-    elif any_ranked:
-        fallback = next((item for item in any_ranked if not item["is_toxic"]), None) or any_ranked[0]
+    if any_ranked:
+        fallback = next((item for item in any_ranked if not item["is_toxic"]), None)
         fallback_mode = "best_eligible_any_momentum"
 
     return fallback, fallback_mode, positive_ranked, any_ranked
@@ -290,7 +323,8 @@ def log_selector_memory_state(sync_info, ranked):
         toxic = f" toxic={item['toxic_reasons']}" if item.get("is_toxic") else ""
         print(
             "TOKEN_SELECTOR: "
-            f"cand#{idx} {item['symbol']} var={item['pct']:.2f}% bonus={item['history_bonus']:+.2f} "
+            f"cand#{idx} {item['symbol']} var={item['pct']:.2f}% "
+            f"bonus={item['history_bonus']:+.2f} unk_penalty={item.get('unknown_penalty', 0.0):+.2f} "
             f"score={item['final_score']:.2f} closed={item['closed_trades']} "
             f"price={item.get('last_price', 0.0):.6f} "
             f"qv24h={item.get('quote_volume_24h', 0.0):.0f} trades24h={item.get('trade_count_24h', 0)} "
@@ -352,6 +386,8 @@ def main():
     env_now = _read_env_file(SERVICE_ENV_PATH)
     current_symbol = (env_now.get("SYMBOL") or "").strip().upper()
     blocked_symbols = load_blocked_symbols(BLOCKED_SYMBOLS_PATH)
+    current_symbol_score = score_map.get(current_symbol, {}) if current_symbol else {}
+    current_symbol_blocked = current_symbol in blocked_symbols or bool(current_symbol_score.get("is_toxic"))
     if blocked_symbols:
         print(
             f"TOKEN_SELECTOR: loaded blocked symbols count={len(blocked_symbols)} "
@@ -361,7 +397,7 @@ def main():
     log_selector_memory_state(sync_info, ranked)
 
     if not chosen:
-        if current_symbol and current_symbol in blocked_symbols:
+        if current_symbol and current_symbol_blocked:
             fallback, fallback_mode, positive_ranked, any_ranked = choose_fallback_candidate(
                 score_map,
                 excluded_symbols=blocked_symbols,
@@ -370,9 +406,11 @@ def main():
             if fallback_ranked:
                 log_selector_memory_state(sync_info, fallback_ranked)
             if fallback:
+                current_reason = current_symbol_score.get("toxic_reasons") or "blocked_symbol"
                 print(
                     f"TOKEN_SELECTOR: fallback selected {fallback['symbol']} "
                     f"mode={fallback_mode} current_blocked={current_symbol} "
+                    f"reason={current_reason} "
                     f"var={fallback['pct']:.2f}% toxic={int(bool(fallback.get('is_toxic')))}"
                 )
                 write_service_env(fallback["symbol"], fallback["pct"], DEFAULT_PROFILE)

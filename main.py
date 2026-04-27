@@ -373,6 +373,7 @@ def orderbook_imbalance_ok(bx, symbol: str, min_ratio: float, depth_levels: int)
 
 from core.config import loadConfig, pickProfile, applyRiskConfig, resolveServiceEnvPath
 from core.logging import LogDayContext, tradeLogger, tradeCsvLogger, errorLogger, ensureCsvHeader, local_timestamp
+from core.trade_memory import load_token_scores, sync_trade_memory
 from services.ipguard import vpnCheckOrDie
 
 from exchange.binance import Binance
@@ -450,6 +451,18 @@ def persist_blocked_symbol(path: Path, symbol: str) -> None:
             f.write(symbol + "\n")
     except Exception:
         pass
+
+
+def load_toxic_symbols() -> tuple[set[str], dict[str, str]]:
+    try:
+        sync_trade_memory()
+        toxic_reasons: dict[str, str] = {}
+        for symbol, item in load_token_scores().items():
+            if bool(item.get("is_toxic")):
+                toxic_reasons[symbol] = str(item.get("toxic_reasons") or "").strip()
+        return set(toxic_reasons), toxic_reasons
+    except Exception:
+        return set(), {}
 
 
 def get_symbol_filters(bx: Binance, symbol: str):
@@ -698,11 +711,21 @@ def main():
     blockedSymbols = set()
     blocked_symbols_file = Path(getattr(cfg, "blockedSymbolsFile", Path("data/blocked_symbols.txt")))
     blockedSymbols.update(load_blocked_symbols(blocked_symbols_file))
+    toxicSymbols, toxicReasons = load_toxic_symbols()
+    blockedSymbols.update(toxicSymbols)
+    if toxicSymbols:
+        msg = (
+            f"TOXIC_MEMORY_LOADED count={len(toxicSymbols)} "
+            f"symbols={','.join(sorted(toxicSymbols)[:10])}"
+        )
+        print(msg)
+        logTrade(msg)
     if symbol in blockedSymbols:
         # Stay alive and wait for a new symbol instead of triggering a restart loop.
+        block_reason = toxicReasons.get(symbol) or "persisted_blocked_symbol"
         msg = (
             f"SYMBOL_BLOCKED_PERSISTED symbol={symbol} "
-            f"file={blocked_symbols_file} action=WAIT_FOR_SWITCH"
+            f"file={blocked_symbols_file} action=WAIT_FOR_SWITCH reason={block_reason}"
         )
         print(msg)
         logTrade(msg)
