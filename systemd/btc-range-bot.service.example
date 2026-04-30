@@ -1,0 +1,17 @@
+[Unit]
+Description=BTC Range Bot V1
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/binance-aifout-bot
+EnvironmentFile=-/opt/binance-aifout-bot/.btc_range.env
+ExecStart=/opt/binance-aifout-bot/.venv/bin/python -m btc_range_v1.main
+Restart=always
+RestartSec=2
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

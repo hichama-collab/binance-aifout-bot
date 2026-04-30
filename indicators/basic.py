@@ -1,10 +1,8 @@
 from decimal import Decimal, ROUND_DOWN
 import pandas as pd
 
-
 def ema(s: pd.Series, n: int) -> pd.Series:
     return s.ewm(span=n, adjust=False).mean()
-
 
 def rsi(s: pd.Series, n: int = 14) -> pd.Series:
     d = s.diff()
@@ -18,12 +16,19 @@ def rsi(s: pd.Series, n: int = 14) -> pd.Series:
     out = out.mask((avg_loss == 0) & (avg_gain == 0), 50.0)
     return out
 
+def atr(highs: pd.Series, lows: pd.Series, closes: pd.Series, n: int = 14) -> pd.Series:
+    """Calculate Average True Range."""
+    prev_close = closes.shift(1)
+    tr1 = highs - lows
+    tr2 = (highs - prev_close).abs()
+    tr3 = (lows - prev_close).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    return tr.ewm(span=n, adjust=False, min_periods=n).mean()
 
 def dec(x) -> Decimal:
     if isinstance(x, Decimal):
         return x
     return Decimal(str(x))
-
 
 def fmt(x, quantum=Decimal("0.00000001")) -> str:
     d = dec(x)
@@ -35,13 +40,11 @@ def fmt(x, quantum=Decimal("0.00000001")) -> str:
         s = "0"
     return s
 
-
 class Signals:
     def __init__(self, ema_ok, rsi, vol_ok):
         self.ema_ok = ema_ok
         self.rsi = rsi
         self.vol_ok = vol_ok
-
 
 class MarketContext:
     def __init__(self, ret_1m, ret_3m, ret_5m, range_5m, ret_5m_kline):
@@ -51,14 +54,12 @@ class MarketContext:
         self.range_5m = range_5m
         self.ret_5m_kline = ret_5m_kline
 
-
 def _klines(bx, symbol, interval, limit):
     return bx.get("/api/v3/klines", {
         "symbol": symbol,
         "interval": interval,
         "limit": limit
     })
-
 
 def computeSignals(bx, symbol, profile):
     k1 = _klines(bx, symbol, "1m", 50)
@@ -80,7 +81,6 @@ def computeSignals(bx, symbol, profile):
         Signals(ema1_ok, rsi1, vol_ok),
         Signals(ema5_ok, rsi5, vol_ok)
     )
-
 
 def computeMarketContext(bx, symbol):
     k1 = _klines(bx, symbol, "1m", 8)
@@ -110,3 +110,18 @@ def computeMarketContext(bx, symbol):
         range_5m=range_5m,
         ret_5m_kline=_ret(c5, 1),
     )
+
+def computeTrendState(klines, fast=20, slow=50):
+    """Analyze trend state from klines. Returns: (trend_ok, trend_pct, ema_fast, ema_slow)"""
+    if len(klines) < slow + 5:
+        return True, 0.0, 0.0, 0.0
+
+    closes = pd.Series([float(k[4]) for k in klines])
+    ema_fast = ema(closes, fast).iloc[-1]
+    ema_slow = ema(closes, slow).iloc[-1]
+    last_close = closes.iloc[-1]
+
+    trend_pct = (last_close - ema_slow) / ema_slow if ema_slow > 0 else 0
+    trend_ok = last_close >= ema_slow * 0.985 or trend_pct >= -0.01
+
+    return trend_ok, trend_pct, ema_fast, ema_slow

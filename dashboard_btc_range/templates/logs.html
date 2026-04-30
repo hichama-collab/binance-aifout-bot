@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% set title = "Logs" %}
+{% set active = "logs" %}
+{% set subtitle = "Trouver vite les journaux BTC range et lire le bon extrait sans sortir de la page." %}
+{% block content %}
+<div class="grid grid-12 gap-16">
+  <div class="card card-purple col-12 col-xl-4">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Fichiers utiles</div>
+        <div class="card-sub">On remonte uniquement les fichiers lies au bot BTC range pour eviter le bruit du bot principal.</div>
+      </div>
+      <div class="pill pill-purple" id="logs-pill">--</div>
+    </div>
+    <div class="log-runtime-card">
+      <div class="section-kicker">Chemins utiles</div>
+      <div class="kv2 kv2-compact">
+        <div class="k">Base</div><div class="v">{{ base }}</div>
+        <div class="k">Logs</div><div class="v">{{ logs }}</div>
+        <div class="k">Host</div><div class="v">{{ host }}</div>
+      </div>
+    </div>
+    <div class="log-list" id="logs-list">
+      <div class="empty-state compact">Chargement...</div>
+    </div>
+  </div>
+
+  <div class="card card-slate col-12 col-xl-8">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Lecture</div>
+        <div class="card-sub">Le viewer reste grand, avec juste les actions utiles pour lire vite un tail recent.</div>
+      </div>
+      <div class="pill" id="log-current">Aucun fichier</div>
+    </div>
+    <div class="log-toolbar">
+      <button class="btn btn-ghost" id="btnTail200">Tail 200</button>
+      <button class="btn btn-ghost" id="btnTail600">Tail 600</button>
+    </div>
+    <pre class="logbox logbox-tall" id="log-view">Choisis un fichier a gauche pour commencer.</pre>
+  </div>
+</div>
+{% endblock %}

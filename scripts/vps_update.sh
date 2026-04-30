@@ -8,7 +8,8 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_dir"
 
-trade_ssh_dir="/mnt/data/Trade/.ssh"
+trade_dir="$(cd "${repo_dir}/.." && pwd)"
+trade_ssh_dir="${trade_dir}/.ssh"
 if [ -f "${trade_ssh_dir}/id_ed25519" ]; then
   export GIT_SSH_COMMAND="ssh -i ${trade_ssh_dir}/id_ed25519 -o IdentitiesOnly=yes"
 fi
