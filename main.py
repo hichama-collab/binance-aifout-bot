@@ -385,6 +385,9 @@ from state.position import Position
 
 from indicators.basic import fmt, computeSignals, computeMarketContext
 
+# NEW: Import range logic for BTC Range V1
+from btc_range_v1.logic import build_range_snapshot, range_market_ok, entry_signal, update_position, RangeSnapshot
+
 
 def round_step(qty: float, step: float) -> float:
     dqty = Decimal(str(qty))
@@ -618,6 +621,16 @@ def _pending_token_switch(current_symbol: str, last_env_mtime: float):
     except Exception:
         return None, last_env_mtime
 
+def save_status_json(runtime_dir: Path, data: dict):
+    """Save current bot status to JSON for dashboard monitoring."""
+    try:
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        tmp = runtime_dir / "btc_range_v1_status.json.tmp"
+        tmp.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+        tmp.replace(runtime_dir / "btc_range_v1_status.json")
+    except Exception:
+        pass
+
 def main():
     symbol = _resolve_start_symbol()
     if not symbol:
@@ -678,6 +691,11 @@ def main():
     momRangeRelaxPct = float(getattr(cfg, "momRangeRelaxPct", 0.6))
     momRangeRelaxUpRatio = float(getattr(cfg, "momRangeRelaxUpRatio", 0.75))
 
+    # NEW: BTC Range V1 params
+    range_enabled = bool(getattr(cfg, "rangeEnabled", False))
+    range_timeframe = str(getattr(cfg, "rangeTimeframe", "5m"))
+    range_window_bars = int(getattr(cfg, "rangeWindowBars", 24))
+
     logTrade(f"SESSION_START symbol={symbol} dry_run={int(bool(getattr(cfg,'dryRun',False)))} profile={profile.name} strategy={getattr(cfg,'strategyName','')} base_url={cfg.baseUrl}")
 
     print(
@@ -696,6 +714,12 @@ def main():
         f"rangeMinPct={momRangeMinPct} rangeRelaxPct={momRangeRelaxPct} "
         f"rangeRelaxUpRatio={momRangeRelaxUpRatio}"
     )
+    print(f"CFG TTL={cfg.orderTtl}s POLL={cfg.orderPoll}s")
+    if range_enabled:
+        print(
+            f"RANGE_V1 timeframe={range_timeframe} window={range_window_bars}bars "
+            f"enabled={range_enabled}"
+        )
     print(f"CFG TTL={cfg.orderTtl}s POLL={cfg.orderPoll}s")
     if getattr(cfg, "dryRun", False):
         print("DRY_RUN ON (no real orders)")
@@ -736,6 +760,11 @@ def main():
     ticks = []
     bidTicks = []
 
+    # NEW: Klines buffer for range analysis
+    klines_buffer = []
+    last_kline_fetch = 0.0
+    kline_refresh_sec = 30.0
+
     stream.start()
     lastChk = 0.0
     lastTickSeq = 0
@@ -744,6 +773,9 @@ def main():
     holdCsvEvery = float(getattr(cfg, 'holdCsvEvery', 60))
     signalCache = {"ts": 0.0, "s1": None, "s5": None, "market": None}
     signalRefreshSec = float(getattr(cfg, "signalRefreshSec", 15.0) or 15.0)
+
+    # NEW: Runtime dir for status JSON
+    runtime_dir = Path(getattr(cfg, "dataDir", "data")) / "runtime"
 
     def sync_log_day_anchor(position):
         if position is None:
@@ -773,6 +805,27 @@ def main():
         except Exception as e:
             logErr("SIGNAL_FETCH_FAIL", e)
             return None, None, None
+
+    # NEW: Fetch klines for range analysis
+    def fetch_klines_for_range():
+        nonlocal klines_buffer, last_kline_fetch
+        now = time.time()
+        if now - last_kline_fetch < kline_refresh_sec and klines_buffer:
+            return klines_buffer
+        try:
+            limit = max(range_window_bars + 10, 50)
+            klines = bx.get("/api/v3/klines", {
+                "symbol": symbol,
+                "interval": range_timeframe,
+                "limit": limit
+            })
+            if isinstance(klines, list) and len(klines) >= range_window_bars:
+                klines_buffer = klines
+                last_kline_fetch = now
+                return klines_buffer
+        except Exception as e:
+            logErr("KLINES_FETCH_FAIL", e)
+        return klines_buffer
 
     def maybe_hold(
         now,
@@ -955,6 +1008,24 @@ def main():
             P3 = _get_p(ticks, 3)
             P4 = _get_p(ticks, 4)
 
+            # NEW: Range analysis for BTC Range V1
+            range_snapshot = None
+            range_plan = None
+            range_signal = None
+            range_rebound = 0.0
+            if range_enabled:
+                try:
+                    klines = fetch_klines_for_range()
+                    if klines and len(klines) >= range_window_bars:
+                        range_snapshot = build_range_snapshot(klines, cfg)
+                        range_ok, range_reason = range_market_ok(range_snapshot, cfg)
+                        if range_ok:
+                            range_signal, range_reason, range_plan, range_rebound = entry_signal(
+                                range_snapshot, bid, spread, bidTicks, cfg
+                            )
+                except Exception as e:
+                    logErr("RANGE_ANALYSIS_FAIL", e)
+
             if now - lastChk >= cfg.chkEvery:
                 lastChk = now
                 chk_msg = (
@@ -966,8 +1037,55 @@ def main():
                     f"P3:{fmt(P3) if P3 is not None else 'NA'} P4:{fmt(P4) if P4 is not None else 'NA'} "
                     f"STATE:{'IN_POS' if pos else 'IDLE'}"
                 )
+                # NEW: Add range metrics to CHK log
+                if range_snapshot:
+                    chk_msg += (
+                        f" | RANGE_V1 low={fmt(range_snapshot.low)} high={fmt(range_snapshot.high)} "
+                        f"range_pct={fmt(range_snapshot.rangePct*100)}% "
+                        f"drift={fmt(range_snapshot.driftPct*100)}% "
+                        f"trend_ok={range_snapshot.trendOk} atr={fmt(range_snapshot.atr)}"
+                    )
                 print(chk_msg)
                 logTrade(chk_msg)
+
+                # NEW: Save status JSON for dashboard
+                status_data = {
+                    "ts": now,
+                    "symbol": symbol,
+                    "bid": bid,
+                    "ask": ask,
+                    "spread_pct": spread * 100,
+                    "state": "IN_POS" if pos else "IDLE",
+                    "mom_pct": momPct * 100,
+                    "mom_range_pct": momRangePct * 100,
+                    "up_ratio": upRatio * 100,
+                }
+                if range_snapshot:
+                    status_data["snapshot"] = {
+                        "low": range_snapshot.low,
+                        "high": range_snapshot.high,
+                        "mid": range_snapshot.mid,
+                        "rangePct": range_snapshot.rangePct,
+                        "driftPct": range_snapshot.driftPct,
+                        "trendOk": range_snapshot.trendOk,
+                        "atr": range_snapshot.atr,
+                    }
+                if pos:
+                    status_data["position"] = {
+                        "qty": getattr(pos, 'qty', 0),
+                        "entry": getattr(pos, 'entry', 0),
+                        "stop": getattr(pos, 'stop', 0),
+                        "target": getattr(pos, 'target', 0),
+                        "protectArmed": getattr(pos, 'protectArmed', False),
+                    }
+                if range_plan:
+                    status_data["range_plan"] = {
+                        "entryZone": range_plan.entryZone,
+                        "targetPrice": range_plan.targetPrice,
+                        "stopPrice": range_plan.stopPrice,
+                        "rewardRisk": range_plan.rewardRisk,
+                    }
+                save_status_json(runtime_dir, status_data)
             
             # Management rule: never consult .service.env while a position is open.
             # Token changes are only read/applied when fully idle.
@@ -997,7 +1115,11 @@ def main():
             entryMode = ""
             pEntryEnabled = bool(getattr(cfg, "pEntryEnabled", True))
             if pos is None and not pendingSwitchSymbol and has_new_tick:
-                if burstOk:
+                # NEW: BTC Range V1 entry signal
+                if range_enabled and range_signal:
+                    buySignal = True
+                    entryMode = "RANGE_V1"
+                elif burstOk:
                     buySignal = True
                     entryMode = "BURST"
                 elif pEntryEnabled and (
@@ -1013,6 +1135,7 @@ def main():
 
             if buySignal:
                 burstOverride = entryMode == "BURST"
+                rangeOverride = entryMode == "RANGE_V1"
 
                 if symbol in blockedSymbols:
                     maybe_hold(
@@ -1128,7 +1251,37 @@ def main():
                     print(burst_msg)
                     logTrade(burst_msg)
 
-                if (not burstOverride) and (not momOk):
+                # NEW: Range V1 validation
+                if rangeOverride and range_plan:
+                    if not range_signal:
+                        maybe_hold(
+                            now,
+                            'HOLD_RANGE_V1',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            detail=f"range_reason={range_reason}",
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+                    range_msg = (
+                        f"RANGE_V1_TRIGGER low={range_snapshot.low:.2f} high={range_snapshot.high:.2f} "
+                        f"entry_zone={range_plan.entryZone:.2f} target={range_plan.targetPrice:.2f} "
+                        f"stop={range_plan.stopPrice:.2f} rr={range_plan.rewardRisk:.2f} "
+                        f"rebound={range_rebound*100:.4f}%"
+                    )
+                    print(range_msg)
+                    logTrade(range_msg)
+
+                if (not burstOverride and not rangeOverride) and (not momOk):
                     maybe_hold(
                         now,
                         'HOLD_MOM',
@@ -1147,7 +1300,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if (not burstOverride) and strict_up_moves < entry_min_strict_ups:
+                if (not burstOverride and not rangeOverride) and strict_up_moves < entry_min_strict_ups:
                     maybe_hold(
                         now,
                         'HOLD_TAPE',
@@ -1167,7 +1320,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if (not burstOverride) and required_tape_progress_pct > 0 and tape_progress_pct < required_tape_progress_pct:
+                if (not burstOverride and not rangeOverride) and required_tape_progress_pct > 0 and tape_progress_pct < required_tape_progress_pct:
                     maybe_hold(
                         now,
                         'HOLD_TAPE',
@@ -1190,7 +1343,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if (not burstOverride) and hard_min_up_ratio > 0 and upRatio < hard_min_up_ratio:
+                if (not burstOverride and not rangeOverride) and hard_min_up_ratio > 0 and upRatio < hard_min_up_ratio:
                     maybe_hold(
                         now,
                         'HOLD_UPRATIO',
@@ -1210,7 +1363,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if (not burstOverride) and bool(getattr(cfg, "tickEntryEnabled", False)):
+                if (not burstOverride and not rangeOverride) and bool(getattr(cfg, "tickEntryEnabled", False)):
                     tick_ok, tick_prog = tick_confirmation_ok(
                         ticks,
                         int(getattr(cfg, "tickEntryLookback", 3)),
@@ -1236,7 +1389,7 @@ def main():
                         time.sleep(cfg.idleSleep)
                         continue
 
-                if (not burstOverride) and bool(getattr(cfg, "flowDefenseEnabled", False)):
+                if (not burstOverride and not rangeOverride) and bool(getattr(cfg, "flowDefenseEnabled", False)):
                     flow_ok, flow_ratio, worst_drop_pct, flow_net_pct = flow_pressure_ok(
                         ticks,
                         int(getattr(cfg, "flowLookback", 8)),
@@ -1267,7 +1420,7 @@ def main():
                         time.sleep(cfg.idleSleep)
                         continue
 
-                if (not burstOverride) and lastExitInfo and lastExitInfo.get("symbol") == symbol:
+                if (not burstOverride and not rangeOverride) and lastExitInfo and lastExitInfo.get("symbol") == symbol:
                     last_reason = str(lastExitInfo.get("reason") or "")
                     last_pnl = float(lastExitInfo.get("pnl", 0.0) or 0.0)
                     last_exit_ts = float(lastExitInfo.get("ts", 0.0) or 0.0)
@@ -1342,7 +1495,7 @@ def main():
                             time.sleep(cfg.idleSleep)
                             continue
 
-                if (not burstOverride) and max_mom_pct > 0 and momPct > max_mom_pct:
+                if (not burstOverride and not rangeOverride) and max_mom_pct > 0 and momPct > max_mom_pct:
                     maybe_hold(
                         now,
                         'HOLD_CHASE',
@@ -1361,7 +1514,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if (not burstOverride) and required_range_pct > 0 and momRangePct < required_range_pct:
+                if (not burstOverride and not rangeOverride) and required_range_pct > 0 and momRangePct < required_range_pct:
                     maybe_hold(
                         now,
                         'HOLD_RANGE',
@@ -1381,7 +1534,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if (not burstOverride) and spread > spreadLimit:
+                if (not burstOverride and not rangeOverride) and spread > spreadLimit:
                     maybe_hold(
                         now,
                         'HOLD_SPREAD',
@@ -1401,7 +1554,7 @@ def main():
                     time.sleep(cfg.idleSleep)
                     continue
 
-                if not burstOverride:
+                if not burstOverride and not rangeOverride:
                     s1, s5, market_ctx = load_signal_snapshot(now)
                     if s1 is None or s5 is None or market_ctx is None:
                         maybe_hold(
@@ -1717,6 +1870,12 @@ def main():
                         f"eff={burstStats['efficiency']:.3f} "
                         f"pressure={burstStats['pressure_ratio']:.2f} "
                         f"drop={burstStats['max_single_drop_pct']*100:.4f}%"
+                    )
+                elif rangeOverride:
+                    entry_reason = (
+                        f"RANGE_V1 low={range_snapshot.low:.2f} high={range_snapshot.high:.2f} "
+                        f"entry_zone={range_plan.entryZone:.2f} target={range_plan.targetPrice:.2f} "
+                        f"stop={range_plan.stopPrice:.2f} rr={range_plan.rewardRisk:.2f}"
                     )
                 else:
                     entry_reason = f"PBUY P1={P1} P2={P2} P3={P3} P4={P4}"
