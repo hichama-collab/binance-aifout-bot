@@ -1,5 +1,6 @@
 Binance Spot Scalping Bot (LIMIT only)
 
+
 Quick start
 - ./scripts/setup-venv.sh
 - PROFILE=strict STRATEGY=momentum ./scripts/start.sh PEPEUSDC
