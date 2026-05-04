@@ -89,7 +89,7 @@ profiles:
     tp_min_pct: 0.006          # was 0.004
     maxPosTime: 240
     hardMaxPosTime: 1200
-    cap_usdc: 75
+    cap_usdc: 1000
     mom_max_pct: 0.0020
     rsi_buy_max: 70
     mom_min_pct: 0.00050       # was 0.00035
