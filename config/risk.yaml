@@ -13,7 +13,7 @@ profiles:
     spread_max: 0.0018
     rsi_min: 25
     rsi_max: 90
-    entry_fill_ttl_sec: 3.0
+    entry_fill_ttl_sec: 1.5    # was 3.0
     entry_cooldown_sec: 20
     entry_cross_spread: false
     entry_auto_cross_spread_pct: 0.0006
@@ -35,10 +35,10 @@ profiles:
     armPct: 0.008              # was 0.006
     trailPct: 0.004
     feeBufPct: 0.0015
-    protect_arm_pct: 0.0024
-    protect_lock_pct: 0.0012
-    protect_giveback_pct: 0.0012
-    psell_min_age_sec: 35      # was 18
+    protect_arm_pct: 0.0040    # was 0.0024
+    protect_lock_pct: 0.0020   # was 0.0012
+    protect_giveback_pct: 0.0020  # was 0.0012
+    psell_min_age_sec: 45      # was 35
     psell_min_loss_pct: 0.0050 # was 0.0035
     psell_current_loss_pct: 0.0040  # was 0.0026
     psell_stale_age_sec: 90    # was 75
@@ -47,7 +47,7 @@ profiles:
     psell_fail_age_sec: 55     # was 45
     psell_fail_loss_pct: 0.0018     # was 0.0012
     psell_fail_max_high_pct: 0.0018
-    psell_5m_age_sec: 35       # was 20
+    psell_5m_age_sec: 0        # was 35 — ROLL5 désactivé
     psell_5m_loss_pct: 0.0020  # was 0.0010
     psell_5m_drop_pct: 0.0010
     psell_5m_negative_ret_pct: -0.0002
@@ -64,12 +64,12 @@ profiles:
     flow_min_ratio: 1.15
     flow_max_single_drop_pct: 0.0025
     burst_entry_enabled: true
-    burst_lookback_ticks: 4
-    burst_max_window_sec: 4.0
+    burst_lookback_ticks: 3    # was 4
+    burst_max_window_sec: 2.5  # was 4.0
     burst_min_return_pct: 0.00020
     burst_min_return_vs_fee_buf: 0.8
     burst_min_move_vs_spread: 4.0
-    burst_min_velocity_pct_per_sec: 0.00060
+    burst_min_velocity_pct_per_sec: 0.00080  # was 0.00060
     burst_min_efficiency: 0.55
     burst_min_pressure_ratio: 1.8
     burst_max_single_drop_pct: 0.00010
