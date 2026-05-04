@@ -1,6 +1,6 @@
 profiles:
   major:
-    mom_min_up_ratio: 0.30
+    mom_min_up_ratio: 0.45     # was 0.30
     mom_range_min_pct: 0
     mom_use_instant: false
     mom_lookback: 5
@@ -31,31 +31,31 @@ profiles:
     mom_relax_strong_mult: 0.6
     mom_relax_mid_mult: 0.8
     riskPct: 0.008
-    tpPct: 0.009
-    armPct: 0.006
+    tpPct: 0.013               # was 0.009
+    armPct: 0.008              # was 0.006
     trailPct: 0.004
     feeBufPct: 0.0015
     protect_arm_pct: 0.0024
     protect_lock_pct: 0.0012
     protect_giveback_pct: 0.0012
-    psell_min_age_sec: 18
-    psell_min_loss_pct: 0.0035
-    psell_current_loss_pct: 0.0026
-    psell_stale_age_sec: 75
-    psell_stale_loss_pct: 0.0012
+    psell_min_age_sec: 35      # was 18
+    psell_min_loss_pct: 0.0050 # was 0.0035
+    psell_current_loss_pct: 0.0040  # was 0.0026
+    psell_stale_age_sec: 90    # was 75
+    psell_stale_loss_pct: 0.0020    # was 0.0012
     psell_confirm_ticks: 4
-    psell_fail_age_sec: 45
-    psell_fail_loss_pct: 0.0012
+    psell_fail_age_sec: 55     # was 45
+    psell_fail_loss_pct: 0.0018     # was 0.0012
     psell_fail_max_high_pct: 0.0018
-    psell_5m_age_sec: 20
-    psell_5m_loss_pct: 0.0010
+    psell_5m_age_sec: 35       # was 20
+    psell_5m_loss_pct: 0.0020  # was 0.0010
     psell_5m_drop_pct: 0.0010
     psell_5m_negative_ret_pct: -0.0002
     reentry_loss_cooldown_sec: 90
     reentry_trail_cooldown_sec: 60
     reentry_recovery_pct: 0.0015
     p_entry_enabled: false
-    entry_hard_min_up_ratio: 0.35
+    entry_hard_min_up_ratio: 0.45 # was 0.35
     entry_min_strict_ups: 2
     entry_min_tape_progress_pct: 0.0002
     entry_min_tape_progress_vs_spread: 0.85
@@ -86,14 +86,14 @@ profiles:
     burst_follow_ttl_sec: 4.0
     burst_follow_min_extension_pct: 0.00008
     burst_exit_under_entry_pct: 0.00004
-    tp_min_pct: 0.004
+    tp_min_pct: 0.006          # was 0.004
     maxPosTime: 240
     hardMaxPosTime: 1200
     cap_usdc: 75
     mom_max_pct: 0.0020
     rsi_buy_max: 70
-    mom_min_pct: 0.00035
-    mom_window_sec: 16
+    mom_min_pct: 0.00050       # was 0.00035
+    mom_window_sec: 8          # was 16
     min_range_entry_pct: 0.0002
     min_range_vs_spread: 0.45
     min_order_notional_usdc: 5.0
