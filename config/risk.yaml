@@ -1,6 +1,6 @@
 profiles:
   major:
-    mom_min_up_ratio: 0.45     # was 0.30
+    mom_min_up_ratio: 0.38     # was 0.45
     mom_range_min_pct: 0
     mom_use_instant: false
     mom_lookback: 5
@@ -13,7 +13,7 @@ profiles:
     spread_max: 0.0018
     rsi_min: 25
     rsi_max: 90
-    entry_fill_ttl_sec: 1.5    # was 3.0
+    entry_fill_ttl_sec: 2.0    # was 1.5
     entry_cooldown_sec: 20
     entry_cross_spread: false
     entry_auto_cross_spread_pct: 0.0006
@@ -55,7 +55,7 @@ profiles:
     reentry_trail_cooldown_sec: 60
     reentry_recovery_pct: 0.0015
     p_entry_enabled: false
-    entry_hard_min_up_ratio: 0.45 # was 0.35
+    entry_hard_min_up_ratio: 0.38 # was 0.45
     entry_min_strict_ups: 2
     entry_min_tape_progress_pct: 0.0002
     entry_min_tape_progress_vs_spread: 0.85
@@ -69,7 +69,7 @@ profiles:
     burst_min_return_pct: 0.00020
     burst_min_return_vs_fee_buf: 0.8
     burst_min_move_vs_spread: 4.0
-    burst_min_velocity_pct_per_sec: 0.00080  # was 0.00060
+    burst_min_velocity_pct_per_sec: 0.00050  # was 0.00080
     burst_min_efficiency: 0.55
     burst_min_pressure_ratio: 1.8
     burst_max_single_drop_pct: 0.00010
@@ -93,7 +93,7 @@ profiles:
     mom_max_pct: 0.0020
     rsi_buy_max: 70
     mom_min_pct: 0.00050       # was 0.00035
-    mom_window_sec: 8          # was 16
+    mom_window_sec: 12         # was 8
     min_range_entry_pct: 0.0002
     min_range_vs_spread: 0.45
     min_order_notional_usdc: 5.0
