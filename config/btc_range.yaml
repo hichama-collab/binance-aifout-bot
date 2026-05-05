@@ -5,155 +5,29 @@ profiles:
     rangeWindowBars: 24
     contextWindowBars: 72
     rangeRefreshSec: 30.0
-
-    # Range filters
     minRangePct: 0.0025
     maxRangePct: 0.0180
     trendMaxDriftPct: 0.0120
-
-    # NEW: Trend filter
-    trendMaxAgainstPct: 0.015
-
-    # Entry zone (lower = buy closer to low)
-    buyZoneFrac: 0.15
-    targetZoneFrac: 0.80
-
-    # Tighter stop
-    stopRangeFrac: 0.08
-
-    # NEW: ATR stop
-    atrStopMult: 1.5
-    minStopDistancePct: 0.003
-
-    minRewardRisk: 1.50
-
-    # Stronger rebound confirmation
-    reboundConfirmTicks: 5
-    reboundMinPct: 0.0005
-    reboundMinUpRatio: 0.6
+    buyZoneFrac: 0.22
+    targetZoneFrac: 0.78
+    stopRangeFrac: 0.14
+    minRewardRisk: 1.25
+    reboundConfirmTicks: 3
+    reboundMinPct: 0.00035
     ticksKeepSec: 900.0
-
     spreadMaxPct: 0.0008
     entryCrossSpread: false
     entryAutoCrossSpreadPct: 0.00020
-
     maxUsdcPerTrade: 75.0
     minOrderNotionalUsdc: 10.0
-
-    # Earlier protection
-    protectActivateFrac: 0.25
-    protectLockFrac: 0.05
-
-    # NEW: Trailing stop
-    trailStopPct: 0.004
-
-    # Shorter hold times
-    maxHoldSec: 3600.0
-    staleAfterSec: 1200.0
+    protectActivateFrac: 0.35
+    protectLockFrac: 0.10
+    maxHoldSec: 7200.0
+    staleAfterSec: 1800.0
     staleMinProgressFrac: 0.12
-
     entryCooldownSec: 180.0
     cooldownWinSec: 90.0
     cooldownLossSec: 240.0
-
     chkEvery: 30.0
     idleSleep: 0.5
-    allowExistingBaseBalance: false
-
-  # NEW: Conservative profile for testing
-  conservative:
-    symbol: BTCUSDC
-    rangeTimeframe: 5m
-    rangeWindowBars: 24
-    contextWindowBars: 96
-    rangeRefreshSec: 30.0
-
-    minRangePct: 0.0030
-    maxRangePct: 0.0150
-    trendMaxDriftPct: 0.0080
-    trendMaxAgainstPct: 0.010
-
-    buyZoneFrac: 0.12
-    targetZoneFrac: 0.85
-    stopRangeFrac: 0.06
-    atrStopMult: 1.2
-    minStopDistancePct: 0.002
-
-    minRewardRisk: 2.0
-
-    reboundConfirmTicks: 7
-    reboundMinPct: 0.0008
-    reboundMinUpRatio: 0.7
-    ticksKeepSec: 900.0
-
-    spreadMaxPct: 0.0006
-    entryCrossSpread: false
-    entryAutoCrossSpreadPct: 0.00015
-
-    maxUsdcPerTrade: 50.0
-    minOrderNotionalUsdc: 10.0
-
-    protectActivateFrac: 0.20
-    protectLockFrac: 0.03
-    trailStopPct: 0.003
-
-    maxHoldSec: 2700.0
-    staleAfterSec: 900.0
-    staleMinProgressFrac: 0.15
-
-    entryCooldownSec: 300.0
-    cooldownWinSec: 120.0
-    cooldownLossSec: 360.0
-
-    chkEvery: 30.0
-    idleSleep: 0.5
-    allowExistingBaseBalance: false
-
-  # NEW: Aggressive profile (higher risk, higher reward)
-  aggressive:
-    symbol: BTCUSDC
-    rangeTimeframe: 5m
-    rangeWindowBars: 12
-    contextWindowBars: 48
-    rangeRefreshSec: 15.0
-
-    minRangePct: 0.0020
-    maxRangePct: 0.0200
-    trendMaxDriftPct: 0.0150
-    trendMaxAgainstPct: 0.020
-
-    buyZoneFrac: 0.18
-    targetZoneFrac: 0.75
-    stopRangeFrac: 0.10
-    atrStopMult: 2.0
-    minStopDistancePct: 0.004
-
-    minRewardRisk: 1.20
-
-    reboundConfirmTicks: 4
-    reboundMinPct: 0.0004
-    reboundMinUpRatio: 0.55
-    ticksKeepSec: 600.0
-
-    spreadMaxPct: 0.0010
-    entryCrossSpread: true
-    entryAutoCrossSpreadPct: 0.00030
-
-    maxUsdcPerTrade: 100.0
-    minOrderNotionalUsdc: 10.0
-
-    protectActivateFrac: 0.30
-    protectLockFrac: 0.08
-    trailStopPct: 0.005
-
-    maxHoldSec: 1800.0
-    staleAfterSec: 600.0
-    staleMinProgressFrac: 0.10
-
-    entryCooldownSec: 120.0
-    cooldownWinSec: 60.0
-    cooldownLossSec: 180.0
-
-    chkEvery: 15.0
-    idleSleep: 0.3
     allowExistingBaseBalance: false

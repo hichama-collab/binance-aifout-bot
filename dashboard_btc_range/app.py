@@ -13,15 +13,18 @@ from pathlib import Path
 
 from flask import Flask, Response, jsonify, render_template, request
 
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = REPO_ROOT / "dashboard" / "static"
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 app = Flask(__name__, template_folder=str(TEMPLATES_DIR), static_folder=str(STATIC_DIR))
 
+
 def _env(name: str, default: str = "") -> str:
     v = os.environ.get(name)
     return default if v is None else str(v)
+
 
 APP_TITLE = _env("APP_TITLE", "Hicham AIFOUT BTC Range")
 BASE_DIR = Path(_env("BOT_BASE_DIR", str(REPO_ROOT))).resolve()
@@ -35,12 +38,15 @@ DASH_PASS = _env("DASH_PASS", "")
 MAX_TAIL_LINES = 800
 UNITS = [BOT_UNIT, DASH_UNIT]
 
+
 @app.context_processor
 def inject_branding():
     return {"app_title": APP_TITLE}
 
+
 def _unauthorized():
     return Response("unauthorized", 401, {"WWW-Authenticate": f'Basic realm="{APP_TITLE}"'})
+
 
 def require_basic_auth(fn):
     @wraps(fn)
@@ -51,10 +57,13 @@ def require_basic_auth(fn):
         if not auth or auth.username != DASH_USER or auth.password != DASH_PASS:
             return _unauthorized()
         return fn(*args, **kwargs)
+
     return wrapper
+
 
 def utc_now_str() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+
 
 def _read_env_file(path: Path) -> dict[str, str]:
     out: dict[str, str] = {}
@@ -71,6 +80,7 @@ def _read_env_file(path: Path) -> dict[str, str]:
         return {}
     return out
 
+
 def load_runtime_env() -> dict[str, str]:
     data = _read_env_file(RANGE_ENV)
     merged = dict(data)
@@ -78,6 +88,7 @@ def load_runtime_env() -> dict[str, str]:
         if os.getenv(key) is not None:
             merged[key] = str(os.getenv(key))
     return merged
+
 
 def read_range_config() -> dict[str, str]:
     env = load_runtime_env()
@@ -87,6 +98,7 @@ def read_range_config() -> dict[str, str]:
         "dry_run": (env.get("BTC_RANGE_DRY_RUN") or "").strip(),
     }
 
+
 def safe_read_json(path: Path):
     try:
         with path.open("r", encoding="utf-8") as f:
@@ -94,14 +106,17 @@ def safe_read_json(path: Path):
     except Exception:
         return None
 
+
 def read_status_json() -> dict:
     data = safe_read_json(RUNTIME_DIR / "btc_range_v1_status.json")
     return data if isinstance(data, dict) else {}
+
 
 def run_cmd(args: list[str]):
     proc = subprocess.run(args, capture_output=True, text=True)
     output = (proc.stdout or "") + (proc.stderr or "")
     return proc.returncode == 0, output.strip()
+
 
 def systemctl(action: str, unit: str):
     if unit not in UNITS:
@@ -109,6 +124,7 @@ def systemctl(action: str, unit: str):
     if action not in ("start", "stop", "restart", "status"):
         return False, f"action not allowed: {action}"
     return run_cmd(["systemctl", action, unit])
+
 
 def read_unit_state(unit: str) -> dict:
     if unit not in UNITS:
@@ -141,6 +157,7 @@ def read_unit_state(unit: str) -> dict:
 
     return {"ok": False, "state": "unknown", "sub": "", "since": "", "error": out}
 
+
 def list_symbol_logs(symbol: str, limit: int = 30) -> list[dict]:
     rows: list[dict] = []
     if not LOG_DIR.exists():
@@ -165,6 +182,7 @@ def list_symbol_logs(symbol: str, limit: int = 30) -> list[dict]:
         )
     return rows
 
+
 def tail_file(path: Path, n_lines: int = 200) -> list[str]:
     n_lines = max(1, min(MAX_TAIL_LINES, int(n_lines)))
     try:
@@ -176,6 +194,7 @@ def tail_file(path: Path, n_lines: int = 200) -> list[str]:
     except Exception:
         return []
 
+
 def _parse_float(value):
     try:
         if value is None:
@@ -186,6 +205,7 @@ def _parse_float(value):
         return float(text)
     except Exception:
         return None
+
 
 def _parse_ts(value):
     if value is None:
@@ -200,6 +220,7 @@ def _parse_ts(value):
         return dt.astimezone(timezone.utc)
     except Exception:
         return None
+
 
 def load_trade_rows(symbol: str) -> list[dict]:
     rows: list[dict] = []
@@ -234,6 +255,7 @@ def load_trade_rows(symbol: str) -> list[dict]:
     rows.sort(key=lambda item: item.get("ts_utc") or "")
     return rows
 
+
 def compute_stats(rows: list[dict]) -> dict:
     closed = [row for row in rows if str(row.get("event") or "").upper() == "SELL_FILLED"]
     pnl_values = [float(row.get("pnl") or 0.0) for row in closed if row.get("pnl") is not None]
@@ -253,52 +275,30 @@ def compute_stats(rows: list[dict]) -> dict:
         "recent_closed": list(reversed(closed[-12:])),
     }
 
-# NEW: Compute additional metrics for BTC Range
-
-def compute_range_metrics(status: dict) -> dict:
-    """Extract and format range metrics from status json"""
-    snapshot = status.get("snapshot") or {}
-    position = status.get("position") or {}
-
-    return {
-        "bid": status.get("bid"),
-        "ask": status.get("ask"),
-        "spread_pct": status.get("spread_pct"),
-        "low": snapshot.get("low"),
-        "high": snapshot.get("high"),
-        "mid": snapshot.get("mid"),
-        "range_pct": snapshot.get("rangePct"),
-        "drift_pct": snapshot.get("driftPct"),
-        "trend_ok": snapshot.get("trendOk"),
-        "atr": snapshot.get("atr"),
-        "last_hold_reason": status.get("last_hold_reason"),
-        "state": status.get("state"),
-        "qty": position.get("qty"),
-        "entry": position.get("entry"),
-        "stop": position.get("stop"),
-        "target": position.get("target"),
-        "protectArmed": position.get("protectArmed"),
-    }
 
 @app.route("/")
 @require_basic_auth
 def page_dashboard():
     return render_template("dashboard.html", host=os.uname().nodename, utc=utc_now_str(), base=str(BASE_DIR), logs=str(LOG_DIR))
 
+
 @app.route("/services")
 @require_basic_auth
 def page_services():
     return render_template("services.html", host=os.uname().nodename, utc=utc_now_str(), base=str(BASE_DIR), logs=str(LOG_DIR))
+
 
 @app.route("/statistics")
 @require_basic_auth
 def page_statistics():
     return render_template("statistics.html", host=os.uname().nodename, utc=utc_now_str(), base=str(BASE_DIR), logs=str(LOG_DIR))
 
+
 @app.route("/logs")
 @require_basic_auth
 def page_logs():
     return render_template("logs.html", host=os.uname().nodename, utc=utc_now_str(), base=str(BASE_DIR), logs=str(LOG_DIR))
+
 
 @app.route("/api/status")
 @require_basic_auth
@@ -319,10 +319,6 @@ def api_status():
 
     recent = load_trade_rows(cfg["symbol"])[-12:]
     recent.reverse()
-
-    # NEW: Add range metrics
-    range_metrics = compute_range_metrics(status)
-
     return jsonify(
         {
             "ok": True,
@@ -332,17 +328,18 @@ def api_status():
             "logs": str(LOG_DIR),
             "config": cfg,
             "status": status,
-            "range_metrics": range_metrics,
             "units": units,
             "recent": recent,
         }
     )
+
 
 @app.route("/api/services")
 @require_basic_auth
 def api_services():
     payload = api_status().get_json()
     return jsonify({"ok": True, "units": payload.get("units", [])})
+
 
 @app.route("/api/stats")
 @require_basic_auth
@@ -352,11 +349,13 @@ def api_stats():
     stats = compute_stats(rows)
     return jsonify({"ok": True, "symbol": cfg["symbol"], "stats": stats})
 
+
 @app.route("/api/logs")
 @require_basic_auth
 def api_logs():
     cfg = read_range_config()
     return jsonify({"ok": True, "files": list_symbol_logs(cfg["symbol"]), "logs": str(LOG_DIR), "base": str(BASE_DIR)})
+
 
 @app.route("/api/log_tail")
 @require_basic_auth
@@ -379,6 +378,7 @@ def api_log_tail():
 
     return jsonify({"ok": True, "file": name, "text": "\n".join(tail_file(path, n_lines))})
 
+
 @app.route("/api/control", methods=["POST"])
 @require_basic_auth
 def api_control():
@@ -389,6 +389,7 @@ def api_control():
         return jsonify({"ok": False, "error": "bad request"}), 400
     ok, out = systemctl(action, unit)
     return jsonify({"ok": ok, "unit": unit, "action": action, "output": out, "error": "" if ok else out})
+
 
 if __name__ == "__main__":
     port = int(_env("DASH_PORT", "8100"))

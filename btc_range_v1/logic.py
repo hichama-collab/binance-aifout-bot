@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-import pandas as pd
+
 
 @dataclass(frozen=True)
 class RangeSnapshot:
@@ -15,8 +15,7 @@ class RangeSnapshot:
     lastClose: float
     barCount: int
     timeframe: str
-    trendOk: bool  # NEW: filtre de tendance
-    atr: float     # NEW: ATR pour stop dynamique
+
 
 @dataclass(frozen=True)
 class TradePlan:
@@ -24,7 +23,7 @@ class TradePlan:
     targetPrice: float
     stopPrice: float
     rewardRisk: float
-    entryPrice: float  # NEW: prix d'entrée estimé pour calcul du stop
+
 
 @dataclass
 class PositionState:
@@ -38,78 +37,6 @@ class PositionState:
     tsEntry: float
     high: float
     protectArmed: bool = False
-    initialStop: float = 0.0  # NEW: pour trailing stop
-    maxReached: float = 0.0   # NEW: pour trailing stop
-
-
-def _atr(highs, lows, closes, period=14):
-    """Calculate Average True Range"""
-    if len(closes) < period + 1:
-        return (max(highs) - min(lows)) / len(highs) if highs else 0.0
-
-    tr_list = []
-    for i in range(1, len(closes)):
-        h = highs[i]
-        l = lows[i]
-        c_prev = closes[i-1]
-        tr = max(h - l, abs(h - c_prev), abs(l - c_prev))
-        tr_list.append(tr)
-
-    if len(tr_list) < period:
-        return sum(tr_list) / len(tr_list) if tr_list else 0.0
-
-    atr_vals = []
-    atr_vals.append(sum(tr_list[:period]) / period)
-    for i in range(period, len(tr_list)):
-        atr_vals.append((atr_vals[-1] * (period - 1) + tr_list[i]) / period)
-
-    return atr_vals[-1] if atr_vals else 0.0
-
-
-def _ema(series, period):
-    """Calculate EMA"""
-    return series.ewm(span=period, adjust=False).mean()
-
-
-def _trend_filter(klines, cfg):
-    """
-    NEW: Filtre de tendance global.
-    Ne trade le range que si la tendance est neutre ou haussière.
-    """
-    try:
-        # Use context window for trend analysis
-        context_window = max(20, int(getattr(cfg, "contextWindowBars", 72)))
-        if len(klines) < context_window:
-            return True, "INSUFFICIENT_DATA"
-
-        ctx = klines[-context_window:]
-        closes = pd.Series([float(row[4]) for row in ctx])
-        highs = [float(row[2]) for row in ctx]
-        lows = [float(row[3]) for row in ctx]
-
-        if len(closes) < 50:
-            return True, "INSUFFICIENT_DATA"
-
-        ema20 = _ema(closes, 20).iloc[-1]
-        ema50 = _ema(closes, 50).iloc[-1]
-        last_close = closes.iloc[-1]
-
-        # Trend strength
-        trend_pct = (last_close - ema50) / ema50 if ema50 > 0 else 0
-
-        # Max allowed trend against position (we're long-only)
-        max_trend_against = float(getattr(cfg, "trendMaxAgainstPct", 0.015) or 0.015)
-
-        if trend_pct < -max_trend_against:
-            return False, f"STRONG_DOWNTREND {trend_pct*100:.2f}%"
-
-        # Also check if price is below EMA20 (short-term bearish)
-        if last_close < ema20 * 0.995 and trend_pct < -0.005:
-            return False, f"BELOW_EMA20 {trend_pct*100:.2f}%"
-
-        return True, f"TREND_OK {trend_pct*100:.2f}%"
-    except Exception:
-        return True, "TREND_FILTER_ERROR"
 
 
 def build_range_snapshot(klines: list, cfg) -> RangeSnapshot:
@@ -123,9 +50,7 @@ def build_range_snapshot(klines: list, cfg) -> RangeSnapshot:
 
     lows = [float(row[3]) for row in work]
     highs = [float(row[2]) for row in work]
-    closes_ctx = [float(row[4]) for row in ctx]
-    highs_ctx = [float(row[2]) for row in ctx]
-    lows_ctx = [float(row[3]) for row in ctx]
+    closes = [float(row[4]) for row in ctx]
 
     low = min(lows)
     high = max(highs)
@@ -136,18 +61,12 @@ def build_range_snapshot(klines: list, cfg) -> RangeSnapshot:
     width = high - low
     range_pct = width / low
 
-    first_close = closes_ctx[0]
-    last_close = closes_ctx[-1]
+    first_close = closes[0]
+    last_close = closes[-1]
     if first_close <= 0:
         drift_pct = 0.0
     else:
         drift_pct = (last_close - first_close) / first_close
-
-    # NEW: Calculate ATR
-    atr_val = _atr(highs_ctx, lows_ctx, closes_ctx, 14)
-
-    # NEW: Trend filter
-    trend_ok, trend_reason = _trend_filter(klines, cfg)
 
     return RangeSnapshot(
         low=low,
@@ -159,8 +78,6 @@ def build_range_snapshot(klines: list, cfg) -> RangeSnapshot:
         lastClose=last_close,
         barCount=len(work),
         timeframe=str(getattr(cfg, "rangeTimeframe", "5m")),
-        trendOk=trend_ok,
-        atr=atr_val,
     )
 
 
@@ -175,47 +92,27 @@ def range_market_ok(snapshot: RangeSnapshot, cfg) -> tuple[bool, str]:
         return False, f"RANGE_WIDE {snapshot.rangePct*100:.3f}%>{max_range*100:.3f}%"
     if abs(snapshot.driftPct) > max_drift:
         return False, f"TREND_STRONG {snapshot.driftPct*100:.3f}%>{max_drift*100:.3f}%"
-    # NEW: Trend filter
-    if not snapshot.trendOk:
-        return False, "TREND_FILTER_FAIL"
     return True, "RANGE_OK"
 
 
 def build_trade_plan(snapshot: RangeSnapshot, bid: float, cfg) -> TradePlan:
     span = snapshot.width
-
-    # MODIFIED: Entry zone plus bas pour meilleur R:R
-    entry_zone = snapshot.low + (span * float(getattr(cfg, "buyZoneFrac", 0.15)))
+    entry_zone = snapshot.low + (span * float(getattr(cfg, "buyZoneFrac", 0.20)))
     target = snapshot.low + (span * float(getattr(cfg, "targetZoneFrac", 0.80)))
-
-    # MODIFIED: Stop basé sur l'ATR ou le range, le plus serré des deux
-    stop_range = snapshot.low - (span * float(getattr(cfg, "stopRangeFrac", 0.08)))
-    stop_atr = bid - (snapshot.atr * float(getattr(cfg, "atrStopMult", 1.5)))
-
-    # Use the tighter stop (higher price for long)
-    stop = max(stop_range, stop_atr)
-
-    # Ensure stop is below entry
-    min_stop_distance = bid * float(getattr(cfg, "minStopDistancePct", 0.003))
-    if bid - stop < min_stop_distance:
-        stop = bid - min_stop_distance
-
+    stop = snapshot.low - (span * float(getattr(cfg, "stopRangeFrac", 0.12)))
     risk = max(1e-12, bid - stop)
     reward = max(0.0, target - bid)
     reward_risk = reward / risk
-
     return TradePlan(
         entryZone=entry_zone,
         targetPrice=target,
         stopPrice=stop,
         rewardRisk=reward_risk,
-        entryPrice=bid,
     )
 
 
 def rebound_ok(bid_ticks: list[tuple[float, float]], cfg) -> tuple[bool, float, int]:
-    # MODIFIED: Plus de confirmation nécessaire
-    lookback = max(2, int(getattr(cfg, "reboundConfirmTicks", 5) or 5))
+    lookback = max(2, int(getattr(cfg, "reboundConfirmTicks", 3) or 3))
     if len(bid_ticks) < lookback:
         return False, 0.0, 0
 
@@ -231,11 +128,9 @@ def rebound_ok(bid_ticks: list[tuple[float, float]], cfg) -> tuple[bool, float, 
         if recent[idx] >= recent[idx - 1]:
             up_steps += 1
 
-    # MODIFIED: Besoin de plus de ticks haussiers
-    min_up_ratio = float(getattr(cfg, "reboundMinUpRatio", 0.6) or 0.6)
     ok = (
         rebound_pct >= float(getattr(cfg, "reboundMinPct", 0.0) or 0.0)
-        and up_steps >= max(2, int(lookback * min_up_ratio))
+        and up_steps >= (lookback - 1)
     )
     return ok, rebound_pct, up_steps
 
@@ -270,22 +165,10 @@ def update_position(pos: PositionState, bid: float, cfg) -> str | None:
 
     if bid > pos.high:
         pos.high = bid
-    if bid > pos.maxReached:
-        pos.maxReached = bid
 
     span = max(pos.rangeHigh - pos.rangeLow, pos.entry * 0.0005)
-
-    # MODIFIED: Protection plus tôt et plus agressive
-    trigger = pos.entry + (span * float(getattr(cfg, "protectActivateFrac", 0.25)))
-
-    # MODIFIED: Trailing stop basé sur le max atteint
-    trail_pct = float(getattr(cfg, "trailStopPct", 0.0) or 0.0)
-    if trail_pct > 0 and pos.maxReached > pos.entry:
-        trail_stop = pos.maxReached * (1 - trail_pct)
-        if trail_stop > pos.stop:
-            pos.stop = trail_stop
-
-    lock_stop = pos.entry + (span * float(getattr(cfg, "protectLockFrac", 0.05)))
+    trigger = pos.entry + (span * float(getattr(cfg, "protectActivateFrac", 0.35)))
+    lock_stop = pos.entry + (span * float(getattr(cfg, "protectLockFrac", 0.10)))
 
     if not pos.protectArmed and pos.high >= trigger:
         pos.protectArmed = True
@@ -299,10 +182,7 @@ def update_position(pos: PositionState, bid: float, cfg) -> str | None:
         return "TARGET"
 
     age = max(0.0, time.time() - pos.tsEntry)
-
-    # MODIFIED: Time stop plus court
-    max_hold = float(getattr(cfg, "maxHoldSec", 0.0) or 0.0)
-    if max_hold > 0 and age >= max_hold:
+    if age >= float(getattr(cfg, "maxHoldSec", 0.0) or 0.0):
         return "TIME"
 
     progress = max(0.0, (pos.high - pos.entry) / span)

@@ -8,8 +8,10 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
+
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
 
 def resolve_range_env_path() -> Path | None:
     override = (os.getenv("BTC_RANGE_ENV_FILE") or "").strip()
@@ -37,10 +39,12 @@ def resolve_range_env_path() -> Path | None:
             return resolved
     return None
 
+
 def _load_range_env() -> None:
     env_path = resolve_range_env_path()
     if env_path is not None:
         load_dotenv(env_path, override=True)
+
 
 @dataclass(frozen=True)
 class BtcRangeConfig:
@@ -74,25 +78,17 @@ class BtcRangeConfig:
     rangeWindowBars: int = 24
     contextWindowBars: int = 72
 
-    minRangePct: float = 0.0025      # MODIFIED: was 0.0020
-    maxRangePct: float = 0.0180      # MODIFIED: was 0.0200
-    trendMaxDriftPct: float = 0.0120 # MODIFIED: was 0.0100
+    minRangePct: float = 0.0020
+    maxRangePct: float = 0.0200
+    trendMaxDriftPct: float = 0.0100
 
-    # NEW: Trend filter params
-    trendMaxAgainstPct: float = 0.015  # Max downtrend allowed for long entries
-
-    buyZoneFrac: float = 0.15        # MODIFIED: was 0.20 (lower = better price)
+    buyZoneFrac: float = 0.20
     targetZoneFrac: float = 0.80
-    stopRangeFrac: float = 0.08      # MODIFIED: was 0.12 (tighter stop)
-    minRewardRisk: float = 1.50      # MODIFIED: was 1.20 (higher quality trades)
+    stopRangeFrac: float = 0.12
+    minRewardRisk: float = 1.20
 
-    # NEW: ATR-based stop
-    atrStopMult: float = 1.5
-    minStopDistancePct: float = 0.003
-
-    reboundConfirmTicks: int = 5     # MODIFIED: was 3
-    reboundMinPct: float = 0.0005    # MODIFIED: was 0.00035 (stronger rebound)
-    reboundMinUpRatio: float = 0.6   # NEW: min ratio of up ticks
+    reboundConfirmTicks: int = 3
+    reboundMinPct: float = 0.00035
     ticksKeepSec: float = 900.0
 
     spreadMaxPct: float = 0.0008
@@ -102,19 +98,16 @@ class BtcRangeConfig:
     maxUsdcPerTrade: float = 75.0
     minOrderNotionalUsdc: float = 10.0
 
-    protectActivateFrac: float = 0.25  # MODIFIED: was 0.35 (earlier protection)
-    protectLockFrac: float = 0.05      # MODIFIED: was 0.10 (tighter lock)
-
-    # NEW: Trailing stop
-    trailStopPct: float = 0.004
-
-    maxHoldSec: float = 3600.0       # MODIFIED: was 7200 (1h instead of 2h)
-    staleAfterSec: float = 1200.0    # MODIFIED: was 1800 (20min instead of 30min)
+    protectActivateFrac: float = 0.35
+    protectLockFrac: float = 0.10
+    maxHoldSec: float = 7200.0
+    staleAfterSec: float = 1800.0
     staleMinProgressFrac: float = 0.12
 
     chkEvery: float = 30.0
     idleSleep: float = 0.5
     allowExistingBaseBalance: bool = False
+
 
 def _load_yaml(path: Path) -> dict:
     try:
@@ -124,6 +117,7 @@ def _load_yaml(path: Path) -> dict:
         return {}
     except Exception:
         return {}
+
 
 def _apply_profile(cfg: BtcRangeConfig) -> BtcRangeConfig:
     data = _load_yaml(cfg.configPath)
@@ -145,6 +139,7 @@ def _apply_profile(cfg: BtcRangeConfig) -> BtcRangeConfig:
     if not updates:
         return cfg
     return dataclasses.replace(cfg, **updates)
+
 
 def loadConfig() -> BtcRangeConfig:
     load_dotenv()
