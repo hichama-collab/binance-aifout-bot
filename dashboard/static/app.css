@@ -138,7 +138,7 @@ pre{margin:0}
 .kpi-k{
   text-transform:uppercase;
   letter-spacing:.14em;
-  font-size:.68rem;
+  font-size:.78rem;
   font-weight:800;
   color:var(--text-muted);
 }
@@ -393,7 +393,7 @@ pre{margin:0}
 }
 
 .card-title{
-  font-size:1.05rem;
+  font-size:1.2rem;
   font-weight:800;
   line-height:1.2;
   font-family:"Space Grotesk","Manrope",sans-serif;
@@ -402,7 +402,7 @@ pre{margin:0}
 .card-sub{
   margin-top:7px;
   color:var(--text-soft);
-  font-size:.88rem;
+  font-size:.92rem;
   line-height:1.5;
 }
 
@@ -450,9 +450,10 @@ pre{margin:0}
 
 .signal-value{
   margin-top:10px;
-  font-size:1.22rem;
+  font-size:1.7rem;
   font-weight:800;
   letter-spacing:-.04em;
+  line-height:1.1;
 }
 
 .signal-meta{
@@ -472,7 +473,7 @@ pre{margin:0}
 }
 
 .kv2 .v{
-  font-size:.9rem;
+  font-size:1.05rem;
   font-weight:700;
   line-height:1.45;
   overflow-wrap:anywhere;
@@ -572,7 +573,7 @@ pre{margin:0}
   padding:0 14px 12px;
   text-align:left;
   color:var(--text-muted);
-  font-size:.73rem;
+  font-size:.80rem;
   font-weight:800;
   text-transform:uppercase;
   letter-spacing:.12em;
@@ -580,9 +581,10 @@ pre{margin:0}
 }
 
 .table td{
-  padding:14px;
+  padding:16px 14px;
   border-top:1px solid rgba(231,234,243,.8);
-  font-size:.88rem;
+  font-size:.98rem;
+  font-weight:500;
   line-height:1.45;
   vertical-align:top;
 }
@@ -746,10 +748,10 @@ pre{margin:0}
 
 .kpi-v{
   margin-top:12px;
-  font-size:1.18rem;
+  font-size:1.9rem;
   font-weight:800;
-  line-height:1.2;
-  letter-spacing:-.03em;
+  line-height:1.1;
+  letter-spacing:-.04em;
 }
 
 .chart-wrap{
@@ -765,7 +767,7 @@ pre{margin:0}
 canvas#equityChart{
   display:block;
   width:100%;
-  min-height:180px;
+  min-height:320px;
 }
 
 .stats-foot{
@@ -807,10 +809,13 @@ canvas#equityChart{
 
 .link:hover{text-decoration:underline}
 
-.pos-good{color:var(--success) !important}
-.pos-bad{color:var(--danger) !important}
+.pos-good{color:var(--success) !important;font-weight:800}
+.pos-bad{color:var(--danger) !important;font-weight:800}
 .rank-good{color:var(--success);font-weight:800}
 .rank-bad{color:var(--danger);font-weight:800}
+/* PnL large display */
+.kpi-v.pos-good,.kpi-v.rank-good{color:var(--success)}
+.kpi-v.pos-bad,.kpi-v.rank-bad{color:var(--danger)}
 
 .mobile-menu-toggle{
   display:none;
@@ -905,6 +910,11 @@ canvas#equityChart{
 
 .signal-card-strong{
   background:linear-gradient(180deg, rgba(255,255,255,.98), rgba(242,246,255,.88));
+  padding:22px 18px;
+}
+
+.signal-label{
+  font-size:.82rem;
 }
 
 .pilot-grid-tight{
@@ -1083,18 +1093,20 @@ canvas#equityChart{
 
 .decision-title{
   margin-top:0;
+  font-size:1.05rem;
 }
 
 .decision-impact{
-  font-size:1rem;
+  font-size:1.25rem;
   font-weight:800;
+  letter-spacing:-.03em;
 }
 
 .decision-body,
 .trade-body,
 .log-item-body{
   color:var(--text-soft);
-  font-size:.85rem;
+  font-size:.92rem;
   line-height:1.55;
 }
 

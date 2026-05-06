@@ -98,22 +98,26 @@
       setHTML(targetId, `<div class="empty-state">Aucune ligne exploitable pour l'instant.</div>`);
       return;
     }
-    const html = rows.map((row) => {
-      const pnl = row.pnl === null || row.pnl === undefined ? "--" : `${fmt(row.pnl, 4)} USDC`;
-      const pnlCls = pnlClass(row.pnl);
-      const reason = row.reason || "--";
-      return `<article class="decision-item">
-        <div class="decision-main">
-          <div class="decision-title">${row.event || row.side || "--"}</div>
-          <div class="decision-meta">${fmtDateTime(row.ts_utc)} | ${reason}</div>
-        </div>
-        <div class="decision-side">
-          <div class="decision-value ${pnlCls}">${pnl}</div>
-          <div class="decision-sub">prix ${row.price === null || row.price === undefined ? "--" : fmt(row.price, 2)} | qty ${row.qty === null || row.qty === undefined ? "--" : fmt(row.qty, 6)}</div>
-        </div>
-      </article>`;
+    const header = `<table class="table"><thead><tr>
+      <th>Heure</th><th>Action</th><th>Raison</th><th class="right">Prix</th><th class="right">PnL USDC</th>
+    </tr></thead><tbody>`;
+    const body = rows.map((row) => {
+      const pnlVal = row.pnl === null || row.pnl === undefined ? null : parseFloat(row.pnl);
+      const pnlCls = pnlClass(pnlVal);
+      const pnlSign = pnlVal == null ? "" : (pnlVal >= 0 ? "+" : "");
+      const pnlTxt = pnlVal == null ? "--" : `${pnlSign}${fmt(pnlVal, 4)}`;
+      const reason = (row.reason || "--").split(" ").slice(0, 4).join(" ");
+      const action = row.event || row.side || "--";
+      const isBuy = action.includes("BUY");
+      return `<tr>
+        <td style="white-space:nowrap;font-size:.88rem">${fmtDateTime(row.ts_utc)}</td>
+        <td style="${isBuy ? "color:var(--success);font-weight:800" : "font-weight:800"}">${action}</td>
+        <td style="font-size:.88rem">${reason}</td>
+        <td class="right" style="font-size:.88rem">${row.price == null ? "--" : fmt(row.price, 2)}</td>
+        <td class="right"><span class="${pnlCls}" style="font-size:1.1rem;font-weight:800">${pnlTxt}</span></td>
+      </tr>`;
     }).join("");
-    setHTML(targetId, html);
+    setHTML(targetId, header + body + `</tbody></table>`);
   }
 
   function renderUnits(units, targetId) {
@@ -179,8 +183,11 @@
       const latent = (Number(st.bid || 0) - Number(pos.entry || 0)) * Number(pos.qty || 0);
       const pnlEl = document.getElementById("pos-pnl");
       if (pnlEl) {
-        pnlEl.textContent = `${fmt(latent, 4)} USDC`;
+        const pnlSign = latent >= 0 ? "+" : "";
+        pnlEl.textContent = `${pnlSign}${fmt(latent, 4)} USDC`;
         pnlEl.className = `v ${pnlClass(latent)}`.trim();
+        pnlEl.style.fontSize = "1.3rem";
+        pnlEl.style.fontWeight = "800";
       }
     } else {
       setText("pos-pill", "IDLE");

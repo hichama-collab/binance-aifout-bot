@@ -1192,7 +1192,7 @@ def main():
                         )
                         time.sleep(cfg.idleSleep)
                         continue
-                    s1, _, market_ctx = load_signal_snapshot(now)
+                    s1, s5_burst, market_ctx = load_signal_snapshot(now)
                     if s1 is None:
                         maybe_hold(
                             now,
@@ -1213,6 +1213,7 @@ def main():
                         continue
                     rsi_now = float(getattr(s1, "rsi", 0.0))
                     ema1_ok = bool(getattr(s1, "ema_ok", False))
+                    ema5_ok_burst = bool(getattr(s5_burst, "ema_ok", False)) if s5_burst is not None else False
                     vol_ok = bool(getattr(s1, "vol_ok", False))
                     if not ema1_ok:
                         maybe_hold(
@@ -1233,7 +1234,32 @@ def main():
                             signal={
                                 "rsi": rsi_now,
                                 "ema1_ok": ema1_ok,
-                                "ema5_ok": None,
+                                "ema5_ok": ema5_ok_burst,
+                                "vol_ok": vol_ok,
+                            },
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+                    if not ema5_ok_burst:
+                        maybe_hold(
+                            now,
+                            'HOLD_BURST_EMA',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            detail="ema5=0",
+                            signal={
+                                "rsi": rsi_now,
+                                "ema1_ok": ema1_ok,
+                                "ema5_ok": ema5_ok_burst,
                                 "vol_ok": vol_ok,
                             },
                         )

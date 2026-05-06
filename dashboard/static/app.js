@@ -533,7 +533,7 @@ function binanceSpotUrl(symbol) {
     const list = rows || [];
     if (!list.length) {
       if (tbl) tbl.innerHTML = `<tr><td colspan="6">aucun trade ferme</td></tr>`;
-      if (feed) feed.innerHTML = `<div class="card"><p>Aucun trade ferme.</p></div>`;
+      if (feed) feed.innerHTML = `<div class="empty-state">Aucun trade ferme.</div>`;
       return;
     }
 
@@ -541,29 +541,37 @@ function binanceSpotUrl(symbol) {
       tbl.innerHTML = list.map((r) => {
         const url = binanceSpotUrl(r.symbol);
         const symbolHtml = url ? `<a href="${url}" target="_blank">${r.symbol}</a>` : r.symbol;
+        const pnlUSDC = r.pnl_usdc != null ? parseFloat(r.pnl_usdc) : null;
+        const pnlSign = pnlUSDC == null ? "" : (pnlUSDC >= 0 ? "+" : "");
+        const reasonShort = (r.event || "--").replace(/^SELL_FILLED\s*/, "").split(" ")[0];
         return `<tr>
           <td>${fmtDateTime(r.ts)}</td>
           <td><strong>${symbolHtml}</strong></td>
-          <td class="right ${pnlClass(r.pnl_usdc)}">${fmt(r.pnl_usdc, 2)}</td>
-          <td>${r.event || "--"}</td>
-          <td>${r.src || "--"}</td>
+          <td class="right" style="font-size:1.1rem;font-weight:800" class="${pnlClass(pnlUSDC)}"><span class="${pnlClass(pnlUSDC)}">${pnlUSDC == null ? "--" : pnlSign + fmt(pnlUSDC, 2)} USDC</span></td>
+          <td>${reasonShort}</td>
+          <td class="muted" style="font-size:.82rem">${(r.src || "--").split("/").pop()}</td>
         </tr>`;
       }).join("");
     }
 
     if (feed) {
-      feed.innerHTML = list.map((r) => {
+      feed.innerHTML = `<table class="table"><thead><tr>
+        <th>Heure</th><th>Token</th><th class="right">PnL USDC</th><th>Sortie</th>
+      </tr></thead><tbody>` +
+      list.map((r) => {
         const url = binanceSpotUrl(r.symbol);
         const symbolHtml = url ? `<a href="${url}" target="_blank">${escapeHtml(r.symbol)}</a>` : escapeHtml(r.symbol);
-        return `<div class="trade-card">
-          <div class="trade-header">
-            <span class="trade-time">${fmtDateTime(r.ts)}</span>
-            <span class="trade-symbol">${symbolHtml}</span>
-          </div>
-          <div class="trade-meta">${escapeHtml(r.event || "--")} | ${escapeHtml(r.src || "--")}</div>
-          <div class="trade-pnl ${pnlClass(r.pnl_usdc)}">${fmt(r.pnl_usdc, 2)} USDC</div>
-        </div>`;
-      }).join("");
+        const pnlUSDC = r.pnl_usdc != null ? parseFloat(r.pnl_usdc) : null;
+        const pnlSign = pnlUSDC == null ? "" : (pnlUSDC >= 0 ? "+" : "");
+        const reasonFull = (r.event || "--");
+        const reasonShort = reasonFull.replace(/^SELL_FILLED\s*/, "").replace(/^BUY_FILLED\s*/, "BUY: ").split(" ").slice(0, 3).join(" ");
+        return `<tr>
+          <td style="white-space:nowrap;font-size:.88rem">${fmtDateTime(r.ts)}</td>
+          <td><strong>${symbolHtml}</strong></td>
+          <td class="right"><span class="${pnlClass(pnlUSDC)}" style="font-size:1.1rem;font-weight:800">${pnlUSDC == null ? "--" : pnlSign + fmt(pnlUSDC, 2)}</span></td>
+          <td style="font-size:.88rem">${escapeHtml(reasonShort)}</td>
+        </tr>`;
+      }).join("") + `</tbody></table>`;
     }
     const pill = $("#stats-recent-pill");
     if (pill) pill.textContent = `${list.length} lignes`;
@@ -600,10 +608,15 @@ function binanceSpotUrl(symbol) {
 
     const pnlUsdc = p.unreal_pnl_usdc;
     const pnlEur = p.unreal_pnl_eur;
-    const pnlTxt = (pnlUsdc === null || pnlUsdc === undefined) ? "--" : `${fmt(pnlUsdc, 2)} USDC | ${pnlEur == null ? "--" : fmt(pnlEur, 2) + " EUR"}`;
+    const pnlSign = (pnlUsdc == null) ? "" : (pnlUsdc >= 0 ? "+" : "");
+    const pnlTxt = (pnlUsdc === null || pnlUsdc === undefined)
+      ? "--"
+      : `${pnlSign}${fmt(pnlUsdc, 2)} USDC${pnlEur != null ? " | " + fmt(pnlEur, 2) + " EUR" : ""}`;
     const pnlEl = $("#pos-pnl");
     if (pnlEl) {
       pnlEl.textContent = pnlTxt;
+      pnlEl.style.fontSize = "1.3rem";
+      pnlEl.style.fontWeight = "800";
       pnlEl.className = `v ${pnlClass(pnlUsdc)}`;
     }
     setText("pos-reason", p.last_reason || "--");
@@ -715,22 +728,29 @@ function binanceSpotUrl(symbol) {
     }
 
     if (feed) {
-      feed.innerHTML = rows.map((r) => {
+      feed.innerHTML = `<table class="table"><thead><tr>
+        <th>Heure</th><th>Token</th><th>Action</th><th>Raison</th><th class="right">Prix</th><th class="right">PnL USDC</th>
+      </tr></thead><tbody>` +
+      rows.map((r) => {
         const ts = r.ts_utc || r.ts || "--";
         const symbol = r.symbol || "--";
         const url = binanceSpotUrl(symbol);
         const symbolHtml = url ? `<a href="${url}" target="_blank">${escapeHtml(symbol)}</a>` : escapeHtml(symbol);
-        const impact = r.pnl == null || r.pnl === "" ? "--" : `${fmt(r.pnl, 2)} USDC`;
-        return `<div class="decision-card">
-          <div class="decision-header">
-            <span class="decision-time">${fmtDateTime(ts)}</span>
-            <span class="decision-action">${actionLabel(r)} | ${symbolHtml}</span>
-          </div>
-          <div class="decision-reason">${escapeHtml(reasonLabel(r))}</div>
-          <div class="decision-meta">Prix ${r.price == null || r.price === "" ? "--" : fmt(r.price, 8)} | Qte ${r.qty == null || r.qty === "" ? "--" : fmt(r.qty, 6)}</div>
-          <div class="decision-impact ${pnlClass(r.pnl)}">${impact}</div>
-        </div>`;
-      }).join("");
+        const pnlVal = r.pnl == null || r.pnl === "" ? null : parseFloat(r.pnl);
+        const pnlSign = pnlVal == null ? "" : (pnlVal >= 0 ? "+" : "");
+        const pnlDisplay = pnlVal == null ? "--" : `${pnlSign}${fmt(pnlVal, 2)}`;
+        const action = actionLabel(r);
+        const isBuy = action.includes("Achat") || action.includes("BUY");
+        const actionStyle = isBuy ? "color:var(--success);font-weight:800" : (pnlVal != null ? "" : "");
+        return `<tr>
+          <td style="white-space:nowrap;font-size:.88rem">${fmtDateTime(ts)}</td>
+          <td><strong>${symbolHtml}</strong></td>
+          <td style="${actionStyle}"><strong>${escapeHtml(action)}</strong></td>
+          <td style="font-size:.88rem;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(reasonLabel(r))}</td>
+          <td class="right" style="font-size:.88rem">${r.price == null || r.price === "" ? "--" : fmt(r.price, 6)}</td>
+          <td class="right"><span class="${pnlClass(r.pnl)}" style="font-size:1.1rem;font-weight:800">${pnlDisplay}</span></td>
+        </tr>`;
+      }).join("") + `</tbody></table>`;
     }
     const pill = $("#dec-pill");
     if (pill) pill.textContent = `${rows.length} lignes`;

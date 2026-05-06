@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import os
 import re
+import json
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -14,7 +16,12 @@ SERVICE_ENV_PATH = str(Path(os.getenv("BOT_SERVICE_ENV_PATH") or (ROOT_PATH / ".
 BLOCKED_SYMBOLS_PATH = Path(
     (os.getenv("BOT_BLOCKED_SYMBOLS_PATH") or str(ROOT_PATH / "data" / "blocked_symbols.txt")).strip()
 ).resolve()
-WINDOW_MINUTES = max(3, int(os.getenv("SELECTOR_WINDOW_MINUTES", "10")))
+SELECTOR_STATE_PATH = ROOT_PATH / "data" / "runtime" / "selector_state.json"
+# Durée minimale sur un token avant de switcher (en minutes)
+SELECTOR_MIN_HOLD_MINUTES = float(os.getenv("SELECTOR_MIN_HOLD_MINUTES", "15"))
+# Amélioration minimale du score pour justifier un switch pendant la période de garde
+SELECTOR_HYSTERESIS_PCT = float(os.getenv("SELECTOR_HYSTERESIS_PCT", "0.40"))
+WINDOW_MINUTES = max(3, int(os.getenv("SELECTOR_WINDOW_MINUTES", "5")))
 HTTP_TIMEOUT = 5
 MAX_WORKERS = 16
 SELECTOR_MAX_SPREAD_PCT = float(os.getenv("SELECTOR_MAX_SPREAD_PCT", "0.0025"))
@@ -28,6 +35,23 @@ SELECTOR_MIN_24H_CHANGE_PCT = float(os.getenv("SELECTOR_MIN_24H_CHANGE_PCT", "-8
 SELECTOR_MAX_24H_CHANGE_PCT = float(os.getenv("SELECTOR_MAX_24H_CHANGE_PCT", "12.0"))
 SELECTOR_UNKNOWN_SCORE_PENALTY = float(os.getenv("SELECTOR_UNKNOWN_SCORE_PENALTY", "0.05"))
 DEFAULT_PROFILE = (os.getenv("SELECTOR_PROFILE", "major") or "major").strip()
+
+
+def _load_selector_state() -> dict:
+    try:
+        if SELECTOR_STATE_PATH.exists():
+            return json.loads(SELECTOR_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _save_selector_state(state: dict) -> None:
+    try:
+        SELECTOR_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SELECTOR_STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
+    except Exception:
+        pass
 
 # Universe
 QUOTE_ASSET = "USDC"
@@ -429,6 +453,37 @@ def main():
             f"TOKEN_SELECTOR: skipped toxic top candidate {raw_top['symbol']} "
             f"var={raw_top['pct']:.2f}% reasons={raw_top.get('toxic_reasons') or 'n/a'}"
         )
+
+    # --- Garde minimale : ne switche pas si le token actuel est jeune et encore valable ---
+    selector_state = _load_selector_state()
+    last_switch_ts = float(selector_state.get("last_switch_ts", 0))
+    last_switch_symbol = selector_state.get("last_switch_symbol", "")
+    hold_age_min = (time.time() - last_switch_ts) / 60.0
+
+    is_new_token = chosen["symbol"] != current_symbol
+    if (
+        is_new_token
+        and not current_symbol_blocked
+        and current_symbol
+        and hold_age_min < SELECTOR_MIN_HOLD_MINUTES
+    ):
+        # Seulement switcher si le gain de score est suffisant pour justifier l'interruption
+        current_in_ranked = next((c for c in ranked if c["symbol"] == current_symbol), None)
+        current_score = current_in_ranked["final_score"] if current_in_ranked else 0.0
+        score_delta = chosen["final_score"] - current_score
+        if score_delta < SELECTOR_HYSTERESIS_PCT:
+            print(
+                f"TOKEN_SELECTOR: keeping {current_symbol} "
+                f"hold_age={hold_age_min:.1f}min < {SELECTOR_MIN_HOLD_MINUTES}min "
+                f"delta={score_delta:+.3f} < {SELECTOR_HYSTERESIS_PCT} — no switch"
+            )
+            write_service_env(current_symbol, current_score, DEFAULT_PROFILE)
+            return 0
+        print(
+            f"TOKEN_SELECTOR: early switch authorized "
+            f"hold_age={hold_age_min:.1f}min delta={score_delta:+.3f} >= {SELECTOR_HYSTERESIS_PCT}"
+        )
+
     print(
         f"TOKEN_SELECTOR: selected {chosen['symbol']} "
         f"var={chosen['pct']:.2f}% bonus={chosen['history_bonus']:+.2f} score={chosen['final_score']:.2f} "
@@ -437,6 +492,11 @@ def main():
         f"trades24h={chosen.get('trade_count_24h', 0)}"
     )
     write_service_env(chosen["symbol"], chosen["pct"], DEFAULT_PROFILE)
+    if is_new_token or not last_switch_ts:
+        _save_selector_state({
+            "last_switch_ts": time.time(),
+            "last_switch_symbol": chosen["symbol"],
+        })
     return 0
 
 if __name__ == "__main__":
