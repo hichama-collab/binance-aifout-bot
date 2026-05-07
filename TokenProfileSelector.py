@@ -18,9 +18,11 @@ BLOCKED_SYMBOLS_PATH = Path(
 ).resolve()
 SELECTOR_STATE_PATH = ROOT_PATH / "data" / "runtime" / "selector_state.json"
 # Durée minimale sur un token avant de switcher (en minutes)
-SELECTOR_MIN_HOLD_MINUTES = float(os.getenv("SELECTOR_MIN_HOLD_MINUTES", "15"))
+SELECTOR_MIN_HOLD_MINUTES = float(os.getenv("SELECTOR_MIN_HOLD_MINUTES", "10"))
 # Amélioration minimale du score pour justifier un switch pendant la période de garde
-SELECTOR_HYSTERESIS_PCT = float(os.getenv("SELECTOR_HYSTERESIS_PCT", "0.40"))
+SELECTOR_HYSTERESIS_PCT = float(os.getenv("SELECTOR_HYSTERESIS_PCT", "0.25"))
+# Variation minimale du token actuel pour activer la garde (si plus flat que ça, on switche tout de suite)
+SELECTOR_MIN_ACTIVE_VAR_PCT = float(os.getenv("SELECTOR_MIN_ACTIVE_VAR_PCT", "0.15"))
 # Direction 1-2min minimum pour valider le candidat choisi (évite d'entrer après le move)
 SELECTOR_MIN_DIRECTION_PCT = float(os.getenv("SELECTOR_MIN_DIRECTION_PCT", "-0.15"))
 WINDOW_MINUTES = max(3, int(os.getenv("SELECTOR_WINDOW_MINUTES", "5")))
@@ -487,14 +489,21 @@ def main():
     hold_age_min = (time.time() - last_switch_ts) / 60.0
 
     is_new_token = chosen["symbol"] != current_symbol
-    if (
+    # Check if current token is basically flat (dead) — bypass hold time if so
+    current_in_ranked = next((c for c in ranked if c["symbol"] == current_symbol), None)
+    current_var_pct = abs(float(current_in_ranked["pct"])) if current_in_ranked else 0.0
+    current_is_flat = current_var_pct < SELECTOR_MIN_ACTIVE_VAR_PCT
+    if current_is_flat and is_new_token:
+        print(
+            f"TOKEN_SELECTOR: current {current_symbol} is flat (var={current_var_pct:.2f}% < {SELECTOR_MIN_ACTIVE_VAR_PCT}%) — switching immediately"
+        )
+    elif (
         is_new_token
         and not current_symbol_blocked
         and current_symbol
         and hold_age_min < SELECTOR_MIN_HOLD_MINUTES
     ):
         # Seulement switcher si le gain de score est suffisant pour justifier l'interruption
-        current_in_ranked = next((c for c in ranked if c["symbol"] == current_symbol), None)
         current_score = current_in_ranked["final_score"] if current_in_ranked else 0.0
         score_delta = chosen["final_score"] - current_score
         if score_delta < SELECTOR_HYSTERESIS_PCT:
