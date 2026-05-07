@@ -21,6 +21,8 @@ SELECTOR_STATE_PATH = ROOT_PATH / "data" / "runtime" / "selector_state.json"
 SELECTOR_MIN_HOLD_MINUTES = float(os.getenv("SELECTOR_MIN_HOLD_MINUTES", "15"))
 # Amélioration minimale du score pour justifier un switch pendant la période de garde
 SELECTOR_HYSTERESIS_PCT = float(os.getenv("SELECTOR_HYSTERESIS_PCT", "0.40"))
+# Direction 1-2min minimum pour valider le candidat choisi (évite d'entrer après le move)
+SELECTOR_MIN_DIRECTION_PCT = float(os.getenv("SELECTOR_MIN_DIRECTION_PCT", "-0.15"))
 WINDOW_MINUTES = max(3, int(os.getenv("SELECTOR_WINDOW_MINUTES", "5")))
 HTTP_TIMEOUT = 5
 MAX_WORKERS = 16
@@ -165,22 +167,31 @@ def get_market_stats_map():
             continue
     return out
 
-def change_window_pct(symbol: str):
-    # WINDOW_MINUTES based on 1m klines
+def change_window_pct(symbol: str, minutes: int = WINDOW_MINUTES):
+    # klines-based price change over `minutes` 1m candles
+    limit = max(2, minutes)
     r = _SESSION.get(
         f"{BASE_URL}/api/v3/klines",
-        params={"symbol": symbol, "interval": "1m", "limit": WINDOW_MINUTES},
+        params={"symbol": symbol, "interval": "1m", "limit": limit},
         timeout=HTTP_TIMEOUT,
     )
     r.raise_for_status()
     k = r.json()
-    if not isinstance(k, list) or len(k) < WINDOW_MINUTES:
+    if not isinstance(k, list) or len(k) < limit:
         return None
     o = float(k[0][1])
     c = float(k[-1][4])
     if o <= 0:
         return None
     return (c - o) / o * 100.0
+
+
+def current_direction_pct(symbol: str) -> float | None:
+    """1-minute price direction check — is the token still moving up right now?"""
+    try:
+        return change_window_pct(symbol, minutes=2)
+    except Exception:
+        return None
 
 def collect_candidates(excluded_symbols: set[str] | None = None, positive_only: bool = True):
     symbols = get_symbols_usdc_trading()
@@ -315,7 +326,22 @@ def pick_best_candidate(score_map, excluded_symbols: set[str] | None = None):
     if not candidates:
         return None, []
     ranked = rank_candidates(candidates, score_map)
-    chosen = next((item for item in ranked if not item["is_toxic"]), None)
+    # Choose best candidate whose current 2-min direction is acceptable (not in free fall)
+    chosen = None
+    for item in ranked:
+        if item.get("is_toxic"):
+            continue
+        dir_pct = current_direction_pct(item["symbol"])
+        if dir_pct is not None and dir_pct < SELECTOR_MIN_DIRECTION_PCT:
+            print(
+                f"TOKEN_SELECTOR: skip {item['symbol']} direction_2m={dir_pct:.3f}% < {SELECTOR_MIN_DIRECTION_PCT}% — move exhausted"
+            )
+            continue
+        chosen = item
+        break
+    if chosen is None:
+        # Fallback: pick top non-toxic without direction filter
+        chosen = next((item for item in ranked if not item["is_toxic"]), None)
     return chosen, ranked
 
 

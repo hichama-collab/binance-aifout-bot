@@ -1446,6 +1446,33 @@ def main():
                         time.sleep(cfg.idleSleep)
                         continue
 
+                # Burst entries also respect the loss cooldown (previously bypassed)
+                if burstOverride and lastExitInfo and lastExitInfo.get("symbol") == symbol:
+                    _b_pnl = float(lastExitInfo.get("pnl", 0.0) or 0.0)
+                    _b_exit_ts = float(lastExitInfo.get("ts", 0.0) or 0.0)
+                    _b_age = max(0.0, now - _b_exit_ts)
+                    if _b_pnl <= 0.0:
+                        _b_loss_cd = float(getattr(cfg, "reentryLossCooldownSec", 0.0) or 0.0)
+                        if _b_loss_cd > 0 and _b_age < _b_loss_cd:
+                            maybe_hold(
+                                now,
+                                'HOLD_REENTRY',
+                                spread,
+                                momPct,
+                                momRangePct,
+                                upRatio,
+                                bid,
+                                ask,
+                                mid,
+                                P1,
+                                P2,
+                                P3,
+                                P4,
+                                detail=f"burst_cd last={lastExitInfo.get('reason','')[:20]} age={_b_age:.1f}s cd={_b_loss_cd:.0f}s",
+                            )
+                            time.sleep(cfg.idleSleep)
+                            continue
+
                 if (not burstOverride and not rangeOverride) and lastExitInfo and lastExitInfo.get("symbol") == symbol:
                     last_reason = str(lastExitInfo.get("reason") or "")
                     last_pnl = float(lastExitInfo.get("pnl", 0.0) or 0.0)

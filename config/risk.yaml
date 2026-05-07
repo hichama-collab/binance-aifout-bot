@@ -51,7 +51,7 @@ profiles:
     psell_5m_loss_pct: 0.0020  # was 0.0010
     psell_5m_drop_pct: 0.0010
     psell_5m_negative_ret_pct: -0.0002
-    reentry_loss_cooldown_sec: 90
+    reentry_loss_cooldown_sec: 180   # was 90 — s'applique maintenant aux bursts aussi
     reentry_trail_cooldown_sec: 60
     reentry_recovery_pct: 0.0015
     p_entry_enabled: false
@@ -69,7 +69,7 @@ profiles:
     burst_min_return_pct: 0.00020
     burst_min_return_vs_fee_buf: 0.8
     burst_min_move_vs_spread: 4.0
-    burst_min_velocity_pct_per_sec: 0.00050  # was 0.00080
+    burst_min_velocity_pct_per_sec: 0.00060  # was 0.00050
     burst_min_efficiency: 0.55
     burst_min_pressure_ratio: 1.8
     burst_max_single_drop_pct: 0.00010
