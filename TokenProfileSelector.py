@@ -25,7 +25,7 @@ SELECTOR_HYSTERESIS_PCT = float(os.getenv("SELECTOR_HYSTERESIS_PCT", "0.25"))
 SELECTOR_MIN_ACTIVE_VAR_PCT = float(os.getenv("SELECTOR_MIN_ACTIVE_VAR_PCT", "0.15"))
 # Direction 1-2min minimum pour valider le candidat choisi (évite d'entrer après le move)
 SELECTOR_MIN_DIRECTION_PCT = float(os.getenv("SELECTOR_MIN_DIRECTION_PCT", "-0.15"))
-WINDOW_MINUTES = max(3, int(os.getenv("SELECTOR_WINDOW_MINUTES", "5")))
+WINDOW_MINUTES = max(2, int(os.getenv("SELECTOR_WINDOW_MINUTES", "2")))
 HTTP_TIMEOUT = 5
 MAX_WORKERS = 16
 SELECTOR_MAX_SPREAD_PCT = float(os.getenv("SELECTOR_MAX_SPREAD_PCT", "0.0025"))
