@@ -759,7 +759,7 @@ function botLogs() {
     async init() {
       await this.fetchFiles();
       if (this.files.length) {
-        await this.loadFile(this.files[0].name);
+        await this.loadFile(this.files[0]);
       }
     },
 
@@ -776,12 +776,14 @@ function botLogs() {
       }
     },
 
-    async loadFile(name) {
-      this.activeFile = name;
+    async loadFile(fileEntry) {
+      const filePath = fileEntry?.path || fileEntry?.name || fileEntry;
+      const fileName = fileEntry?.name || fileEntry;
+      this.activeFile = fileName;
       this.loading = true;
       this.error = null;
       try {
-        const r = await fetch(`/api/log_tail?name=${encodeURIComponent(name)}&n=${this.tailSize}`);
+        const r = await fetch(`/api/log_tail?name=${encodeURIComponent(filePath)}&n=${this.tailSize}`);
         if (!r.ok) throw new Error(await r.text());
         this.lines = await r.json();
         this._scrollToBottom();
@@ -795,7 +797,8 @@ function botLogs() {
 
     async refresh() {
       if (!this.activeFile) return;
-      await this.loadFile(this.activeFile);
+      const entry = this.files.find(f => f.name === this.activeFile) || this.activeFile;
+      await this.loadFile(entry);
     },
 
     toggleAutoScroll() {
@@ -836,7 +839,9 @@ function botLogs() {
 
     download() {
       if (!this.activeFile) return;
-      window.open(`/api/log_tail?name=${encodeURIComponent(this.activeFile)}&n=5000`);
+      const entry = this.files.find(f => f.name === this.activeFile);
+      const filePath = entry?.path || this.activeFile;
+      window.open(`/api/log_tail?name=${encodeURIComponent(filePath)}&n=5000`);
     },
 
     get filteredLines() {

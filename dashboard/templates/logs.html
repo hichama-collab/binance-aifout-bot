@@ -49,7 +49,7 @@
           <template x-for="f in files" :key="f.name">
             <div class="log-file-item"
                  :class="{ active: activeFile === f.name }"
-                 @click="loadFile(f.name)">
+                 @click="loadFile(f)">
               <div class="text-xs font-mono font-semibold truncate" x-text="f.name"></div>
               <div class="text-xs text-[#848E9C] mt-0.5" x-text="fmtSize(f.size)"></div>
             </div>

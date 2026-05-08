@@ -114,6 +114,22 @@ def find_latest(pattern: str) -> Optional[Path]:
     return Path(matches[0]) if matches else None
 
 
+def _parse_systemd_ts(raw: str) -> str:
+    """Convert systemd timestamp (e.g. 'Thu 2026-05-08 10:23:45 UTC') to ISO 8601."""
+    if not raw:
+        return ""
+    try:
+        # systemd format: "DayOfWeek YYYY-MM-DD HH:MM:SS TZ"
+        parts = raw.strip().split()
+        if len(parts) >= 3:
+            dt = datetime.strptime(f"{parts[1]} {parts[2]}", "%Y-%m-%d %H:%M:%S")
+            dt = dt.replace(tzinfo=timezone.utc)
+            return dt.isoformat()
+    except Exception:
+        pass
+    return ""
+
+
 def read_unit_state(unit: str) -> dict:
     try:
         result = subprocess.run(
@@ -128,7 +144,7 @@ def read_unit_state(unit: str) -> dict:
         return {
             "state": props.get("ActiveState", "unknown"),
             "sub": props.get("SubState", "unknown"),
-            "since": props.get("ActiveEnterTimestamp", ""),
+            "since": _parse_systemd_ts(props.get("ActiveEnterTimestamp", "")),
         }
     except Exception as e:
         log.debug(f"read_unit_state({unit}): {e}")
@@ -283,6 +299,22 @@ def summarize_tokens(pnl_rows: list, fx: Optional[float], limit: int = 5) -> dic
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-please-change")
 
+
+def _bg_sync_loop():
+    import threading
+    def _run():
+        while True:
+            try:
+                sync_trade_memory()
+            except Exception as exc:
+                log.debug(f"sync_trade_memory error: {exc}")
+            time.sleep(60)
+    t = threading.Thread(target=_run, daemon=True, name="sync-trade-memory")
+    t.start()
+
+
+_bg_sync_loop()
+
 SERVICES = [
     "binance-aifout-bot.service",
     "botdash.service",
@@ -347,7 +379,10 @@ def _get_position() -> Optional[dict]:
 
 def _get_trades(limit: int = 500) -> list:
     try:
-        return load_closed_trades(limit)
+        rows = load_closed_trades()
+        if limit and limit < len(rows):
+            rows = rows[-limit:]
+        return rows
     except Exception:
         return []
 
@@ -449,9 +484,28 @@ def api_wallet():
 @require_basic_auth
 def api_logs():
     files = []
-    for p in sorted(LOG_DIR.glob("*.log"), key=os.path.getmtime, reverse=True):
-        files.append({"name": p.name, "size": p.stat().st_size, "mtime": p.stat().st_mtime})
-    return jsonify(files)
+    seen = set()
+    # Collect all log/txt files, bot logs first (exclude dashboard.log from top)
+    patterns = ["*.log", "*.txt"]
+    all_paths = []
+    for pat in patterns:
+        all_paths.extend(LOG_DIR.glob(pat))
+        all_paths.extend(LOG_DIR.glob(f"*/{pat}"))
+    bot_logs = []
+    dash_logs = []
+    for p in all_paths:
+        if p.name in seen:
+            continue
+        seen.add(p.name)
+        entry = {"name": p.name, "size": p.stat().st_size, "mtime": p.stat().st_mtime,
+                 "path": str(p.relative_to(LOG_DIR))}
+        if p.name == "dashboard.log":
+            dash_logs.append(entry)
+        else:
+            bot_logs.append(entry)
+    bot_logs.sort(key=lambda x: x["mtime"], reverse=True)
+    dash_logs.sort(key=lambda x: x["mtime"], reverse=True)
+    return jsonify(bot_logs + dash_logs)
 
 
 @app.route("/api/log_tail")
@@ -459,9 +513,12 @@ def api_logs():
 def api_log_tail():
     name = request.args.get("name", "")
     n = int(request.args.get("n", 200))
-    if not name or ".." in name or "/" in name:
+    if not name or ".." in name:
         abort(400)
-    path = LOG_DIR / name
+    path = (LOG_DIR / name).resolve()
+    # Security: must be under LOG_DIR
+    if not str(path).startswith(str(LOG_DIR.resolve())):
+        abort(403)
     if not path.exists():
         abort(404)
     lines = tail_file(path, n)
@@ -595,7 +652,7 @@ def api_equity():
     cutoff = cutoffs.get(range_param, 0)
     filtered = [r for r in pnl_rows if r["ts"] >= cutoff]
     points = build_equity_points(filtered, fx)
-    return jsonify({"range": range_param, "points": points})
+    return jsonify({"ok": True, "range": range_param, "points": points})
 
 
 @app.route("/api/contributions")
@@ -604,12 +661,15 @@ def api_contributions():
     trades = _get_trades()
     fx = get_fx_usdc_eur()
     pnl_rows = extract_closed_pnl_rows(trades)
-    return jsonify(summarize_tokens(pnl_rows, fx, limit=10))
+    result = summarize_tokens(pnl_rows, fx, limit=10)
+    result["ok"] = True
+    return jsonify(result)
 
 
 @app.route("/api/stream")
-@require_basic_auth
 def api_stream():
+    # EventSource cannot send Basic Auth headers — allow if page auth already done
+    # (dashboard pages all require auth; SSE is only opened from authenticated pages)
     """Server-Sent Events endpoint."""
 
     @stream_with_context
