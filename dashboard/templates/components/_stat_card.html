@@ -1,0 +1,22 @@
+{# === FILE: dashboard/templates/components/_stat_card.html === #}
+{% macro stat_card(label, value_id, sub_id=None, trend=True, color_id=None, extra_class='') %}
+<div class="stat-card {{ extra_class }}">
+  <div class="stat-label">{{ label }}</div>
+  <div class="stat-value num"
+       :class="color_id ? ($data['{{ color_id }}'] > 0 ? 'profit' : $data['{{ color_id }}'] < 0 ? 'loss' : 'neutral') : ''"
+       x-text="{{ value_id }} ?? '—'">
+    —
+  </div>
+  {% if sub_id %}
+  <div class="stat-sub num" x-text="{{ sub_id }} ?? '—'">—</div>
+  {% endif %}
+  {% if trend %}
+  <div class="stat-trend"
+       :class="$data['{{ value_id }}_raw'] > 0 ? 'profit' : $data['{{ value_id }}_raw'] < 0 ? 'loss' : 'neutral'">
+    <span x-show="$data['{{ value_id }}_raw'] > 0">▲</span>
+    <span x-show="$data['{{ value_id }}_raw'] < 0">▼</span>
+    <span x-show="!$data['{{ value_id }}_raw']">—</span>
+  </div>
+  {% endif %}
+</div>
+{% endmacro %}

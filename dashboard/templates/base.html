@@ -1,153 +1,104 @@
-<!doctype html>
-<html lang="fr">
+{# === FILE: dashboard/templates/base.html === #}
+<!DOCTYPE html>
+<html lang="fr" class="dark" x-data x-init="
+  const saved = localStorage.getItem('theme');
+  if (saved === 'light') document.documentElement.classList.remove('dark'), document.documentElement.classList.add('light');
+">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>{% if title %}{{ title }} | {{ app_title }}{% else %}{{ app_title }}{% endif %}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}"/>
-  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0B0E11" />
+  <meta name="description" content="Binance AiFout Bot Dashboard" />
+  <title>{% block title %}BotDash{% endblock %} — AiFout</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            'bg-primary':   '#0B0E11',
+            'bg-card':      '#1E2329',
+            'bg-tertiary':  '#2B3139',
+            'border-color': '#2B3139',
+            'text-primary':   '#EAECEF',
+            'text-secondary': '#B7BDC6',
+            'text-muted':     '#848E9C',
+            'accent':  '#F0B90B',
+            'profit':  '#0ECB81',
+            'loss':    '#F6465D',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'SF Mono', 'Fira Code', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- Lightweight Charts CDN -->
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+
+  <!-- Alpine.js CDN (load before app.js) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/static/app.css" />
+
+  {% block head_extra %}{% endblock %}
 </head>
-<body>
-  <button class="mobile-menu-toggle" id="btn-menu" aria-label="menu">
-    <span></span>
-    <span></span>
-    <span></span>
-  </button>
+<body class="bg-[#0B0E11] text-[#EAECEF] font-sans antialiased">
 
-  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+{# ===== Toast container (global) ===== #}
+<div x-data="toastManager()" class="toast-container" id="toast-root">
+  <template x-for="t in toasts" :key="t.id">
+    <div class="toast"
+         :class="`toast-${t.type}`"
+         @click="dismiss(t.id)"
+         role="alert">
+      <span x-show="t.type==='success'" class="text-[#0ECB81] flex-shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+        </svg>
+      </span>
+      <span x-show="t.type==='error'" class="text-[#F6465D] flex-shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+        </svg>
+      </span>
+      <span x-show="t.type==='warn'" class="text-[#F0B90B] flex-shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+        </svg>
+      </span>
+      <span class="text-[#B7BDC6] flex-1" x-text="t.msg"></span>
+      <button class="text-[#848E9C] hover:text-[#EAECEF] ml-2 flex-shrink-0" @click.stop="dismiss(t.id)">✕</button>
+    </div>
+  </template>
+</div>
 
-  <div class="app">
-    <aside class="sidebar" id="sidebar">
-      <div class="side-brand">
-        <div class="logo">
-          <img class="logo-mark" src="{{ url_for('static', filename='logo-ha.svg') }}" alt="" aria-hidden="true"/>
-        </div>
-        <div class="brand-text">
-          <div class="brand-name">{{ app_title }}</div>
-          <div class="brand-sub">poste de pilotage clair, dense et vraiment exploitable</div>
-        </div>
-      </div>
+{# ===== Topbar ===== #}
+{% include 'components/_topbar.html' %}
 
-      <div class="host-card">
-        <div class="host-label">Instance live</div>
-        <div class="host-value" id="hdr-host">--</div>
-      </div>
+{# ===== Main content ===== #}
+<main>
+  {% block content %}{% endblock %}
+</main>
 
-      <div class="sidebar-panel">
-        <div class="nav-label">Pilotage</div>
-        <nav class="nav">
-          <a class="nav-item {% if active == 'dashboard' %}active{% endif %}" href="/" data-nav="dashboard">
-            <span class="nav-icon nav-icon-blue"></span>
-            <span class="nav-copy">
-              <span class="nav-title">Vue Live</span>
-              <span class="nav-sub">etat du bot, capital, dernieres decisions</span>
-            </span>
-          </a>
-          <a class="nav-item {% if active == 'statistics' %}active{% endif %}" href="/statistics" data-nav="statistics">
-            <span class="nav-icon nav-icon-purple"></span>
-            <span class="nav-copy">
-              <span class="nav-title">Statistiques</span>
-              <span class="nav-sub">pnl, drawdown, qualite d'execution</span>
-            </span>
-          </a>
-        </nav>
-      </div>
+{# ===== Bottom nav (mobile) ===== #}
+{% include 'components/_bottomnav.html' %}
 
-      <div class="sidebar-panel">
-        <div class="nav-label">Exploitation</div>
-        <nav class="nav">
-          <a class="nav-item {% if active == 'services' %}active{% endif %}" href="/services" data-nav="services">
-            <span class="nav-icon nav-icon-green"></span>
-            <span class="nav-copy">
-              <span class="nav-title">Services</span>
-              <span class="nav-sub">actions systeme, etat, relances</span>
-            </span>
-          </a>
-          <a class="nav-item {% if active == 'logs' %}active{% endif %}" href="/logs" data-nav="logs">
-            <span class="nav-icon nav-icon-amber"></span>
-            <span class="nav-copy">
-              <span class="nav-title">Logs</span>
-              <span class="nav-sub">ouvrir vite le bon fichier et le lire bien</span>
-            </span>
-          </a>
-        </nav>
-      </div>
+{# ===== App JS ===== #}
+<script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
 
-      <div class="sidebar-footer">
-        <div class="footer-card">
-          <div class="footer-title">Contexte runtime</div>
-          <div class="kv">
-            <div class="k">Base</div><div class="v" id="kv-base">--</div>
-            <div class="k">Logs</div><div class="v" id="kv-logs">--</div>
-            <div class="k">FX</div><div class="v" id="kv-fx">--</div>
-          </div>
-        </div>
-      </div>
-    </aside>
-
-    <main class="main">
-      <header class="topbar">
-        <div class="topbar-left">
-          <div class="mobile-brand">
-            <div class="mobile-brand-mark">
-              <img class="logo-mark" src="{{ url_for('static', filename='logo-ha.svg') }}" alt="" aria-hidden="true"/>
-            </div>
-            <div>
-              <div class="mobile-brand-name">{{ app_title }}</div>
-              <div class="mobile-brand-sub">cockpit du bot</div>
-            </div>
-          </div>
-
-          <div class="topbar-title">
-            <div class="eyebrow">Bot Trading Spot</div>
-            <div class="page-title">{{ title or "Dashboard" }}</div>
-            <div class="page-sub">{{ subtitle or "Une lecture directe de l'etat du bot, des services et des signaux qui comptent vraiment." }}</div>
-          </div>
-        </div>
-
-        <div class="topbar-actions">
-          <div class="header-chip">
-            <span class="header-chip-label">UTC</span>
-            <span class="header-chip-value" id="hdr-utc">--</span>
-          </div>
-          <div class="header-chip">
-            <span class="header-chip-label">Etat</span>
-            <span class="header-chip-value" id="footer-status">--</span>
-          </div>
-          <button class="btn btn-ghost" id="btn-refresh">Rafraichir</button>
-        </div>
-      </header>
-
-      <section class="content">
-        {% block content %}{% endblock %}
-      </section>
-
-      <footer class="footer">
-        <span>Le dashboard met l'accent sur la decision rapide. Les donnees brutes restent accessibles, mais elles ne doivent plus enterrer l'information utile.</span>
-      </footer>
-    </main>
-  </div>
-
-  <nav class="bottom-nav" aria-label="navigation mobile">
-    <a class="bnav-item {% if active == 'dashboard' %}active{% endif %}" href="/">
-      <span class="bnav-icon">V</span>
-      <span class="bnav-label">Live</span>
-    </a>
-    <a class="bnav-item {% if active == 'statistics' %}active{% endif %}" href="/statistics">
-      <span class="bnav-icon">S</span>
-      <span class="bnav-label">Stats</span>
-    </a>
-    <a class="bnav-item {% if active == 'services' %}active{% endif %}" href="/services">
-      <span class="bnav-icon">O</span>
-      <span class="bnav-label">Ops</span>
-    </a>
-    <a class="bnav-item {% if active == 'logs' %}active{% endif %}" href="/logs">
-      <span class="bnav-icon">L</span>
-      <span class="bnav-label">Logs</span>
-    </a>
-  </nav>
 </body>
 </html>

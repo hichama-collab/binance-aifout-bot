@@ -1,13 +1,79 @@
+# === FILE: dashboard/nginx/botdash.conf.example ===
+# Nginx reverse proxy for BotDash.
+# Place in /etc/nginx/sites-available/botdash and symlink to sites-enabled.
+# Requires valid SSL certificates (adjust paths below).
+# Replace `yourdomain.com` with your actual domain.
+
+upstream botdash_backend {
+    server 127.0.0.1:8099;
+    keepalive 8;
+}
+
 server {
     listen 80;
-    listen [::]:80;
-    server_name _;
+    server_name yourdomain.com;
+    return 301 https://$host$request_uri;
+}
 
+server {
+    listen 443 ssl http2;
+    server_name yourdomain.com;
+
+    # SSL
+    ssl_certificate     /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # Security headers
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    # Logging
+    access_log /var/log/nginx/botdash_access.log;
+    error_log  /var/log/nginx/botdash_error.log;
+
+    # Static files (served by Flask for simplicity; add caching here)
+    location /static/ {
+        proxy_pass http://botdash_backend;
+        proxy_set_header Host $host;
+        expires 1h;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # SSE endpoint — disable buffering, increase timeout
+    location /api/stream {
+        proxy_pass http://botdash_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Connection '';
+        proxy_http_version 1.1;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding on;
+        # Disable nginx buffering for SSE
+        add_header X-Accel-Buffering no;
+    }
+
+    # All other routes
     location / {
-        proxy_pass http://127.0.0.1:8099;
+        proxy_pass http://botdash_backend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+
+        # Compress responses
+        gzip on;
+        gzip_types text/plain text/css application/json application/javascript text/xml;
     }
 }

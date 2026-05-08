@@ -1,0 +1,73 @@
+{# === FILE: dashboard/templates/components/_topbar.html === #}
+<header class="topbar" x-data="themeToggle()" id="topbar">
+
+  {# Logo #}
+  <a href="/live" class="topbar-logo flex-shrink-0">
+    ⬡&nbsp;<span>AiFout</span>
+  </a>
+
+  {# Desktop nav #}
+  <nav class="hidden md:flex items-center gap-1 ml-4">
+    <a href="/live"
+       class="nav-link {% if request.path == '/live' %}active{% endif %}">
+      Live
+    </a>
+    <a href="/stats"
+       class="nav-link {% if request.path == '/stats' %}active{% endif %}">
+      Stats
+    </a>
+    <a href="/services"
+       class="nav-link {% if request.path == '/services' %}active{% endif %}">
+      Services
+    </a>
+    <a href="/logs"
+       class="nav-link {% if request.path == '/logs' %}active{% endif %}">
+      Logs
+    </a>
+  </nav>
+
+  {# Spacer #}
+  <div class="flex-1"></div>
+
+  {# UTC clock #}
+  <div x-data="utcClock()" class="hidden sm:block">
+    <span class="utc-clock" x-text="time">—</span>
+  </div>
+
+  {# SSE status dot #}
+  <div class="flex items-center gap-1.5 ml-2" title="Connexion temps-réel">
+    <div class="sse-dot" id="sse-global-dot"></div>
+    <span class="hidden sm:inline text-xs text-[#848E9C]" id="sse-global-label">—</span>
+  </div>
+
+  {# Theme toggle #}
+  <button @click="toggle()"
+          class="btn btn-icon btn-ghost ml-1"
+          :title="dark ? 'Basculer en mode clair' : 'Basculer en mode sombre'"
+          aria-label="Toggle theme">
+    <svg x-show="dark" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+    </svg>
+    <svg x-show="!dark" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+    </svg>
+  </button>
+</header>
+
+<script>
+  // Update global SSE dot from any page that uses SSE
+  // Pages update window.__sseStatus = 'connected'|'reconnecting'|'error'
+  (function() {
+    const dot = document.getElementById('sse-global-dot');
+    const lbl = document.getElementById('sse-global-label');
+    function update() {
+      const s = window.__sseStatus || 'disconnected';
+      if (!dot) return;
+      dot.className = 'sse-dot ' + s;
+      if (lbl) lbl.textContent = s === 'connected' ? 'Live' : s === 'reconnecting' ? 'Reconnect…' : s;
+    }
+    setInterval(update, 600);
+  })();
+</script>

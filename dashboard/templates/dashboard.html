@@ -1,162 +1,231 @@
-{% extends "base.html" %}
-{% set title = "Dashboard" %}
-{% set active = "dashboard" %}
-{% set subtitle = "Que fait le bot maintenant, sur quel token, avec quel capital et quelle derniere decision utile." %}
+{# === FILE: dashboard/templates/dashboard.html === #}
+{% extends 'base.html' %}
+{% block title %}Live{% endblock %}
+
 {% block content %}
+<div x-data="botDashboard()"
+     x-init="
+       init();
+       $watch('sse', val => {
+         if(val) {
+           window.__sseStatus = val.status;
+           setInterval(() => { window.__sseStatus = val.status; }, 500);
+         }
+       });
+     "
+     class="page-content">
 
-<div class="grid grid-12 gap-16">
-  <div class="card card-slate col-12 hero-card hero-card--dense">
-    <div class="card-head hero-head">
-      <div>
-        <div class="card-title">Centre de controle</div>
-        <div class="card-sub">La home doit repondre a quatre questions sans te noyer: est-ce que le bot tourne, sur quoi il est branche, s'il est expose, et ce qu'il vient de faire.</div>
-      </div>
-      <div class="hero-actions">
-        <a class="mini-link" href="/statistics">Voir la perf</a>
-        <a class="mini-link" href="/services">Agir sur les services</a>
-        <a class="mini-link" href="/logs">Ouvrir les logs</a>
+  {# ── Loading skeleton ── #}
+  <div x-show="loading" class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+    <div class="skeleton h-24 rounded-xl"></div>
+    <div class="skeleton h-24 rounded-xl"></div>
+    <div class="skeleton h-24 rounded-xl hidden md:block"></div>
+  </div>
+
+  {# ── Error banner ── #}
+  <div x-show="error" x-cloak
+       class="mb-4 rounded-lg border border-[#F6465D]/30 bg-[rgba(246,70,93,0.07)] px-4 py-3 text-sm text-[#F6465D]"
+       x-text="'Erreur: ' + error"></div>
+
+  {# ================================================================
+     HERO SECTION — 3 cards
+     ================================================================ #}
+  <div x-show="!loading" class="grid-stats mb-4" x-cloak>
+
+    {# Card 1: PnL Today #}
+    <div class="stat-card">
+      <div class="stat-label">PnL Aujourd'hui</div>
+      <div class="stat-value num"
+           :class="pnlClass(pnlToday?.usdc)"
+           x-text="fmtUsdc(pnlToday?.usdc)">—</div>
+      <div class="stat-sub num" x-text="pnlToday?.eur != null ? fmtUsdc(pnlToday.eur).replace('USDC','EUR') : '—'"></div>
+      <div class="stat-trend mt-1" :class="pnlClass(pnlSession?.usdc)">
+        <span class="text-[#848E9C]">Session:</span>
+        <span class="num ml-1" x-text="fmtUsdc(pnlSession?.usdc)"></span>
       </div>
     </div>
-    <div class="signal-strip signal-strip-hero">
-      <div class="signal-card signal-card-strong">
-        <div class="signal-label">Bot</div>
-        <div class="signal-value" id="sig-bot-value">--</div>
-        <div class="signal-meta" id="sig-bot-meta">Etat du moteur principal.</div>
+
+    {# Card 2: Token actif #}
+    <div class="stat-card">
+      <div class="stat-label">Token Actif</div>
+      <div class="flex items-center gap-2 mt-1">
+        <div class="text-xl font-bold font-mono tracking-tight text-[#EAECEF]"
+             x-text="fmtSymbol(activeToken) || '—'"></div>
+        <span x-show="dryRun" class="badge badge-dry">DRY</span>
       </div>
-      <div class="signal-card signal-card-strong">
-        <div class="signal-label">Token actif</div>
-        <div class="signal-value" id="sig-token-value">--</div>
-        <div class="signal-meta" id="sig-token-meta">Configuration de trading en cours.</div>
+      <div class="flex items-center gap-1.5 mt-1">
+        <span class="badge" :class="botStatusClass" x-text="botStatus"></span>
+        <span class="text-xs text-[#848E9C]" x-text="fmtDuration(botSince)"></span>
       </div>
-      <div class="signal-card signal-card-strong">
-        <div class="signal-label">Position</div>
-        <div class="signal-value" id="sig-position-value">--</div>
-        <div class="signal-meta" id="sig-position-meta">Exposition actuelle du bot.</div>
+      <div class="stat-sub mt-1">
+        Profile: <span class="text-[#F0B90B] font-semibold" x-text="profile"></span>
       </div>
-      <div class="signal-card signal-card-strong">
-        <div class="signal-label">Derniere action</div>
-        <div class="signal-value" id="sig-last-value">--</div>
-        <div class="signal-meta" id="sig-last-meta">Derniere decision lue dans les trades.</div>
+    </div>
+
+    {# Card 3: PnL Semaine #}
+    <div class="stat-card col-span-2 md:col-span-1">
+      <div class="stat-label">PnL Semaine</div>
+      <div class="stat-value num"
+           :class="pnlClass(pnlWeek?.usdc)"
+           x-text="fmtUsdc(pnlWeek?.usdc)">—</div>
+      <div class="stat-sub num" x-text="pnlWeek?.eur != null ? fmtUsdc(pnlWeek.eur).replace('USDC','EUR') : '—'"></div>
+      <div class="stat-trend mt-1 text-[#848E9C]">
+        FX: <span class="text-[#B7BDC6] font-mono ml-1" x-text="pnlFx ? pnlFx.toFixed(4) : '—'"></span>
       </div>
     </div>
   </div>
 
-  <div class="card card-green col-12 col-xl-4">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Position ouverte</div>
-        <div class="card-sub">Lecture directe de l'exposition reelle, avec uniquement les champs utiles pour decider si on laisse vivre ou si on coupe.</div>
-      </div>
-      <div class="pill pill-green" id="pos-pill">--</div>
-    </div>
-    <div class="kv2" id="pos-live">
-      <div class="k">Symbol</div><div class="v" id="pos-symbol">--</div>
-      <div class="k">Qty</div><div class="v" id="pos-qty">--</div>
-      <div class="k">Entry</div><div class="v" id="pos-entry">--</div>
-      <div class="k">Bid / Ask</div><div class="v" id="pos-ba">--</div>
-      <div class="k">PnL latent</div><div class="v" id="pos-pnl">--</div>
-      <div class="k">Derniere raison</div><div class="v" id="pos-reason">--</div>
-    </div>
-  </div>
+  {# ================================================================
+     POSITION OUVERTE
+     ================================================================ #}
+  <div x-show="!loading" x-cloak class="mb-4">
 
-  <div class="card card-amber col-12 col-xl-4">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Contexte actif</div>
-        <div class="card-sub">Le minimum pour comprendre sur quoi le bot est regle et quels moteurs tournent sans partir sur la page Services.</div>
-      </div>
-      <div class="pill pill-amber" id="service-health-pill">--</div>
+    {# No position #}
+    <div x-show="!hasPosition"
+         class="card flex items-center gap-3 py-4 text-[#848E9C]">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 opacity-40 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+      </svg>
+      <span class="text-sm">Aucune position ouverte — bot en attente</span>
     </div>
-    <div class="pilot-grid pilot-grid-tight">
-      <div class="pilot-block">
-        <div class="section-kicker">Configuration courante</div>
-        <div class="kv2 kv2-compact" id="token-now">
-          <div class="k">Symbol</div><div class="v" id="tn-symbol">--</div>
-          <div class="k">Profile</div><div class="v" id="tn-profile">--</div>
-          <div class="k">Dry run</div><div class="v" id="tn-dry">--</div>
+
+    {# Active position #}
+    <div x-show="hasPosition" class="position-banner" :class="{'negative': activePosition?.pnl_usdc < 0}">
+      <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full bg-[#0ECB81] animate-pulse"></div>
+          <h2 class="font-bold text-[#EAECEF]">Position Ouverte</h2>
+          <span class="badge badge-active text-xs">LONG</span>
+        </div>
+        <div class="text-xs text-[#848E9C]">
+          Ouvert <span class="font-mono" x-text="fmtAgo(activePosition?.ts || activePosition?.opened_at)"></span>
         </div>
       </div>
-      <div class="pilot-block">
-        <div class="section-kicker">Services critiques</div>
-        <div class="service-health" id="service-health">
-          <div class="muted">Chargement...</div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div>
+          <div class="text-xs text-[#848E9C] mb-0.5">Symbole</div>
+          <div class="font-bold font-mono text-lg text-[#EAECEF]"
+               x-text="fmtSymbol(activePosition?.symbol)"></div>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card card-purple col-12 col-xl-4">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Raccourcis utiles</div>
-        <div class="card-sub">Quand le diagnostic est pose, la bonne page doit etre a un clic, sans aller fouiller un menu plein de bruit.</div>
-      </div>
-    </div>
-    <div class="shortcut-grid">
-      <a class="shortcut-card" href="/statistics">
-        <span class="shortcut-kicker">Performance</span>
-        <span class="shortcut-title">Lire la courbe, le drawdown et le dernier trade ferme</span>
-      </a>
-      <a class="shortcut-card" href="/services">
-        <span class="shortcut-kicker">Operations</span>
-        <span class="shortcut-title">Demarrer, stopper ou relancer le bot et le selector</span>
-      </a>
-      <a class="shortcut-card" href="/logs">
-        <span class="shortcut-kicker">Logs</span>
-        <span class="shortcut-title">Ouvrir le fichier qui explique vraiment le comportement courant</span>
-      </a>
-    </div>
-  </div>
-
-  <div class="card card-blue col-12 col-xl-6">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Capital disponible</div>
-        <div class="card-sub">Le portefeuille n'est plus un grand tableau froid. On commence par les lignes qui portent vraiment la valeur.</div>
-      </div>
-      <div class="pill pill-blue" id="wallet-total">--</div>
-    </div>
-    <div class="asset-stack" id="wallet-stack">
-      <div class="empty-state">Chargement du portefeuille...</div>
-    </div>
-  </div>
-
-  <div class="card card-red col-12 col-xl-6">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Contribution par token</div>
-        <div class="card-sub">On separe clairement ce qui aide le PnL de ce qui l'abime, au lieu d'entasser neuf colonnes dans un tableau trop large.</div>
-      </div>
-      <div class="pill pill-red" id="tr-pill">--</div>
-    </div>
-    <div class="board-grid">
-      <div class="board-panel">
-        <div class="section-kicker">Meilleurs contributeurs</div>
-        <div class="score-list" id="token-top-list">
-          <div class="empty-state compact">Chargement...</div>
+        <div>
+          <div class="text-xs text-[#848E9C] mb-0.5">Qté</div>
+          <div class="font-mono font-semibold num"
+               x-text="fmtQty(activePosition?.qty)"></div>
         </div>
-      </div>
-      <div class="board-panel">
-        <div class="section-kicker">Points faibles</div>
-        <div class="score-list" id="token-risk-list">
-          <div class="empty-state compact">Chargement...</div>
+        <div>
+          <div class="text-xs text-[#848E9C] mb-0.5">Prix d'entrée</div>
+          <div class="font-mono font-semibold num"
+               x-text="fmtPrice(activePosition?.entry_price || activePosition?.price)"></div>
+        </div>
+        <div>
+          <div class="text-xs text-[#848E9C] mb-0.5">Prix actuel</div>
+          <div class="font-mono font-semibold num"
+               x-text="fmtPrice(activePosition?.current_price)"></div>
+        </div>
+        <div>
+          <div class="text-xs text-[#848E9C] mb-0.5">PnL USDC</div>
+          <div class="font-mono font-bold text-lg num"
+               :class="pnlClass(activePosition?.pnl_usdc)"
+               x-text="fmtUsdc(activePosition?.pnl_usdc)"></div>
+        </div>
+        <div>
+          <div class="text-xs text-[#848E9C] mb-0.5">PnL %</div>
+          <div class="font-mono font-bold text-lg num"
+               :class="pnlClass(activePosition?.pnl_pct)"
+               x-text="fmtPct(activePosition?.pnl_pct)"></div>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="card card-slate col-12">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Dernieres decisions du bot</div>
-        <div class="card-sub">Une vraie lecture narrative de ce qui vient de se passer, avec raison lisible et impact visible sans scroller horizontalement.</div>
+  {# ================================================================
+     EQUITY CURVE
+     ================================================================ #}
+  <div x-show="!loading" x-cloak class="card mb-4">
+    <div class="card-header">
+      <span class="card-title">Courbe Equity</span>
+      <div class="chart-tabs">
+        <template x-for="r in ['1d','7d','30d','all']" :key="r">
+          <button class="chart-tab"
+                  :class="{ active: equityRange === r }"
+                  @click="loadEquity(r)"
+                  :disabled="equityLoading"
+                  x-text="r.toUpperCase()"></button>
+        </template>
       </div>
-      <div class="pill" id="dec-pill">--</div>
     </div>
-    <div class="decision-feed" id="decisions-feed">
-      <div class="empty-state">Chargement des dernieres decisions...</div>
+
+    <div class="chart-wrapper">
+      <div class="absolute inset-0 flex items-center justify-center"
+           x-show="equityLoading" style="z-index:2">
+        <svg class="w-6 h-6 rotate-spin text-[#F0B90B]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </div>
+      <div id="equity-chart-main" class="chart-container"></div>
     </div>
   </div>
+
+  {# ================================================================
+     ACTIVITÉ RÉCENTE
+     ================================================================ #}
+  <div x-show="!loading" x-cloak class="card">
+    <div class="card-header">
+      <span class="card-title">Activité Récente</span>
+      <a href="/stats" class="btn btn-sm btn-ghost">Voir tout →</a>
+    </div>
+
+    {# Empty state #}
+    <div x-show="!tradesLoading && trades.length === 0" class="empty-state py-8">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+      </svg>
+      <span class="empty-state-title">Aucun trade récent</span>
+    </div>
+
+    {# Loading #}
+    <div x-show="tradesLoading" class="space-y-2 p-2">
+      <template x-for="i in 5">
+        <div class="skeleton h-8 rounded"></div>
+      </template>
+    </div>
+
+    {# Table #}
+    <div x-show="!tradesLoading && trades.length > 0" class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Symbole</th>
+            <th>Date (UTC)</th>
+            <th class="text-right">Entrée</th>
+            <th class="text-right">Sortie</th>
+            <th class="text-right">PnL USDC</th>
+            <th class="text-right">PnL %</th>
+            <th>Raison</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(t, i) in trades.slice(0,10)" :key="t.trade_key || i">
+            <tr>
+              <td class="font-mono font-semibold text-[#EAECEF]" x-text="fmtSymbol(t.symbol)"></td>
+              <td class="num font-mono text-xs text-[#848E9C]" x-text="fmtTs(t.ts_epoch)"></td>
+              <td class="text-right num font-mono" x-text="fmtPrice(t.entry_price)"></td>
+              <td class="text-right num font-mono" x-text="fmtPrice(t.exit_price)"></td>
+              <td class="text-right num font-mono font-semibold"
+                  :class="pnlClass(t.pnl_usdc)"
+                  x-text="fmtUsdc(t.pnl_usdc)"></td>
+              <td class="text-right num font-mono"
+                  :class="pnlClass(t.pnl_pct)"
+                  x-text="fmtPct(t.pnl_pct)"></td>
+              <td class="text-xs text-[#848E9C] truncate max-w-[140px]" x-text="t.reason || '—'"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
 </div>
-
 {% endblock %}

@@ -1,94 +1,181 @@
-{% extends "base.html" %}
-{% set title = "Services" %}
-{% set active = "services" %}
-{% set subtitle = "Les commandes critiques doivent etre simples, visibles et accompagnees d'un retour clair." %}
+{# === FILE: dashboard/templates/services.html === #}
+{% extends 'base.html' %}
+{% block title %}Services{% endblock %}
+
 {% block content %}
-<div class="grid grid-12 gap-16 services-page">
-  <div class="card card-slate col-12">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Etat rapide</div>
-        <div class="card-sub">Les unites critiques apparaissent en cartes lisibles avant toute action, pour ne pas confondre service vivant, timer en attente et run ponctuel termine.</div>
+<div x-data="botServices()" x-init="init()" class="page-content">
+
+  {# ================================================================
+     HEADER
+     ================================================================ #}
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-base font-bold text-[#EAECEF]">Services Systemd</h1>
+    <div class="flex items-center gap-2">
+      <div x-show="loading" class="text-xs text-[#848E9C]">
+        <svg class="w-4 h-4 rotate-spin inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        Chargement…
       </div>
-      <div class="pill" id="svc2-pill">--</div>
-    </div>
-    <div class="service-health service-health-grid" id="service-health-ops">
-      <div class="muted">Chargement...</div>
+      <button @click="fetchServices()"
+              :disabled="loading"
+              class="btn btn-sm btn-ghost gap-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        Refresh
+      </button>
     </div>
   </div>
 
-  <div class="card card-amber col-12 col-xl-7">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Commandes directes</div>
-        <div class="card-sub">Chaque bloc correspond a une vraie intention d'exploitation. Les boutons sont groupés par moteur, pas dispersés dans un tableau.</div>
-      </div>
-    </div>
+  {# Error #}
+  <div x-show="error" x-cloak
+       class="mb-4 rounded-lg border border-[#F6465D]/30 bg-[rgba(246,70,93,0.07)] px-4 py-3 text-sm text-[#F6465D]"
+       x-text="'Erreur: ' + error"></div>
 
-    <div class="control-grid control-grid-ops">
-      <div class="control">
-        <div class="control-title">Main Bot</div>
-        <div class="control-sub muted">Le moteur de trading spot. C'est l'action la plus sensible.</div>
-        <div class="btn-row">
-          <button class="btn btn-green" data-unit="binance-aifout-bot.service" data-action="start">Start</button>
-          <button class="btn btn-red" data-unit="binance-aifout-bot.service" data-action="stop">Stop</button>
-          <button class="btn btn-blue" data-unit="binance-aifout-bot.service" data-action="restart">Restart</button>
+  {# ================================================================
+     SERVICE CARDS — 4 services
+     ================================================================ #}
+  <div class="grid-4 mb-6">
+    <template x-for="svc in services" :key="svc.unit">
+      <div :class="serviceCardClass(svc.state)">
+        {# Header #}
+        <div class="flex items-start justify-between gap-3 mb-3">
+          <div class="flex items-center gap-2 min-w-0">
+            <div class="service-dot" :class="dotClass(svc.state)"></div>
+            <div class="min-w-0">
+              <div class="font-mono text-xs font-semibold text-[#EAECEF] truncate" x-text="svc.unit"></div>
+              <div class="text-xs text-[#848E9C] mt-0.5">
+                <span x-text="svc.state || 'unknown'"></span>
+                <span x-show="svc.sub && svc.sub !== svc.state"> · <span x-text="svc.sub"></span></span>
+              </div>
+            </div>
+          </div>
+          <span class="badge flex-shrink-0 text-xs" :class="stateClass(svc.state)" x-text="svc.state || '?'"></span>
+        </div>
+
+        {# Uptime info #}
+        <div class="text-xs text-[#848E9C] mb-3 space-y-0.5">
+          <div x-show="svc.since">
+            <span class="text-[#B7BDC6]">Uptime:</span>
+            <span class="font-mono ml-1" x-text="fmtDuration(svc.since)"></span>
+          </div>
+          <div x-show="svc.since">
+            <span class="text-[#B7BDC6]">Depuis:</span>
+            <span class="font-mono ml-1 text-[#848E9C]" x-text="fmtTs(svc.since)"></span>
+          </div>
+        </div>
+
+        {# Actions #}
+        <div class="flex gap-1.5 flex-wrap">
+          <button class="btn btn-xs btn-ghost"
+                  :disabled="actionInProgress[svc.unit+'-start'] || svc.state === 'active'"
+                  @click="requestAction(svc.unit, 'start')">
+            ▶ Start
+          </button>
+          <button class="btn btn-xs btn-ghost"
+                  :disabled="actionInProgress[svc.unit+'-stop'] || svc.state === 'inactive'"
+                  @click="requestAction(svc.unit, 'stop')">
+            ■ Stop
+          </button>
+          <button class="btn btn-xs btn-ghost"
+                  :disabled="actionInProgress[svc.unit+'-restart']"
+                  @click="requestAction(svc.unit, 'restart')">
+            ↺ Restart
+          </button>
+        </div>
+
+        {# Spinner while action in progress #}
+        <div x-show="Object.values(actionInProgress).some(Boolean)"
+             class="mt-2 text-xs text-[#848E9C] flex items-center gap-1">
+          <svg class="w-3 h-3 rotate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          En cours…
         </div>
       </div>
+    </template>
 
-      <div class="control">
-        <div class="control-title">Selector Run</div>
-        <div class="control-sub muted">Lance un scan ponctuel pour changer le token sans attendre le timer.</div>
-        <div class="btn-row">
-          <button class="btn btn-green" data-unit="token-profile-selector.service" data-action="start">Run now</button>
-          <button class="btn btn-blue" data-unit="token-profile-selector.service" data-action="restart">Restart</button>
-        </div>
-      </div>
-
-      <div class="control">
-        <div class="control-title">Selector Timer</div>
-        <div class="control-sub muted">Planifie le scan automatique. Il peut etre vivant alors que le run ponctuel est dead, et c'est normal.</div>
-        <div class="btn-row">
-          <button class="btn btn-green" data-unit="token-profile-selector.timer" data-action="start">Start</button>
-          <button class="btn btn-red" data-unit="token-profile-selector.timer" data-action="stop">Stop</button>
-          <button class="btn btn-blue" data-unit="token-profile-selector.timer" data-action="restart">Restart</button>
-        </div>
-      </div>
-
-      <div class="control">
-        <div class="control-title">Dashboard</div>
-        <div class="control-sub muted">L'interface elle-meme, utile si la page ne repond plus ou si le service web a saute.</div>
-        <div class="btn-row">
-          <button class="btn btn-green" data-unit="botdash.service" data-action="start">Start</button>
-          <button class="btn btn-red" data-unit="botdash.service" data-action="stop">Stop</button>
-          <button class="btn btn-blue" data-unit="botdash.service" data-action="restart">Restart</button>
-        </div>
+    {# Empty state if no services returned #}
+    <div x-show="!loading && services.length === 0"
+         class="col-span-2 md:col-span-4 card">
+      <div class="empty-state py-8">
+        <span class="empty-state-title">Aucun service trouvé</span>
+        <span class="empty-state-desc">Vérifiez que systemd est disponible.</span>
       </div>
     </div>
   </div>
 
-  <div class="card card-purple col-12 col-xl-5">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Retour de commande</div>
-        <div class="card-sub">Le feedback doit etre compréhensible sans relire du JSON brut ni partir dans les logs.</div>
-      </div>
+  {# ================================================================
+     KILL SWITCH ZONE
+     ================================================================ #}
+  <div class="killswitch-zone mb-6">
+    <div class="flex items-center gap-2 mb-3">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#F6465D]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+      </svg>
+      <h2 class="font-bold text-[#EAECEF]">Kill Switch</h2>
+      <span class="badge badge-error text-xs">Zone dangereuse</span>
     </div>
-    <div class="action-result" id="ctl-out">
-      <div class="action-empty">Aucune commande envoyee pour l'instant.</div>
+    <p class="text-sm text-[#B7BDC6] mb-4">
+      Ces actions nécessitent une double confirmation. Elles affectent directement le bot en production.
+    </p>
+    <div class="flex flex-wrap gap-3">
+      <button class="btn btn-ghost border-[#F0B90B]/40 text-[#F0B90B] hover:bg-[rgba(240,185,11,0.1)]"
+              @click="doPause()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        PAUSE Bot
+      </button>
+      <button class="btn btn-danger"
+              @click="doPanic()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+        </svg>
+        PANIC — Stop Tout
+      </button>
     </div>
   </div>
 
-  <div class="card card-slate col-12">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Etat detaille des unites</div>
-        <div class="card-sub">Une vue ligne par ligne, mais rendue en cartes lisibles plutot qu'en table froide pour ne plus cacher l'information importante.</div>
-      </div>
+  {# ================================================================
+     ACTION LOG (20 dernières actions)
+     ================================================================ #}
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Console d'Actions</span>
+      <span class="text-xs text-[#848E9C]" x-text="`${actionLog.length} actions`"></span>
     </div>
-    <div class="service-panel-grid" id="services-grid">
-      <div class="empty-state">Chargement des unites...</div>
+
+    <div x-show="actionLog.length === 0" class="empty-state py-8">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+      </svg>
+      <span class="empty-state-title">Aucune action effectuée</span>
+    </div>
+
+    <div x-show="actionLog.length > 0" class="space-y-1.5 max-h-64 overflow-y-auto">
+      <template x-for="(entry, i) in actionLog" :key="i">
+        <div class="flex items-start gap-2 px-2 py-1.5 rounded text-xs font-mono bg-[#0d1117] border border-[#2B3139]">
+          <span :class="entry.ok ? 'text-[#0ECB81]' : 'text-[#F6465D]'" class="flex-shrink-0 mt-0.5">
+            <span x-text="entry.ok ? '✓' : '✗'"></span>
+          </span>
+          <span class="text-[#848E9C] flex-shrink-0" x-text="entry.ts.slice(11,19)"></span>
+          <span class="text-[#F0B90B] flex-shrink-0" x-text="entry.action.toUpperCase()"></span>
+          <span class="text-[#B7BDC6] truncate" x-text="entry.unit"></span>
+          <span x-show="entry.output" class="text-[#848E9C] truncate flex-1 min-w-0"
+                x-text="entry.output"></span>
+        </div>
+      </template>
     </div>
   </div>
+
+  {# ================================================================
+     CONFIRMATION MODAL
+     ================================================================ #}
+  {% include 'components/_confirm_modal.html' %}
+
 </div>
 {% endblock %}

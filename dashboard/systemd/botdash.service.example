@@ -1,17 +1,29 @@
+# === FILE: dashboard/systemd/botdash.service.example ===
+# Copy to /etc/systemd/system/botdash.service
+# Then: systemctl daemon-reload && systemctl enable --now botdash.service
+
 [Unit]
-Description=BOT trading Spot - Dashboard
-After=network-online.target
-Wants=network-online.target
+Description=Binance AiFout Bot Dashboard
+After=network.target
+Wants=network.target
 
 [Service]
 Type=simple
+User=botuser
+Group=botuser
 WorkingDirectory=/opt/binance-aifout-bot/dashboard
-EnvironmentFile=-/opt/binance-aifout-bot/dashboard/botdash.env
-ExecStart=/opt/binance-aifout-bot/dashboard/.venv/bin/python /opt/binance-aifout-bot/dashboard/app.py
+EnvironmentFile=/opt/binance-aifout-bot/dashboard/botdash.env
+ExecStart=/opt/binance-aifout-bot/.venv/bin/python app.py
 Restart=always
-RestartSec=2
-User=root
-Group=root
+RestartSec=5
+StandardOutput=append:/opt/binance-aifout-bot/data/logs/dashboard.log
+StandardError=append:/opt/binance-aifout-bot/data/logs/dashboard.log
+
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ReadWritePaths=/opt/binance-aifout-bot/data
 
 [Install]
 WantedBy=multi-user.target

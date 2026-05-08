@@ -1,110 +1,316 @@
-{% extends "base.html" %}
-{% set title = "Statistiques" %}
-{% set active = "statistics" %}
-{% set subtitle = "Une page qui raconte la performance du bot: resultat, qualite, drawdown et derniers trades vraiment utiles." %}
+{# === FILE: dashboard/templates/statistics.html === #}
+{% extends 'base.html' %}
+{% block title %}Stats{% endblock %}
+
 {% block content %}
-<div class="grid grid-12 gap-16">
-  <div class="card card-blue col-12">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Performance realisee</div>
-        <div class="card-sub">Les chiffres de synthese restent en haut, mais la page ne laisse plus le graphe ecraser tout le reste. On voit la performance et son contexte d'execution ensemble.</div>
-      </div>
-      <div class="pill" id="pnl-pill">--</div>
-    </div>
+<div x-data="botStats()" x-init="init()" class="page-content">
 
-    <div class="stats-kpi-grid" id="kpi-row">
-      <div class="kpi"><div class="kpi-k">Aujourd'hui</div><div class="kpi-v" id="kpi-today">--</div></div>
-      <div class="kpi"><div class="kpi-k">Session</div><div class="kpi-v" id="kpi-session">--</div></div>
-      <div class="kpi"><div class="kpi-k">Semaine</div><div class="kpi-v" id="kpi-week">--</div></div>
-      <div class="kpi"><div class="kpi-k">Mois</div><div class="kpi-v" id="kpi-month">--</div></div>
-      <div class="kpi"><div class="kpi-k">Annee</div><div class="kpi-v" id="kpi-year">--</div></div>
-      <div class="kpi"><div class="kpi-k">Trades</div><div class="kpi-v" id="kpi-trades">--</div></div>
-      <div class="kpi"><div class="kpi-k">Winrate</div><div class="kpi-v" id="kpi-winrate">--</div></div>
-      <div class="kpi"><div class="kpi-k">Profit Factor</div><div class="kpi-v" id="kpi-pf">--</div></div>
-    </div>
+  {# Error #}
+  <div x-show="error" x-cloak
+       class="mb-4 rounded-lg border border-[#F6465D]/30 bg-[rgba(246,70,93,0.07)] px-4 py-3 text-sm text-[#F6465D]"
+       x-text="'Erreur: ' + error"></div>
 
-    <div class="chart-wrap chart-wrap-tight">
-      <canvas id="equityChart"></canvas>
-    </div>
-    <div class="stats-foot muted small">La courbe vient des trades fermes seulement. Elle doit servir de diagnostic, pas de decoration.</div>
+  {# ================================================================
+     KPI GRID — PnL Buckets
+     ================================================================ #}
+  <div class="mb-2 flex items-center justify-between">
+    <h1 class="text-base font-bold text-[#EAECEF]">Statistiques</h1>
+    <button @click="fetchSnapshot(); fetchContributions(); fetchTrades()"
+            class="btn btn-sm btn-ghost gap-1">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+      </svg>
+      Refresh
+    </button>
   </div>
 
-  <div class="card card-purple col-12 col-lg-6">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Qualite d'execution</div>
-        <div class="card-sub">On lit ici comment le bot gagne, comment il perd et a quelle vitesse il se deteriore quand le regime de marche change.</div>
+  <div class="grid-stats mb-4">
+    <template x-for="(key, label) in {today: 'Aujourd\'hui', session: 'Session', week: 'Semaine', month: 'Mois', year: 'Année'}" :key="key">
+      <div class="stat-card">
+        <div class="stat-label" x-text="label"></div>
+        <div class="stat-value num" :class="pnlClass(pnl[key]?.usdc)" x-text="fmtUsdc(pnl[key]?.usdc)">—</div>
+        <div class="stat-sub num" x-text="pnl[key]?.eur != null ? fmtUsdc(pnl[key].eur).replace('USDC','EUR') : '—'"></div>
       </div>
-      <div class="pill pill-purple" id="quality-pill">--</div>
-    </div>
-    <div class="kv2" id="quality-box">
-      <div class="k">Gain moyen</div><div class="v" id="q-avg-win">--</div>
-      <div class="k">Perte moyenne</div><div class="v" id="q-avg-loss">--</div>
-      <div class="k">Meilleur trade</div><div class="v" id="q-best">--</div>
-      <div class="k">Pire trade</div><div class="v" id="q-worst">--</div>
-      <div class="k">Serie gagnante</div><div class="v" id="q-win-streak">--</div>
-      <div class="k">Serie perdante</div><div class="v" id="q-loss-streak">--</div>
-      <div class="k">Drawdown max</div><div class="v" id="q-drawdown">--</div>
-      <div class="k">Source</div><div class="v" id="q-source">--</div>
-    </div>
+    </template>
   </div>
 
-  <div class="card card-green col-12 col-lg-6">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Dernier trade ferme</div>
-        <div class="card-sub">Le dernier resultat concret, avec sa fraicheur. Cette carte doit permettre de savoir tout de suite si on est en train de regarder un dashboard vivant ou un historique stale.</div>
-      </div>
-      <div class="pill pill-green" id="lasttrade-pill">--</div>
+  {# ================================================================
+     KPI 4x2 — Stats globales
+     ================================================================ #}
+  <div class="grid-4 mb-4">
+    <div class="stat-card">
+      <div class="stat-label">Total Trades</div>
+      <div class="stat-value" x-text="stats.trades_total ?? '—'">—</div>
     </div>
-    <div class="kv2" id="last-trade-box">
-      <div class="k">Token</div><div class="v" id="lt-symbol">--</div>
-      <div class="k">Heure</div><div class="v" id="lt-time">--</div>
-      <div class="k">Age</div><div class="v" id="lt-age">--</div>
-      <div class="k">PnL</div><div class="v" id="lt-pnl">--</div>
-      <div class="k">Prix</div><div class="v" id="lt-price">--</div>
-      <div class="k">Quantite</div><div class="v" id="lt-qty">--</div>
-      <div class="k">Evenement</div><div class="v" id="lt-event">--</div>
-      <div class="k">Log source</div><div class="v" id="lt-source">--</div>
+    <div class="stat-card">
+      <div class="stat-label">Winrate</div>
+      <div class="stat-value"
+           :class="(stats.winrate ?? 0) >= 0.5 ? 'profit' : 'loss'"
+           x-text="stats.winrate != null ? (stats.winrate*100).toFixed(1)+'%' : '—'">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Profit Factor</div>
+      <div class="stat-value"
+           :class="(stats.profit_factor ?? 0) >= 1 ? 'profit' : 'loss'"
+           x-text="stats.profit_factor != null ? stats.profit_factor.toFixed(2) : '—'">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Max Drawdown</div>
+      <div class="stat-value loss num"
+           x-text="stats.drawdown_max != null ? fmtUsdc(stats.drawdown_max) : '—'">—</div>
     </div>
   </div>
 
-  <div class="card card-red col-12">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Top et flops</div>
-        <div class="card-sub">La page de statistiques doit dire quels tokens meritent de rester dans la boucle, et lesquels doivent etre regardes avec mefiance.</div>
+  {# ================================================================
+     EQUITY CURVE
+     ================================================================ #}
+  <div class="card mb-4">
+    <div class="card-header">
+      <span class="card-title">Courbe Equity (Cumulative PnL)</span>
+      <div class="chart-tabs">
+        <template x-for="r in ['1d','7d','30d','all']" :key="r">
+          <button class="chart-tab"
+                  :class="{ active: equityRange === r }"
+                  @click="loadEquity(r)"
+                  :disabled="equityLoading"
+                  x-text="r.toUpperCase()"></button>
+        </template>
       </div>
-      <div class="pill pill-red" id="stats-token-pill">--</div>
     </div>
-    <div class="board-grid">
-      <div class="board-panel">
-        <div class="section-kicker">Top</div>
-        <div class="score-list" id="stats-top-list">
-          <div class="empty-state compact">Chargement...</div>
+    <div class="chart-wrapper" style="position:relative;">
+      <div class="absolute inset-0 flex items-center justify-center" x-show="equityLoading" style="z-index:2;">
+        <svg class="w-6 h-6 rotate-spin text-[#F0B90B]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </div>
+      <div id="equity-chart-stats" class="chart-container-lg"></div>
+    </div>
+  </div>
+
+  {# ================================================================
+     QUALITÉ D'EXÉCUTION + STREAKS
+     ================================================================ #}
+  <div class="grid-2 mb-4">
+
+    {# Avg win/loss + best/worst #}
+    <div class="card">
+      <div class="card-header"><span class="card-title">Qualité d'Exécution</span></div>
+      <div class="space-y-3">
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-[#848E9C]">Gain moyen</span>
+          <span class="num font-mono font-semibold profit" x-text="fmtUsdc(stats.avg_win)">—</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-[#848E9C]">Perte moyenne</span>
+          <span class="num font-mono font-semibold loss" x-text="fmtUsdc(stats.avg_loss)">—</span>
+        </div>
+        <div class="divider"></div>
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-[#848E9C]">Meilleur trade</span>
+          <span class="num font-mono font-semibold profit" x-text="fmtUsdc(stats.best_trade)">—</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-[#848E9C]">Pire trade</span>
+          <span class="num font-mono font-semibold loss" x-text="fmtUsdc(stats.worst_trade)">—</span>
         </div>
       </div>
-      <div class="board-panel">
-        <div class="section-kicker">Flops</div>
-        <div class="score-list" id="stats-bottom-list">
-          <div class="empty-state compact">Chargement...</div>
+    </div>
+
+    {# Streaks + drawdown #}
+    <div class="card">
+      <div class="card-header"><span class="card-title">Séries & Drawdown</span></div>
+      <div class="space-y-3">
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-[#848E9C]">Série gagnante max</span>
+          <span class="flex items-center gap-1">
+            <span class="text-[#0ECB81]">▲</span>
+            <span class="num font-mono font-bold text-[#EAECEF]" x-text="stats.win_streak_max ?? '—'">—</span>
+          </span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-[#848E9C]">Série perdante max</span>
+          <span class="flex items-center gap-1">
+            <span class="text-[#F6465D]">▼</span>
+            <span class="num font-mono font-bold text-[#EAECEF]" x-text="stats.loss_streak_max ?? '—'">—</span>
+          </span>
+        </div>
+        <div class="divider"></div>
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-[#848E9C]">Drawdown maximum</span>
+          <span class="num font-mono font-bold loss" x-text="fmtUsdc(stats.drawdown_max)">—</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-[#848E9C]">Profit Factor</span>
+          <span class="num font-mono font-bold"
+                :class="(stats.profit_factor ?? 0) >= 1 ? 'profit' : 'loss'"
+                x-text="stats.profit_factor?.toFixed(2) ?? '—'">—</span>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="card card-slate col-12">
-    <div class="card-head">
-      <div>
-        <div class="card-title">Derniers trades fermes</div>
-        <div class="card-sub">Une lecture compacte des lignes qui alimentent reellement l'equity, sans tableau trop large ni colonnes secondaires inutiles.</div>
+  {# ================================================================
+     TOP / FLOP TOKENS
+     ================================================================ #}
+  <div class="grid-2 mb-4">
+    {# Top tokens #}
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Top Tokens</span>
+        <span class="text-xs text-[#848E9C]">Par PnL cumulé</span>
       </div>
-      <div class="pill" id="stats-recent-pill">--</div>
+      <div x-show="contributionsLoading" class="space-y-2">
+        <template x-for="i in 5">
+          <div class="skeleton h-7 rounded"></div>
+        </template>
+      </div>
+      <div x-show="!contributionsLoading">
+        <div x-show="contributions.top?.length === 0" class="empty-state py-6">
+          <span class="empty-state-title">Aucune donnée</span>
+        </div>
+        <template x-for="(item, i) in contributions.top || []" :key="item.symbol">
+          <div class="flex items-center justify-between py-2 border-b border-[rgba(43,49,57,0.5)] last:border-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono text-[#848E9C] w-4" x-text="i+1"></span>
+              <span class="font-mono font-semibold text-[#EAECEF]" x-text="item.symbol"></span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="num font-mono text-sm font-semibold profit" x-text="fmtUsdc(item.pnl_usdc)"></span>
+              <div class="w-16 h-2 rounded-full bg-[#2B3139] overflow-hidden">
+                <div class="h-full rounded-full bg-[#0ECB81]"
+                     :style="`width: ${Math.min(100, Math.abs(item.pnl_usdc) / Math.max(...(contributions.top||[]).map(t=>Math.abs(t.pnl_usdc)), 1) * 100)}%`"></div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
     </div>
-    <div class="trade-feed" id="stats-recent-feed">
-      <div class="empty-state">Chargement des trades fermes...</div>
+
+    {# Flop tokens #}
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Flop Tokens</span>
+        <span class="text-xs text-[#848E9C]">Pires performers</span>
+      </div>
+      <div x-show="contributionsLoading" class="space-y-2">
+        <template x-for="i in 5">
+          <div class="skeleton h-7 rounded"></div>
+        </template>
+      </div>
+      <div x-show="!contributionsLoading">
+        <div x-show="contributions.bottom?.length === 0" class="empty-state py-6">
+          <span class="empty-state-title">Aucune donnée</span>
+        </div>
+        <template x-for="(item, i) in contributions.bottom || []" :key="item.symbol">
+          <div class="flex items-center justify-between py-2 border-b border-[rgba(43,49,57,0.5)] last:border-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono text-[#848E9C] w-4" x-text="i+1"></span>
+              <span class="font-mono font-semibold text-[#EAECEF]" x-text="item.symbol"></span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="num font-mono text-sm font-semibold loss" x-text="fmtUsdc(item.pnl_usdc)"></span>
+              <div class="w-16 h-2 rounded-full bg-[#2B3139] overflow-hidden">
+                <div class="h-full rounded-full bg-[#F6465D]"
+                     :style="`width: ${Math.min(100, Math.abs(item.pnl_usdc) / Math.max(...(contributions.bottom||[]).map(t=>Math.abs(t.pnl_usdc)), 1) * 100)}%`"></div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
     </div>
   </div>
+
+  {# ================================================================
+     TRADES TABLE (paginée, filtrable)
+     ================================================================ #}
+  <div class="card">
+    <div class="card-header flex-wrap gap-2">
+      <span class="card-title">Historique des Trades</span>
+      <div class="flex items-center gap-2 flex-wrap">
+        <input type="search"
+               class="input w-48 text-sm"
+               placeholder="Filtrer symbole / raison…"
+               x-model="tradesFilter"
+               @input="tradesPage = 1" />
+        <span class="text-xs text-[#848E9C]"
+              x-text="`${filteredTrades.length} trades`"></span>
+      </div>
+    </div>
+
+    <div x-show="tradesLoading" class="space-y-2 p-2">
+      <template x-for="i in 10">
+        <div class="skeleton h-8 rounded"></div>
+      </template>
+    </div>
+
+    <div x-show="!tradesLoading && filteredTrades.length === 0"
+         class="empty-state py-8">
+      <span class="empty-state-title">Aucun trade</span>
+      <span class="empty-state-desc">Ajustez le filtre ou attendez les premiers trades.</span>
+    </div>
+
+    <div x-show="!tradesLoading && filteredTrades.length > 0" class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th @click="sortBy('symbol')" class="cursor-pointer hover:text-[#EAECEF]">
+              Symbole <span x-show="tradesSortKey==='symbol'" x-text="tradesSortDir>0?'▲':'▼'"></span>
+            </th>
+            <th @click="sortBy('ts_epoch')" class="cursor-pointer hover:text-[#EAECEF]">
+              Date <span x-show="tradesSortKey==='ts_epoch'" x-text="tradesSortDir>0?'▲':'▼'"></span>
+            </th>
+            <th class="text-right">Entrée</th>
+            <th class="text-right">Sortie</th>
+            <th @click="sortBy('pnl_usdc')" class="text-right cursor-pointer hover:text-[#EAECEF]">
+              PnL USDC <span x-show="tradesSortKey==='pnl_usdc'" x-text="tradesSortDir>0?'▲':'▼'"></span>
+            </th>
+            <th @click="sortBy('pnl_pct')" class="text-right cursor-pointer hover:text-[#EAECEF]">
+              PnL % <span x-show="tradesSortKey==='pnl_pct'" x-text="tradesSortDir>0?'▲':'▼'"></span>
+            </th>
+            <th>Raison</th>
+            <th>Src</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(t, i) in pagedTrades" :key="t.trade_key || i">
+            <tr>
+              <td class="font-mono font-semibold text-[#EAECEF]" x-text="fmtSymbol(t.symbol)"></td>
+              <td class="num font-mono text-xs text-[#848E9C]" x-text="fmtTs(t.ts_epoch)"></td>
+              <td class="text-right num font-mono text-sm" x-text="fmtPrice(t.entry_price)"></td>
+              <td class="text-right num font-mono text-sm" x-text="fmtPrice(t.exit_price)"></td>
+              <td class="text-right num font-mono font-semibold"
+                  :class="pnlClass(t.pnl_usdc)"
+                  x-text="fmtUsdc(t.pnl_usdc)"></td>
+              <td class="text-right num font-mono"
+                  :class="pnlClass(t.pnl_pct)"
+                  x-text="fmtPct(t.pnl_pct)"></td>
+              <td class="text-xs text-[#848E9C] max-w-[160px] truncate" x-text="t.reason || '—'"></td>
+              <td class="text-xs text-[#848E9C]" x-text="t.src || '—'"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    {# Pagination #}
+    <div x-show="!tradesLoading && totalPages > 1"
+         class="flex items-center justify-between px-4 py-3 border-t border-[#2B3139] mt-1">
+      <div class="text-xs text-[#848E9C]">
+        Page <span x-text="tradesPage"></span> / <span x-text="totalPages"></span>
+      </div>
+      <div class="flex gap-1">
+        <button class="btn btn-xs btn-ghost" :disabled="tradesPage <= 1" @click="tradesPage--">←</button>
+        <template x-for="p in Array.from({length: Math.min(7, totalPages)}, (_,i) => i+1)" :key="p">
+          <button class="btn btn-xs"
+                  :class="tradesPage === p ? 'btn-primary' : 'btn-ghost'"
+                  @click="tradesPage = p"
+                  x-text="p"></button>
+        </template>
+        <button class="btn btn-xs btn-ghost" :disabled="tradesPage >= totalPages" @click="tradesPage++">→</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 {% endblock %}
