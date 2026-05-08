@@ -1,2 +1,0 @@
-ts_utc,symbol,event,side,qty,price,reason,pnl,profile,dry_run,spread_pct,mom_pct,mom_range_pct,up_ratio,rsi,ema1_ok,ema5_ok,vol_ok,bid,ask,mid,entry_price,p1,p2,p3,p4,entry_vs_mid_pct,mid_vs_entry_pct
-1777911413,ORDIUSDC,DECIDE_HOLD,,,,HOLD_BURST_EMA,,major,0,0.03803727653099619,0.13328255902512703,0.18096961615393758,57.14285714285714,54.820881484228096,0,,1,5.258,5.26,5.259,,5.259,5.2555,5.2515,5.2505,,

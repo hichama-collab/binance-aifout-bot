@@ -21,9 +21,9 @@ env/
 #data/runtime/*.sqlite3
 #data/runtime/*.db
 #archivelog/
-data/
-*.csv
-*.log
+#data/
+#*.csv
+#*.log
 
 # Dashboard secrets / local overrides
 dashboard/botdash.env
