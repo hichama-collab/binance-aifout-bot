@@ -732,6 +732,8 @@ def main():
     pendingSwitchSymbol = None
     pendingSwitchLogged = None
     lastExitInfo = None
+    daily_pnl_net = 0.0
+    _last_daily_reset_date = None
     blockedSymbols = set()
     blocked_symbols_file = Path(getattr(cfg, "blockedSymbolsFile", Path("data/blocked_symbols.txt")))
     blockedSymbols.update(load_blocked_symbols(blocked_symbols_file))
@@ -767,7 +769,7 @@ def main():
 
     stream.start()
     lastChk = 0.0
-    lastTickSeq = 0
+    lastTickSeq = -1
 
     lastHoldCsv = 0.0
     holdCsvEvery = float(getattr(cfg, 'holdCsvEvery', 60))
@@ -952,16 +954,27 @@ def main():
                 usdc = None
 
 
-            # wallet placeholder guard: if entry==0, adopt current bid as entry (prevents phantom exits)
+            # wallet placeholder guard: if entry==0, try to restore from persisted file, else use bid
             if pos is not None and getattr(pos, 'entry', 0.0) == 0.0:
-                if bid > 0:
-                    pos.entry = float(bid)
-                    pos.high = float(bid)
-                    pos.stop = 0.0
-                    try:
-                        pos.init_stops(cfg, profile, tick=tick)
-                    except Exception:
-                        pass
+                _recovered_entry = 0.0
+                try:
+                    import json as _json
+                    _pos_file = runtime_dir / "active_position.json"
+                    if _pos_file.exists():
+                        _pd = _json.loads(_pos_file.read_text(encoding="utf-8"))
+                        if _pd.get("symbol") == symbol and float(_pd.get("entry", 0.0)) > 0:
+                            _recovered_entry = float(_pd["entry"])
+                            logTrade(f"ENTRY_RECOVERED symbol={symbol} entry={_recovered_entry} from_disk=true")
+                except Exception:
+                    pass
+                adopted_entry = _recovered_entry if _recovered_entry > 0 else float(bid)
+                pos.entry = adopted_entry
+                pos.high = float(bid)
+                pos.stop = 0.0
+                try:
+                    pos.init_stops(cfg, profile, tick=tick)
+                except Exception:
+                    pass
 
             sync_log_day_anchor(pos)
 
@@ -1109,6 +1122,26 @@ def main():
             else:
                 pendingSwitchSymbol = None
                 pendingSwitchLogged = None
+
+            # Daily PnL reset at UTC midnight
+            import datetime as _dt
+            _today = _dt.datetime.utcnow().date()
+            if _last_daily_reset_date != _today:
+                daily_pnl_net = 0.0
+                _last_daily_reset_date = _today
+
+            # Daily loss limit check
+            _daily_max_loss = float(getattr(cfg, 'dailyMaxLossUsdc', 0.0) or 0.0)
+            if _daily_max_loss > 0 and daily_pnl_net <= -_daily_max_loss:
+                if pos is None:
+                    maybe_hold(
+                        now, 'HOLD_DAILY_LOSS_LIMIT',
+                        spread, momPct, momRangePct, upRatio,
+                        bid, ask, mid, P1, P2, P3, P4,
+                        detail=f"daily_pnl={daily_pnl_net:.4f} limit={_daily_max_loss:.4f}",
+                    )
+                time.sleep(cfg.idleSleep)
+                continue
 
             # ===== ENTRY =====
             buySignal = False
@@ -1909,6 +1942,19 @@ def main():
                 setattr(pos, "burstTriggerElapsedSec", float(burstStats.get("elapsed_sec", 0.0) or 0.0))
                 setattr(pos, "burstEntryMode", entryMode)
                 setattr(pos, "burstHandoffLogged", False)
+                # Persist entry for restart recovery
+                try:
+                    _pos_file = runtime_dir / "active_position.json"
+                    import json as _json
+                    _pos_file.parent.mkdir(parents=True, exist_ok=True)
+                    _pos_file.write_text(_json.dumps({
+                        "symbol": symbol,
+                        "entry": float(getattr(pos, 'entry', 0.0)),
+                        "qty": float(getattr(pos, 'qty', 0.0)),
+                        "ts_entry": float(getattr(pos, 'ts_entry', time.time())),
+                    }), encoding="utf-8")
+                except Exception:
+                    pass
                 entry_market = market_ctx if market_ctx is not None else object()
                 setattr(pos, "entryRet1m", float(getattr(entry_market, "ret_1m", 0.0)))
                 setattr(pos, "entryRet3m", float(getattr(entry_market, "ret_3m", 0.0)))
@@ -2140,7 +2186,22 @@ def main():
             if exitReason is None:
                 time.sleep(cfg.idleSleep)
                 continue
-            
+
+            # Skip non-critical exits if expected PnL net would be negative (paying fees for nothing)
+            _fee_rate_exit = float(getattr(cfg, 'feeRate', 0.001) or 0.001)
+            _non_critical_exits = ("TIME", "PROTECT", "PSELL STALE", "PSELL FAST")
+            _is_non_critical = any(exitReason.startswith(e) for e in _non_critical_exits)
+            if _is_non_critical and pos is not None and pos.entry > 0:
+                _exp_buy_cost = float(pos.entry) * float(getattr(pos, 'qty', 0.0))
+                _exp_sell_rev = float(bid) * float(getattr(pos, 'qty', 0.0))
+                _exp_fees = (_exp_buy_cost + _exp_sell_rev) * _fee_rate_exit
+                _exp_pnl_net = _exp_sell_rev - _exp_buy_cost - _exp_fees
+                _hard_stop_pct = float(getattr(cfg, 'psellMinLossPct', 0.005) or 0.005)
+                _is_hard_stop = float(bid) < float(pos.entry) * (1.0 - _hard_stop_pct * 2)
+                if _exp_pnl_net < 0 and not _is_hard_stop:
+                    time.sleep(cfg.idleSleep)
+                    continue
+
             baseAsset = symbol.replace("USDC", "")
             freeBase = get_asset_balance_safe(bx, cfg, baseAsset)
             if freeBase is None:
@@ -2224,7 +2285,13 @@ def main():
             filledQty = execQty if execQty > 0 else sellQty
             quoteQty = float(info.get("cummulativeQuoteQty", filledQty * sellPx))
             exitPx = quoteQty / filledQty if filledQty > 0 else sellPx
-            pnl = (exitPx - pos.entry) * filledQty
+            buy_cost = float(getattr(pos, 'entry', 0.0)) * filledQty
+            sell_revenue = quoteQty
+            fee_rate = float(getattr(cfg, 'feeRate', 0.001) or 0.001)
+            fees_total = (buy_cost + sell_revenue) * fee_rate
+            pnl = sell_revenue - buy_cost - fees_total
+            pnl_gross = (exitPx - pos.entry) * filledQty
+            daily_pnl_net += pnl
             mid_vs_entry_pct = ((float(mid) - float(pos.entry)) / float(pos.entry) * 100.0) if pos.entry > 0 else ""
             exit_s1, exit_s5, _ = load_signal_snapshot(time.time())
             exit_rsi = ""
@@ -2284,7 +2351,15 @@ def main():
                 "entry": float(pos.entry),
                 "exit": float(exitPx),
             }
-            
+
+            # Remove persisted entry file on clean exit
+            try:
+                _pos_file = runtime_dir / "active_position.json"
+                if _pos_file.exists():
+                    _pos_file.unlink()
+            except Exception:
+                pass
+
             # cooldown and reset
             cooldownUntil = time.time() + (cfg.cooldownWin if pnl > 0 else cfg.cooldownLoss)
             pos = None

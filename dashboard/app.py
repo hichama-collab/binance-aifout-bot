@@ -486,11 +486,7 @@ def api_logs():
     files = []
     seen = set()
     # Collect all log/txt files, bot logs first (exclude dashboard.log from top)
-    patterns = ["*.log", "*.txt"]
-    all_paths = []
-    for pat in patterns:
-        all_paths.extend(LOG_DIR.glob(pat))
-        all_paths.extend(LOG_DIR.glob(f"*/{pat}"))
+    all_paths = list(LOG_DIR.rglob("*.log")) + list(LOG_DIR.rglob("*.csv"))
     bot_logs = []
     dash_logs = []
     for p in all_paths:

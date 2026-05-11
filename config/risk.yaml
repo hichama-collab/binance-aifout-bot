@@ -97,6 +97,8 @@ profiles:
     min_range_entry_pct: 0.0002
     min_range_vs_spread: 0.45
     min_order_notional_usdc: 5.0
+    fee_rate: 0.001
+    daily_max_loss_usdc: 3.0
 
   midcap:
     cap_usdc: 10000
@@ -139,6 +141,8 @@ profiles:
     maxPosTime: 300
     hardMaxPosTime: 1200
     min_order_notional_usdc: 5.0
+    fee_rate: 0.001
+    daily_max_loss_usdc: 3.0
 
   wide_spread:
     cap_usdc: 10000
@@ -181,6 +185,8 @@ profiles:
     maxPosTime: 360
     hardMaxPosTime: 1200
     min_order_notional_usdc: 5.0
+    fee_rate: 0.001
+    daily_max_loss_usdc: 3.0
 
   fast_momo:
     cap_usdc: 90
@@ -226,6 +232,8 @@ profiles:
     maxPosTime: 240
     hardMaxPosTime: 900
     min_order_notional_usdc: 5.0
+    fee_rate: 0.001
+    daily_max_loss_usdc: 3.0
 
   cap: 20
 
