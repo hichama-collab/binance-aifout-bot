@@ -1125,7 +1125,7 @@ def main():
 
             # Daily PnL reset at UTC midnight
             import datetime as _dt
-            _today = _dt.datetime.utcnow().date()
+            _today = _dt.datetime.now(_dt.timezone.utc).date()
             if _last_daily_reset_date != _today:
                 daily_pnl_net = 0.0
                 _last_daily_reset_date = _today
