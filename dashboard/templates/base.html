@@ -98,6 +98,32 @@
 
 {# ===== App JS ===== #}
 <script src="/static/app.js"></script>
+
+{# Ping polling — maintient le badge Live vert sur toutes les pages sauf Live (SSE) #}
+<script>
+  (function() {
+    if (window.__sseActive) return;
+    var dot = document.getElementById('sse-global-dot');
+    var lbl = document.getElementById('sse-global-label');
+    function ping() {
+      fetch('/api/ping', { credentials: 'same-origin' })
+        .then(function(r) {
+          var ok = r.ok;
+          window.__sseStatus = ok ? 'connected' : 'error';
+          if (dot) dot.className = 'sse-dot ' + (ok ? 'connected' : 'error');
+          if (lbl) lbl.textContent = ok ? 'Live' : 'Erreur';
+        })
+        .catch(function() {
+          window.__sseStatus = 'error';
+          if (dot) dot.className = 'sse-dot error';
+          if (lbl) lbl.textContent = 'Hors ligne';
+        });
+    }
+    ping();
+    setInterval(ping, 5000);
+  })();
+</script>
+
 {% block scripts %}{% endblock %}
 
 </body>

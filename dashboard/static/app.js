@@ -78,6 +78,34 @@ function signedColor(value) {
 }
 
 // ============================================================
+// Reason formatter
+// ============================================================
+
+let _reasonsMap = null;
+
+async function _loadReasons() {
+  if (_reasonsMap !== null) return;
+  try {
+    const r = await fetch('/static/i18n/reasons.json');
+    _reasonsMap = await r.json();
+  } catch {
+    _reasonsMap = {};
+  }
+}
+
+function formatReason(raw) {
+  if (!raw) return '—';
+  if (!_reasonsMap) return raw.length > 28 ? raw.slice(0, 28) + '…' : raw;
+  const upper = (raw || '').toUpperCase();
+  // Longest-match first so "PSELL FAIL" beats "PSELL"
+  const codes = Object.keys(_reasonsMap).sort((a, b) => b.length - a.length);
+  for (const code of codes) {
+    if (upper.startsWith(code)) return _reasonsMap[code].fr;
+  }
+  return raw.length > 28 ? raw.slice(0, 28) + '…' : raw;
+}
+
+// ============================================================
 // SSE Manager
 // ============================================================
 
@@ -428,6 +456,11 @@ function botDashboard() {
     fmtAgo(v) { return fmt.ago(v); },
     fmtSymbol(v) { return fmt.symbol(v); },
     fmtDuration(v) { return fmt.duration(v); },
+    fmtReason(v) { return formatReason(v); },
+    binanceUrl(sym) {
+      const base = fmt.symbol(sym || '');
+      return `https://www.binance.com/en/trade/${base}_USDC?type=spot`;
+    },
     signedColor,
   };
 }
@@ -578,12 +611,19 @@ function botStats() {
     fmtTs(v) { return fmt.ts(v); },
     fmtSymbol(v) { return fmt.symbol(v); },
     fmtPrice(v) { return fmt.price(v); },
+    fmtReason(v) { return formatReason(v); },
+    binanceUrl(sym) {
+      const base = fmt.symbol(sym || '');
+      return `https://www.binance.com/en/trade/${base}_USDC?type=spot`;
+    },
   };
 }
 
 // ============================================================
 // botServices() — Services page
 // ============================================================
+
+const ACTION_LOG_KEY = 'botdash_action_log';
 
 function botServices() {
   return {
@@ -605,8 +645,22 @@ function botServices() {
     },
 
     async init() {
+      this._loadLog();
       await this.fetchServices();
       setInterval(() => this.fetchServices(), 5000);
+    },
+
+    _loadLog() {
+      try {
+        const saved = localStorage.getItem(ACTION_LOG_KEY);
+        if (saved) this.actionLog = JSON.parse(saved);
+      } catch {}
+    },
+
+    _saveLog() {
+      try {
+        localStorage.setItem(ACTION_LOG_KEY, JSON.stringify(this.actionLog.slice(0, 50)));
+      } catch {}
     },
 
     async fetchServices() {
@@ -628,6 +682,7 @@ function botServices() {
       try {
         const r = await fetch(`/api/services/${encodeURIComponent(unit)}/${action}`, {
           method: 'POST',
+          credentials: 'same-origin',
         });
         const d = await r.json();
         this._log(unit, action, d.ok, d.output);
@@ -646,7 +701,7 @@ function botServices() {
         this.modal = {
           open: true,
           title: `${action.toUpperCase()} ${unit}`,
-          description: `Type "${action}" to confirm stopping this service.`,
+          description: `Tapez "${action}" pour confirmer l'arrêt de ce service.`,
           confirmWord: action,
           inputValue: '',
           dangerous: true,
@@ -663,33 +718,16 @@ function botServices() {
       if (this.modal.action) await this.modal.action();
     },
 
-    async doPause() {
-      this.modal = {
-        open: true,
-        title: 'PAUSE Bot',
-        description: 'This will stop the trading bot service. Type "pause" to confirm.',
-        confirmWord: 'pause',
-        inputValue: '',
-        dangerous: true,
-        action: async () => {
-          const r = await fetch('/api/bot/pause', { method: 'POST' });
-          const d = await r.json();
-          this._log('binance-aifout-bot.service', 'pause', d.ok, d.output || '');
-          await this.fetchServices();
-        },
-      };
-    },
-
     async doPanic() {
       this.modal = {
         open: true,
-        title: '🚨 PANIC — Stop ALL Services',
-        description: 'This will stop ALL services immediately. Type "panic" to confirm.',
-        confirmWord: 'panic',
+        title: 'PANIC — Stop ALL Services',
+        description: 'Tapez "PANIC" (en majuscules) pour confirmer l\'arrêt immédiat de tous les services. Les positions ouvertes ne seront PAS fermées automatiquement.',
+        confirmWord: 'PANIC',
         inputValue: '',
         dangerous: true,
         action: async () => {
-          const r = await fetch('/api/bot/panic', { method: 'POST' });
+          const r = await fetch('/api/bot/panic', { method: 'POST', credentials: 'same-origin' });
           const d = await r.json();
           this._log('ALL', 'panic', true, JSON.stringify(d.results));
           await this.fetchServices();
@@ -698,14 +736,22 @@ function botServices() {
     },
 
     _log(unit, action, ok, output) {
-      this.actionLog.unshift({
+      this.actionLog = [{
         ts: new Date().toISOString(),
         unit,
         action,
         ok,
         output: (output || '').trim().slice(0, 200),
-      });
-      this.actionLog = this.actionLog.slice(0, 20);
+      }, ...this.actionLog].slice(0, 50);
+      this._saveLog();
+    },
+
+    isRunning(svc) {
+      return svc.sub === 'running' || svc.sub === 'waiting' || svc.state === 'activating';
+    },
+
+    isStopped(svc) {
+      return svc.sub === 'dead' || svc.state === 'inactive' || svc.state === 'failed';
     },
 
     stateClass(state) {
@@ -953,6 +999,7 @@ function themeToggle() {
 // ============================================================
 
 document.addEventListener('alpine:init', () => {
+  _loadReasons();
   Alpine.data('botDashboard', botDashboard);
   Alpine.data('botStats', botStats);
   Alpine.data('botServices', botServices);

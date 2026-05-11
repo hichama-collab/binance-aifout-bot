@@ -1,0 +1,18 @@
+{
+  "TIME":                   { "fr": "Expiration",              "desc": "Durée max de la position atteinte" },
+  "TIME_HARD":              { "fr": "Expiration forcée",       "desc": "Limite de temps absolue dépassée" },
+  "PROTECT":                { "fr": "Protection bénéfice",     "desc": "Stop profit déclenché pour sécuriser les gains" },
+  "TRAIL":                  { "fr": "Trailing stop",           "desc": "Stop suiveur déclenché après retracement" },
+  "PSELL FAST":             { "fr": "Vente rapide",            "desc": "Signal de momentum descendant rapide" },
+  "PSELL STALE":            { "fr": "Signal obsolète",         "desc": "Signal de vente confirmé après stagnation" },
+  "PSELL FAIL":             { "fr": "Vente échouée",           "desc": "Tentative de vente échouée, sortie forcée" },
+  "BURST_REVERSAL":         { "fr": "Retournement détecté",   "desc": "Drawdown excessif sur position burst" },
+  "BURST_FAIL":             { "fr": "Burst raté",              "desc": "Extension burst insuffisante, sortie préventive" },
+  "BURST_HANDOFF":          { "fr": "Transfert burst",         "desc": "Position transférée hors mode burst" },
+  "WALLET_UNTRACKED":       { "fr": "Position orpheline",      "desc": "Position détectée sans contexte d'entrée" },
+  "ENTRY_TIMEOUT":          { "fr": "Timeout entrée",          "desc": "Délai d'entrée en position dépassé" },
+  "ENTRY_TIMEOUT_CANCEL":   { "fr": "Annulation entrée",       "desc": "Ordre d'achat annulé après timeout" },
+  "QTY_TOO_SMALL":          { "fr": "Quantité trop petite",    "desc": "Notionnel sous le minimum Binance" },
+  "SELL_BAL_UNAVAILABLE":   { "fr": "Balance indisponible",    "desc": "Solde insuffisant pour exécuter la vente" },
+  "UNKNOWN":                { "fr": "Raison inconnue",         "desc": "Code de sortie non reconnu" }
+}

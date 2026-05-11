@@ -2,6 +2,10 @@
 {% extends 'base.html' %}
 {% block title %}Live{% endblock %}
 
+{% block scripts %}
+<script>window.__sseActive = true;</script>
+{% endblock %}
+
 {% block content %}
 <div x-data="botDashboard()"
      x-init="
@@ -209,7 +213,12 @@
         <tbody>
           <template x-for="(t, i) in trades.slice(0,10)" :key="t.trade_key || i">
             <tr>
-              <td class="font-mono font-semibold text-[#EAECEF]" x-text="fmtSymbol(t.symbol)"></td>
+              <td class="font-mono font-semibold">
+                <a :href="binanceUrl(t.symbol)"
+                   target="_blank" rel="noopener"
+                   class="symbol-link"
+                   x-text="fmtSymbol(t.symbol)"></a>
+              </td>
               <td class="num font-mono text-xs text-[#848E9C]" x-text="fmtTs(t.ts_epoch)"></td>
               <td class="text-right num font-mono" x-text="fmtPrice(t.entry_price)"></td>
               <td class="text-right num font-mono" x-text="fmtPrice(t.exit_price)"></td>
@@ -219,7 +228,9 @@
               <td class="text-right num font-mono"
                   :class="pnlClass(t.pnl_pct)"
                   x-text="fmtPct(t.pnl_pct)"></td>
-              <td class="text-xs text-[#848E9C] truncate max-w-[140px]" x-text="t.reason || '—'"></td>
+              <td class="text-xs text-[#848E9C] truncate max-w-[140px]"
+                  :title="t.reason || ''"
+                  x-text="fmtReason(t.reason)"></td>
             </tr>
           </template>
         </tbody>

@@ -70,12 +70,12 @@
         {# Actions #}
         <div class="flex gap-1.5 flex-wrap">
           <button class="btn btn-xs btn-ghost"
-                  :disabled="actionInProgress[svc.unit+'-start'] || svc.state === 'active'"
+                  :disabled="actionInProgress[svc.unit+'-start'] || isRunning(svc)"
                   @click="requestAction(svc.unit, 'start')">
             ▶ Start
           </button>
           <button class="btn btn-xs btn-ghost"
-                  :disabled="actionInProgress[svc.unit+'-stop'] || svc.state === 'inactive'"
+                  :disabled="actionInProgress[svc.unit+'-stop'] || isStopped(svc)"
                   @click="requestAction(svc.unit, 'stop')">
             ■ Stop
           </button>
@@ -119,17 +119,12 @@
       <h2 class="font-bold text-[#EAECEF]">Kill Switch</h2>
       <span class="badge badge-error text-xs">Zone dangereuse</span>
     </div>
-    <p class="text-sm text-[#B7BDC6] mb-4">
-      Ces actions nécessitent une double confirmation. Elles affectent directement le bot en production.
+    <p class="text-sm text-[#B7BDC6] mb-2">
+      Cette action stoppe <strong>TOUS</strong> les services du bot immédiatement.
+      Les positions ouvertes ne seront <strong>PAS</strong> fermées automatiquement.
+      À utiliser uniquement en cas d'urgence absolue.
     </p>
     <div class="flex flex-wrap gap-3">
-      <button class="btn btn-ghost border-[#F0B90B]/40 text-[#F0B90B] hover:bg-[rgba(240,185,11,0.1)]"
-              @click="doPause()">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-        PAUSE Bot
-      </button>
       <button class="btn btn-danger"
               @click="doPanic()">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">

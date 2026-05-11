@@ -559,6 +559,12 @@ def api_config():
 # ---------------------------------------------------------------------------
 
 
+@app.route("/api/ping")
+@require_basic_auth
+def api_ping():
+    return jsonify({"ok": True})
+
+
 @app.route("/live")
 @require_basic_auth
 def live():

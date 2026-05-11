@@ -366,6 +366,16 @@ td.num, th.num {
   border-bottom: none;
 }
 
+.symbol-link {
+  color: #EAECEF;
+  text-decoration: none;
+  cursor: pointer;
+}
+.symbol-link:hover {
+  color: #F0B90B;
+  text-decoration: underline;
+}
+
 /* =========================================================
    10. Chart Container
    ========================================================= */

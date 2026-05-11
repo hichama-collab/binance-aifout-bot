@@ -25,7 +25,7 @@
   </div>
 
   <div class="grid-stats mb-4">
-    <template x-for="(key, label) in {today: 'Aujourd\'hui', session: 'Session', week: 'Semaine', month: 'Mois', year: 'Année'}" :key="key">
+    <template x-for="(label, key) in {today: 'Aujourd\'hui', session: 'Session', week: 'Semaine', month: 'Mois', year: 'Année'}" :key="key">
       <div class="stat-card">
         <div class="stat-label" x-text="label"></div>
         <div class="stat-value num" :class="pnlClass(pnl[key]?.usdc)" x-text="fmtUsdc(pnl[key]?.usdc)">—</div>
@@ -269,13 +269,17 @@
               PnL % <span x-show="tradesSortKey==='pnl_pct'" x-text="tradesSortDir>0?'▲':'▼'"></span>
             </th>
             <th>Raison</th>
-            <th>Src</th>
           </tr>
         </thead>
         <tbody>
           <template x-for="(t, i) in pagedTrades" :key="t.trade_key || i">
             <tr>
-              <td class="font-mono font-semibold text-[#EAECEF]" x-text="fmtSymbol(t.symbol)"></td>
+              <td class="font-mono font-semibold">
+                <a :href="binanceUrl(t.symbol)"
+                   target="_blank" rel="noopener"
+                   class="symbol-link"
+                   x-text="fmtSymbol(t.symbol)"></a>
+              </td>
               <td class="num font-mono text-xs text-[#848E9C]" x-text="fmtTs(t.ts_epoch)"></td>
               <td class="text-right num font-mono text-sm" x-text="fmtPrice(t.entry_price)"></td>
               <td class="text-right num font-mono text-sm" x-text="fmtPrice(t.exit_price)"></td>
@@ -285,8 +289,9 @@
               <td class="text-right num font-mono"
                   :class="pnlClass(t.pnl_pct)"
                   x-text="fmtPct(t.pnl_pct)"></td>
-              <td class="text-xs text-[#848E9C] max-w-[160px] truncate" x-text="t.reason || '—'"></td>
-              <td class="text-xs text-[#848E9C]" x-text="t.src || '—'"></td>
+              <td class="text-xs text-[#848E9C] max-w-[160px] truncate"
+                  :title="t.reason || ''"
+                  x-text="fmtReason(t.reason)"></td>
             </tr>
           </template>
         </tbody>
