@@ -1,0 +1,1 @@
+[2026-05-11 17:18:11Z] ERR LOOP_EXCEPTION: '>' not supported between instances of 'float' and 'NoneType'
