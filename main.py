@@ -2,8 +2,13 @@
 import sys
 import time
 import os
+import json
 from pathlib import Path
 from decimal import Decimal, ROUND_CEILING
+
+from execution.fee_model import FeeModel
+from state.persisted import PersistedPosition, save_position, load_position, clear_position, reconcile_with_wallet
+from risk.circuit_breaker import CircuitBreaker
 
 
 def momentum_ok(
@@ -734,6 +739,18 @@ def main():
     lastExitInfo = None
     daily_pnl_net = 0.0
     _last_daily_reset_date = None
+
+    # Fee model + circuit breaker
+    _fee_model = FeeModel(
+        fee_rate=float(getattr(cfg, 'defaultFeeRate', 0.001)),
+        use_bnb=bool(getattr(cfg, 'useBnbForFees', False)),
+    )
+    _circuit_breaker = CircuitBreaker(
+        daily_max_loss_usdc=float(getattr(cfg, 'dailyMaxLossUsdc', 1.0)),
+        max_consecutive_losses=int(getattr(cfg, 'maxConsecutiveLosses', 5)),
+        cooldown_after_break_sec=float(getattr(cfg, 'cooldownAfterBreakSec', 3600.0)),
+    )
+    _persisted_path = Path(getattr(cfg, 'runtimeDir', 'data/runtime')) / 'persisted_position.json'
     blockedSymbols = set()
     blocked_symbols_file = Path(getattr(cfg, "blockedSymbolsFile", Path("data/blocked_symbols.txt")))
     blockedSymbols.update(load_blocked_symbols(blocked_symbols_file))
@@ -1130,16 +1147,15 @@ def main():
                 daily_pnl_net = 0.0
                 _last_daily_reset_date = _today
 
-            # Daily loss limit check
-            _daily_max_loss = float(getattr(cfg, 'dailyMaxLossUsdc', 0.0) or 0.0)
-            if _daily_max_loss > 0 and daily_pnl_net <= -_daily_max_loss:
-                if pos is None:
-                    maybe_hold(
-                        now, 'HOLD_DAILY_LOSS_LIMIT',
-                        spread, momPct, momRangePct, upRatio,
-                        bid, ask, mid, P1, P2, P3, P4,
-                        detail=f"daily_pnl={daily_pnl_net:.4f} limit={_daily_max_loss:.4f}",
-                    )
+            # Circuit breaker check (daily loss + consecutive losses)
+            _cb_blocked, _cb_reason = _circuit_breaker.should_block_entries()
+            if _cb_blocked and pos is None:
+                maybe_hold(
+                    now, 'HOLD_CIRCUIT_BREAKER',
+                    spread, momPct, momRangePct, upRatio,
+                    bid, ask, mid, P1, P2, P3, P4,
+                    detail=_cb_reason,
+                )
                 time.sleep(cfg.idleSleep)
                 continue
 
@@ -2014,6 +2030,17 @@ def main():
                     "entry_vs_mid_pct": entry_vs_mid_pct,
                     "mid_vs_entry_pct": "",
                 })
+                # Persister la position sur disque (survit aux restarts)
+                _pp = PersistedPosition(
+                    symbol=symbol,
+                    entry_price=float(getattr(pos, 'entry', 0.0)),
+                    entry_qty=float(getattr(pos, 'qty', 0.0)),
+                    entry_ts=float(getattr(pos, 'ts_entry', time.time())),
+                    entry_reason=entryMode,
+                    high_seen=float(getattr(pos, 'high', getattr(pos, 'entry', 0.0))),
+                    buy_notional=float(getattr(pos, 'entry', 0.0)) * float(getattr(pos, 'qty', 0.0)),
+                )
+                save_position(_pp, _persisted_path)
                 continue
             
             if pos is None:
@@ -2287,11 +2314,15 @@ def main():
             exitPx = quoteQty / filledQty if filledQty > 0 else sellPx
             buy_cost = float(getattr(pos, 'entry', 0.0)) * filledQty
             sell_revenue = quoteQty
-            fee_rate = float(getattr(cfg, 'feeRate', 0.001) or 0.001)
-            fees_total = (buy_cost + sell_revenue) * fee_rate
-            pnl = sell_revenue - buy_cost - fees_total
-            pnl_gross = (exitPx - pos.entry) * filledQty
+            _pnl_detail = _fee_model.compute_net_pnl(
+                float(getattr(pos, 'entry', exitPx)), filledQty,
+                exitPx, filledQty, symbol
+            )
+            pnl = _pnl_detail["net_pnl"]
+            pnl_gross = _pnl_detail["gross_pnl"]
             daily_pnl_net += pnl
+            _circuit_breaker.record_trade(pnl)
+            clear_position(_persisted_path)
             mid_vs_entry_pct = ((float(mid) - float(pos.entry)) / float(pos.entry) * 100.0) if pos.entry > 0 else ""
             exit_s1, exit_s5, _ = load_signal_snapshot(time.time())
             exit_rsi = ""

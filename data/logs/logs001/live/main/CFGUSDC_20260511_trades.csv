@@ -1,2 +1,0 @@
-ts_utc,symbol,event,side,qty,price,reason,pnl,profile,dry_run,spread_pct,mom_pct,mom_range_pct,up_ratio,rsi,ema1_ok,ema5_ok,vol_ok,bid,ask,mid,entry_price,p1,p2,p3,p4,entry_vs_mid_pct,mid_vs_entry_pct
-1778510379,CFGUSDC,DECIDE_HOLD,,,,HOLD_BURST_EMA,,major,0,0.09953550099536246,0.8697106539555081,0.9203480589022672,42.857142857142854,64.8768660690888,0,0,1,0.3014,0.3017,0.30155,,0.30155,0.30045,0.29885,0.29885,,
