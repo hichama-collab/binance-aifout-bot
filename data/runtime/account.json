@@ -1,6 +1,6 @@
 {
-  "ts": 1778545006.600534,
-  "symbol": "ONDOUSDC",
+  "ts": 1778551317.2848053,
+  "symbol": "BTCUSDC",
   "account": {
     "makerCommission": 10,
     "takerCommission": 10,
@@ -18,7 +18,7 @@
     "brokered": false,
     "requireSelfTradePrevention": false,
     "preventSor": false,
-    "updateTime": 1778543949402,
+    "updateTime": 1778548587482,
     "accountType": "SPOT",
     "balances": [
       {
@@ -813,7 +813,7 @@
       },
       {
         "asset": "USDC",
-        "free": "0.00000000",
+        "free": "10.00000000",
         "locked": "0.00000000"
       },
       {

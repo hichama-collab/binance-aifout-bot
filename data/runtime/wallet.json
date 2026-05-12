@@ -1,6 +1,6 @@
 {
-  "ts": 1778545006.600534,
-  "symbol": "ONDOUSDC",
+  "ts": 1778551317.2848053,
+  "symbol": "BTCUSDC",
   "balances": [
     {
       "asset": "BTC",
@@ -794,7 +794,7 @@
     },
     {
       "asset": "USDC",
-      "free": "0.00000000",
+      "free": "10.00000000",
       "locked": "0.00000000"
     },
     {
