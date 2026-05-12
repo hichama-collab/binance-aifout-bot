@@ -1,6 +1,6 @@
 {
-  "ts": 1778535323.8336606,
-  "symbol": "ATOMUSDC",
+  "ts": 1778545006.600534,
+  "symbol": "ONDOUSDC",
   "account": {
     "makerCommission": 10,
     "takerCommission": 10,
@@ -18,7 +18,7 @@
     "brokered": false,
     "requireSelfTradePrevention": false,
     "preventSor": false,
-    "updateTime": 1778533537553,
+    "updateTime": 1778543949402,
     "accountType": "SPOT",
     "balances": [
       {
@@ -813,7 +813,7 @@
       },
       {
         "asset": "USDC",
-        "free": "9.86678567",
+        "free": "0.00000000",
         "locked": "0.00000000"
       },
       {
@@ -2798,7 +2798,7 @@
       },
       {
         "asset": "PENDLE",
-        "free": "0.07875500",
+        "free": "0.07448000",
         "locked": "0.00000000"
       },
       {
@@ -2893,7 +2893,7 @@
       },
       {
         "asset": "TON",
-        "free": "0.00119850",
+        "free": "0.00345550",
         "locked": "0.00000000"
       },
       {
@@ -3093,7 +3093,7 @@
       },
       {
         "asset": "ONDO",
-        "free": "0.03573000",
+        "free": "0.01426000",
         "locked": "0.00000000"
       },
       {

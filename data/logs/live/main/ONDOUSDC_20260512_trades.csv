@@ -1,0 +1,2 @@
+ts_utc,symbol,event,side,qty,price,reason,pnl,profile,dry_run,spread_pct,mom_pct,mom_range_pct,up_ratio,rsi,ema1_ok,ema5_ok,vol_ok,bid,ask,mid,entry_price,p1,p2,p3,p4,entry_vs_mid_pct,mid_vs_entry_pct
+1778544396,ONDOUSDC,DECIDE_HOLD,,,,HOLD_BURST_EMA,,major,0,0.02326122354035566,0.13974612786770454,0.13974612786770454,46.666666666666664,52.5636074203543,1,0,1,0.4299,0.43,0.42995,,0.42995,0.42985,0.4294,0.4294,,
