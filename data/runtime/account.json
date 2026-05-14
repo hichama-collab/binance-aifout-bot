@@ -1,6 +1,6 @@
 {
-  "ts": 1778552203.8200045,
-  "symbol": "BTCUSDC",
+  "ts": 1778582411.3819761,
+  "symbol": "CHIPUSDC",
   "account": {
     "makerCommission": 10,
     "takerCommission": 10,
@@ -18,7 +18,7 @@
     "brokered": false,
     "requireSelfTradePrevention": false,
     "preventSor": false,
-    "updateTime": 1778548587482,
+    "updateTime": 1778580751922,
     "accountType": "SPOT",
     "balances": [
       {
@@ -813,7 +813,7 @@
       },
       {
         "asset": "USDC",
-        "free": "10.00000000",
+        "free": "0.00000000",
         "locked": "0.00000000"
       },
       {
@@ -1658,7 +1658,7 @@
       },
       {
         "asset": "NEAR",
-        "free": "0.00000000",
+        "free": "0.09411000",
         "locked": "0.00000000"
       },
       {
@@ -1693,7 +1693,7 @@
       },
       {
         "asset": "INJ",
-        "free": "0.00637850",
+        "free": "0.00279350",
         "locked": "0.00000000"
       },
       {
@@ -3948,7 +3948,7 @@
       },
       {
         "asset": "CHIP",
-        "free": "0.86155000",
+        "free": "0.71380000",
         "locked": "0.00000000"
       }
     ],
