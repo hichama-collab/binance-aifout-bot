@@ -1,21 +1,21 @@
 {
-  "ts": "2026-05-14 18:44:39Z",
+  "ts": "2026-05-14 18:45:51Z",
   "bot": "btc_range_v1",
   "symbol": "BTCUSDC",
   "state": "IDLE",
-  "bid": 81554.65,
-  "ask": 81554.66,
-  "spread_pct": 1.2261716541378359e-05,
+  "bid": 81531.5,
+  "ask": 81531.51,
+  "spread_pct": 1.2265198107187175e-05,
   "snapshot": {
     "low": 81076.92,
     "high": 82058.82,
     "mid": 81567.87,
     "width": 981.9000000000087,
     "rangePct": 0.012110721522228628,
-    "driftPct": 0.022811211878630788,
-    "lastClose": 81554.66,
+    "driftPct": 0.023018854101564224,
+    "lastClose": 81549.15,
     "barCount": 24,
     "timeframe": "5m"
   },
-  "last_hold_reason": "TREND_STRONG 2.281%>1.200%"
+  "last_hold_reason": "TREND_STRONG 2.302%>1.200%"
 }
