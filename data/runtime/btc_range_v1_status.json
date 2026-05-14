@@ -1,11 +1,21 @@
 {
-  "ts": 1778782456.4399114,
-  "symbol": "FETUSDC",
-  "bid": 0.2163,
-  "ask": 0.2164,
-  "spread_pct": 0.046232085067044265,
+  "ts": "2026-05-14 18:44:39Z",
+  "bot": "btc_range_v1",
+  "symbol": "BTCUSDC",
   "state": "IDLE",
-  "mom_pct": 0.0462427745664689,
-  "mom_range_pct": 0.0462427745664689,
-  "up_ratio": 18.181818181818183
+  "bid": 81554.65,
+  "ask": 81554.66,
+  "spread_pct": 1.2261716541378359e-05,
+  "snapshot": {
+    "low": 81076.92,
+    "high": 82058.82,
+    "mid": 81567.87,
+    "width": 981.9000000000087,
+    "rangePct": 0.012110721522228628,
+    "driftPct": 0.022811211878630788,
+    "lastClose": 81554.66,
+    "barCount": 24,
+    "timeframe": "5m"
+  },
+  "last_hold_reason": "TREND_STRONG 2.281%>1.200%"
 }
