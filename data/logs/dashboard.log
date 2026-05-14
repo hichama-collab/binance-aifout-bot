@@ -1,0 +1,9 @@
+2026-05-14 19:34:56,771 [INFO] botdash: BotDash starting on port 8099
+2026-05-14 19:34:56,781 [INFO] werkzeug: [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:8099
+2026-05-14 19:34:56,783 [INFO] werkzeug: [33mPress CTRL+C to quit[0m
+2026-05-14 19:38:37,428 [INFO] werkzeug: 127.0.0.1 - - [14/May/2026 19:38:37] "[31m[1mGET / HTTP/1.0[0m" 401 -
+2026-05-14 19:49:18,443 [INFO] werkzeug: 127.0.0.1 - - [14/May/2026 19:49:18] "[31m[1mGET / HTTP/1.0[0m" 401 -
+2026-05-14 20:06:13,013 [INFO] werkzeug: 127.0.0.1 - - [14/May/2026 20:06:13] "[31m[1mGET / HTTP/1.0[0m" 401 -
+2026-05-14 20:08:31,308 [INFO] werkzeug: 127.0.0.1 - - [14/May/2026 20:08:31] "[31m[1mGET / HTTP/1.0[0m" 401 -
+2026-05-14 20:10:11,976 [INFO] werkzeug: 127.0.0.1 - - [14/May/2026 20:10:11] "[33mGET /admin/config.php HTTP/1.0[0m" 404 -
