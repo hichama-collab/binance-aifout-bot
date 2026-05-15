@@ -241,3 +241,39 @@ strategies:
   momentum: {}
   reversal: {}
   cap: 20
+
+# ── Fees ──────────────────────────────────────────────────────────────────────
+fees:
+  defaultFeeRate: 0.001        # 0.10% taker spot Binance
+  useBnbForFees: false         # true = 25% discount via BNB
+  minProfitBufferPct: 0.0
+
+# ── Token Quality Score ───────────────────────────────────────────────────────
+tokenQuality:
+  enabled: true
+  minQualityScore: 0.3         # tokens en dessous → ignorés
+  minTradesForBlock: 5         # nbre minimum de trades pour bloquer
+  blockPnlThreshold: -0.10     # pnl_net_total < -0.10 USDC → bloqué
+  blockWinrateThreshold: 0.20  # winrate < 20% → bloqué
+  respectBlocked: true         # si false, les bloqués sont pénalisés mais pas exclus
+  rebuildOnStart: true         # rebuild token_quality.json au démarrage du selector
+
+# ── Pic Filter ────────────────────────────────────────────────────────────────
+picFilter:
+  enabled: true
+  lookbackSec: 180             # fenêtre de recherche du pic (secondes)
+  thresholdPct: 0.001          # 0.1% sous le pic = near peak
+
+# ── Position Dynamics + Trailing Stop + Breakeven ────────────────────────────
+positionDynamics:
+  enabled: true
+
+trailingStop:
+  enabled: true
+  drawdownPct: 0.004           # retrace 0.4% depuis le pic → sortie
+  minGainArmingPct: 0.005      # s'arme seulement si max_gain >= 0.5%
+
+breakevenEscape:
+  enabled: true
+  minGainArmingPct: 0.003      # s'arme si max_gain >= 0.3%
+  bufferPct: 0.0005            # 0.05% au-dessus du vrai breakeven

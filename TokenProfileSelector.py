@@ -9,6 +9,7 @@ from pathlib import Path
 import requests
 
 from core.trade_memory import load_token_scores, sync_trade_memory
+from state.token_quality import load_quality_map, save_quality_map
 
 BASE_URL = "https://api.binance.com"
 ROOT_PATH = Path((os.getenv("BOT_ROOT_DIR") or str(Path(__file__).resolve().parent)).strip()).resolve()
@@ -289,7 +290,10 @@ def collect_candidates(excluded_symbols: set[str] | None = None, positive_only: 
     return candidates
 
 
-def rank_candidates(candidates, score_map):
+def rank_candidates(candidates, score_map, quality_map=None):
+    min_qs = float(os.getenv("SELECTOR_MIN_QUALITY_SCORE", "0.3"))
+    respect_blocked = os.getenv("SELECTOR_RESPECT_BLOCKED", "1") != "0"
+
     ranked = []
     for candidate in candidates:
         symbol = candidate["symbol"]
@@ -299,10 +303,28 @@ def rank_candidates(candidates, score_map):
             continue
         history_bonus = float(memory.get("history_bonus") or 0.0)
         unknown_penalty = SELECTOR_UNKNOWN_SCORE_PENALTY if closed_trades <= 0 else 0.0
-        final_score = float(candidate["pct"]) + history_bonus - unknown_penalty
+
+        # Quality score filter
+        quality_score = 0.5  # neutral default (no history)
+        if quality_map:
+            tok = quality_map.get(symbol, {})
+            quality_score = float(tok.get("quality_score", 0.5))
+            if quality_score == 0.0 and respect_blocked:
+                print(f"TOKEN_SELECTOR: skip {symbol} quality_score=0.0 (blocked) reason={tok.get('block_reason','')}")
+                continue
+            if quality_score < min_qs:
+                print(f"TOKEN_SELECTOR: skip {symbol} quality_score={quality_score:.3f} < min={min_qs}")
+                continue
+
+        # Final score = momentum-based score × quality multiplier
+        raw_score = float(candidate["pct"]) + history_bonus - unknown_penalty
+        final_score = raw_score * quality_score
+
         ranked.append({
             **candidate,
             "final_score": final_score,
+            "raw_score": raw_score,
+            "quality_score": quality_score,
             "history_bonus": history_bonus,
             "unknown_penalty": unknown_penalty,
             "is_toxic": bool(memory.get("is_toxic")),
@@ -323,11 +345,11 @@ def rank_candidates(candidates, score_map):
     return ranked
 
 
-def pick_best_candidate(score_map, excluded_symbols: set[str] | None = None):
+def pick_best_candidate(score_map, excluded_symbols: set[str] | None = None, quality_map=None):
     candidates = collect_candidates(excluded_symbols=excluded_symbols, positive_only=True)
     if not candidates:
         return None, []
-    ranked = rank_candidates(candidates, score_map)
+    ranked = rank_candidates(candidates, score_map, quality_map=quality_map)
     # Choose best candidate whose current 2-min direction is acceptable (not in free fall)
     chosen = None
     for item in ranked:
@@ -347,11 +369,11 @@ def pick_best_candidate(score_map, excluded_symbols: set[str] | None = None):
     return chosen, ranked
 
 
-def choose_fallback_candidate(score_map, excluded_symbols: set[str] | None = None):
+def choose_fallback_candidate(score_map, excluded_symbols: set[str] | None = None, quality_map=None):
     positive_candidates = collect_candidates(excluded_symbols=excluded_symbols, positive_only=True)
-    positive_ranked = rank_candidates(positive_candidates, score_map) if positive_candidates else []
+    positive_ranked = rank_candidates(positive_candidates, score_map, quality_map=quality_map) if positive_candidates else []
     any_candidates = collect_candidates(excluded_symbols=excluded_symbols, positive_only=False)
-    any_ranked = rank_candidates(any_candidates, score_map) if any_candidates else []
+    any_ranked = rank_candidates(any_candidates, score_map, quality_map=quality_map) if any_candidates else []
 
     fallback = None
     fallback_mode = ""
@@ -445,7 +467,30 @@ def main():
             f"TOKEN_SELECTOR: loaded blocked symbols count={len(blocked_symbols)} "
             f"file={BLOCKED_SYMBOLS_PATH}"
         )
-    chosen, ranked = pick_best_candidate(score_map, excluded_symbols=blocked_symbols)
+
+    # Load token quality map (rebuild if requested)
+    quality_file = ROOT_PATH / "state" / "token_quality.json"
+    rebuild_on_start = os.getenv("SELECTOR_QUALITY_REBUILD_ON_START", "1") != "0"
+    if rebuild_on_start:
+        try:
+            import subprocess, sys
+            result = subprocess.run(
+                [sys.executable, str(ROOT_PATH / "tools" / "rebuild_token_quality.py"),
+                 "--out", str(quality_file)],
+                capture_output=True, text=True, timeout=30, cwd=str(ROOT_PATH),
+            )
+            if result.returncode == 0:
+                print(f"TOKEN_SELECTOR: quality map rebuilt → {quality_file}")
+            else:
+                print(f"TOKEN_SELECTOR: quality rebuild failed: {result.stderr[:200]}")
+        except Exception as e:
+            print(f"TOKEN_SELECTOR: quality rebuild error: {e}")
+    quality_map = load_quality_map(quality_file)
+    blocked_by_quality = [s for s, t in quality_map.items() if t.get("quality_score", 1.0) == 0.0]
+    if blocked_by_quality:
+        print(f"TOKEN_SELECTOR: quality-blocked tokens ({len(blocked_by_quality)}): {blocked_by_quality}")
+
+    chosen, ranked = pick_best_candidate(score_map, excluded_symbols=blocked_symbols, quality_map=quality_map)
     log_selector_memory_state(sync_info, ranked)
 
     if not chosen:
@@ -453,6 +498,7 @@ def main():
             fallback, fallback_mode, positive_ranked, any_ranked = choose_fallback_candidate(
                 score_map,
                 excluded_symbols=blocked_symbols,
+                quality_map=quality_map,
             )
             fallback_ranked = positive_ranked if positive_ranked else any_ranked
             if fallback_ranked:

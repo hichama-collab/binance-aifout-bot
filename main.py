@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from decimal import Decimal, ROUND_CEILING
 
+from typing import Optional
 from execution.fee_model import FeeModel
 from state.persisted import PersistedPosition, save_position, load_position, clear_position, reconcile_with_wallet
 from risk.circuit_breaker import CircuitBreaker
@@ -101,20 +102,6 @@ def instant_momentum_ok(ticks, threshold_pct: float, lookback: int, min_up_ratio
     return ok, mom, up_ratio
 
 
-
-def p1p4_ok(ticks, lookback: int = 4):
-    """Simple micro-structure confirmation.
-    Uses bid ticks: requires current bid strictly greater than bid N ticks ago.
-    """
-    try:
-        lookback = int(lookback)
-        if not ticks or len(ticks) < lookback:
-            return False
-        p_old = float(ticks[-lookback][1])
-        p_now = float(ticks[-1][1])
-        return (p_now > p_old)
-    except Exception:
-        return False
 
 def tick_confirmation_ok(ticks, lookback: int, min_pct: float):
     """Tick-to-tick micro confirmation.
@@ -359,23 +346,6 @@ def ticks_fresh(ticks, max_age_sec: float) -> bool:
     return age <= float(max_age_sec)
 
 
-def orderbook_imbalance_ok(bx, symbol: str, min_ratio: float, depth_levels: int):
-    # Returns (ok, ratio). Uses public depth endpoint.
-    try:
-        depth_levels = max(1, min(100, int(depth_levels)))
-        depth = bx.get('/api/v3/depth', {'symbol': symbol, 'limit': max(5, depth_levels)})
-        bids = (depth.get('bids') or [])[:depth_levels]
-        asks = (depth.get('asks') or [])[:depth_levels]
-        bid_vol = sum(float(q) for _, q in bids)
-        ask_vol = sum(float(q) for _, q in asks)
-        if ask_vol <= 0:
-            return False, 0.0
-        ratio = bid_vol / ask_vol
-        return (ratio >= float(min_ratio)), ratio
-    except Exception:
-        return False, 0.0
-
-
 from core.config import loadConfig, pickProfile, applyRiskConfig, resolveServiceEnvPath
 from core.logging import LogDayContext, tradeLogger, tradeCsvLogger, errorLogger, ensureCsvHeader, local_timestamp
 from core.trade_memory import load_token_scores, sync_trade_memory
@@ -392,6 +362,12 @@ from indicators.basic import fmt, computeSignals, computeMarketContext
 
 # NEW: Import range logic for BTC Range V1
 from btc_range_v1.logic import build_range_snapshot, range_market_ok, entry_signal, update_position, RangeSnapshot
+from strategy.pic_filter import check_near_peak
+from strategy.position_dynamics import (
+    PositionDynamics, init_dynamics, update_dynamics,
+    check_trailing_stop, check_breakeven_escape,
+    save_dynamics, load_dynamics, clear_dynamics,
+)
 
 
 def round_step(qty: float, step: float) -> float:
@@ -571,7 +547,7 @@ def _resolve_start_symbol() -> str | None:
     return _read_service_env_symbol(env_path)
 
 
-def _maybe_reexec_on_token_change(current_symbol: str, pos, last_env_mtime: float):
+def _maybe_reexec_on_token_change(current_symbol: str, pos, last_env_mtime: float, log_fn=None):
     """
     Hot-reload token only when IDLE (pos is None).
     If .service.env SYMBOL changed -> re-exec current process with new argv.
@@ -589,7 +565,7 @@ def _maybe_reexec_on_token_change(current_symbol: str, pos, last_env_mtime: floa
         new_symbol = _read_service_env_symbol(env_path)
         if not new_symbol or new_symbol == current_symbol:
             return current_symbol, mtime
-        _reexec_to_symbol(current_symbol, new_symbol, source=".service.env")
+        _reexec_to_symbol(current_symbol, new_symbol, source=".service.env", log_fn=log_fn)
     except SystemExit:
         raise
     except Exception:
@@ -597,13 +573,14 @@ def _maybe_reexec_on_token_change(current_symbol: str, pos, last_env_mtime: floa
     return current_symbol, last_env_mtime
 
 
-def _reexec_to_symbol(current_symbol: str, new_symbol: str, *, source: str = ".service.env"):
+def _reexec_to_symbol(current_symbol: str, new_symbol: str, *, source: str = ".service.env", log_fn=None):
     msg = f"TOKEN_SWITCH old={current_symbol} new={new_symbol} source={source}"
     print(msg)
-    try:
-        logTrade(msg)
-    except Exception:
-        pass
+    if log_fn is not None:
+        try:
+            log_fn(msg)
+        except Exception:
+            pass
     os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), new_symbol])
 
 
@@ -630,9 +607,9 @@ def save_status_json(runtime_dir: Path, data: dict):
     """Save current bot status to JSON for dashboard monitoring."""
     try:
         runtime_dir.mkdir(parents=True, exist_ok=True)
-        tmp = runtime_dir / "btc_range_v1_status.json.tmp"
+        tmp = runtime_dir / "bot_status.json.tmp"
         tmp.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
-        tmp.replace(runtime_dir / "btc_range_v1_status.json")
+        tmp.replace(runtime_dir / "bot_status.json")
     except Exception:
         pass
 
@@ -751,6 +728,8 @@ def main():
         cooldown_after_break_sec=float(getattr(cfg, 'cooldownAfterBreakSec', 3600.0)),
     )
     _persisted_path = Path(getattr(cfg, 'runtimeDir', 'data/runtime')) / 'persisted_position.json'
+    _dynamics_path = Path(getattr(cfg, 'runtimeDir', 'data/runtime')) / 'position_dynamics.json'
+    _dyn: Optional[PositionDynamics] = None
     blockedSymbols = set()
     blocked_symbols_file = Path(getattr(cfg, "blockedSymbolsFile", Path("data/blocked_symbols.txt")))
     blockedSymbols.update(load_blocked_symbols(blocked_symbols_file))
@@ -943,9 +922,9 @@ def main():
             # cooldown log so it doesn't look frozen
             if now < cooldownUntil:
                 if pos is None:
-                    symbol, last_env_mtime = _maybe_reexec_on_token_change(symbol, pos, last_env_mtime)
+                    symbol, last_env_mtime = _maybe_reexec_on_token_change(symbol, pos, last_env_mtime, log_fn=logTrade)
                 if pendingSwitchSymbol and pos is None:
-                    _reexec_to_symbol(symbol, pendingSwitchSymbol, source="pending_switch")
+                    _reexec_to_symbol(symbol, pendingSwitchSymbol, source="pending_switch", log_fn=logTrade)
                 if now - lastChk >= cfg.chkEvery:
                     lastChk = now
                     left = cooldownUntil - now
@@ -971,27 +950,31 @@ def main():
                 usdc = None
 
 
-            # wallet placeholder guard: if entry==0, try to restore from persisted file, else use bid
+            # wallet placeholder guard: if entry==0, try to restore from persisted file.
+            # NEVER adopt bid as entry — unknown entry price means unknown risk.
             if pos is not None and getattr(pos, 'entry', 0.0) == 0.0:
                 _recovered_entry = 0.0
                 try:
-                    import json as _json
                     _pos_file = runtime_dir / "active_position.json"
                     if _pos_file.exists():
-                        _pd = _json.loads(_pos_file.read_text(encoding="utf-8"))
+                        _pd = json.loads(_pos_file.read_text(encoding="utf-8"))
                         if _pd.get("symbol") == symbol and float(_pd.get("entry", 0.0)) > 0:
                             _recovered_entry = float(_pd["entry"])
                             logTrade(f"ENTRY_RECOVERED symbol={symbol} entry={_recovered_entry} from_disk=true")
                 except Exception:
                     pass
-                adopted_entry = _recovered_entry if _recovered_entry > 0 else float(bid)
-                pos.entry = adopted_entry
-                pos.high = float(bid)
-                pos.stop = 0.0
-                try:
-                    pos.init_stops(cfg, profile, tick=tick)
-                except Exception:
-                    pass
+                if _recovered_entry > 0:
+                    pos.entry = _recovered_entry
+                    pos.high = float(bid)
+                    pos.stop = 0.0
+                    try:
+                        pos.init_stops(cfg, profile, tick=tick)
+                    except Exception:
+                        pass
+                else:
+                    # Entry price unknown and not recoverable — go IDLE to avoid trading with wrong risk
+                    logTrade(f"ENTRY_UNKNOWN_IDLE symbol={symbol} qty={getattr(pos,'qty',0)} bid={bid} — holding IDLE until manual intervention")
+                    pos = None
 
             sync_log_day_anchor(pos)
 
@@ -1122,7 +1105,7 @@ def main():
             if pos is None:
                 # Re-exec first, otherwise reading the pending switch would consume
                 # the new mtime and block the actual symbol change.
-                symbol, last_env_mtime = _maybe_reexec_on_token_change(symbol, pos, last_env_mtime)
+                symbol, last_env_mtime = _maybe_reexec_on_token_change(symbol, pos, last_env_mtime, log_fn=logTrade)
                 requested_symbol, observed_env_mtime = _pending_token_switch(symbol, last_env_mtime)
                 if requested_symbol:
                     pendingSwitchSymbol = requested_symbol
@@ -1185,6 +1168,22 @@ def main():
             if buySignal:
                 burstOverride = entryMode == "BURST"
                 rangeOverride = entryMode == "RANGE_V1"
+
+                # Pic filter — block entry if bid is too close to recent peak
+                if bool(getattr(cfg, "picFilter_enabled", False)):
+                    _pic = check_near_peak(
+                        bidTicks, bid,
+                        lookback_seconds=int(getattr(cfg, "picFilter_lookbackSec", 180)),
+                        peak_threshold_pct=float(getattr(cfg, "picFilter_thresholdPct", 0.001)),
+                    )
+                    if _pic.is_near_peak:
+                        maybe_hold(
+                            now,
+                            f"NEAR_PEAK dist={_pic.distance_from_peak_pct*100:.3f}%"
+                            f" peak={_pic.peak_price} lookback={_pic.peak_lookback_s}s",
+                            spread, momPct, momRangePct, upRatio,
+                        )
+                        continue
 
                 if symbol in blockedSymbols:
                     maybe_hold(
@@ -2041,8 +2040,20 @@ def main():
                     buy_notional=float(getattr(pos, 'entry', 0.0)) * float(getattr(pos, 'qty', 0.0)),
                 )
                 save_position(_pp, _persisted_path)
+                # Init position dynamics — try to load if restart, else create fresh
+                if bool(getattr(cfg, "positionDynamics_enabled", True)):
+                    _dyn_existing = load_dynamics(_dynamics_path)
+                    if _dyn_existing and abs(_dyn_existing.entry_price - float(getattr(pos, 'entry', 0.0))) < 0.000001:
+                        _dyn = _dyn_existing  # surviving restart with matching entry
+                    else:
+                        _dyn = init_dynamics(
+                            float(getattr(pos, 'entry', 0.0)),
+                            float(getattr(pos, 'ts_entry', time.time())),
+                            bid,
+                        )
+                        save_dynamics(_dyn, _dynamics_path)
                 continue
-            
+
             if pos is None:
                 time.sleep(cfg.idleSleep)
                 continue
@@ -2061,6 +2072,35 @@ def main():
             else:
                 pos.update(bid, cfg, profile, tick=tick)
                 exitReason = pos.exit_reason(bid, cfg, profile)
+
+            # Position dynamics: update per-tick, then check trailing/breakeven exits
+            if exitReason is None and pos is not None and pos.entry > 0 and bool(getattr(cfg, "positionDynamics_enabled", True)):
+                if _dyn is None:
+                    # Recover dynamics on unexpected restart
+                    _dyn = load_dynamics(_dynamics_path) or init_dynamics(float(pos.entry), float(getattr(pos, 'ts_entry', time.time())), bid)
+                _dyn = update_dynamics(_dyn, bid)
+                if has_new_tick:
+                    save_dynamics(_dyn, _dynamics_path)
+
+                # Trailing stop (priority over breakeven)
+                if bool(getattr(cfg, "trailingStop_enabled", True)):
+                    _ts_exit, _ts_reason = check_trailing_stop(
+                        _dyn, bid, _fee_model.fee_rate,
+                        trailing_drawdown_pct=float(getattr(cfg, "trailingStop_drawdownPct", 0.004)),
+                        min_gain_arming_pct=float(getattr(cfg, "trailingStop_minGainArmingPct", 0.005)),
+                    )
+                    if _ts_exit:
+                        exitReason = _ts_reason
+
+                # Breakeven escape
+                if exitReason is None and bool(getattr(cfg, "breakevenEscape_enabled", True)):
+                    _be_exit, _be_reason = check_breakeven_escape(
+                        _dyn, bid, _fee_model.fee_rate,
+                        min_gain_arming_pct=float(getattr(cfg, "breakevenEscape_minGainArmingPct", 0.003)),
+                        buffer_pct=float(getattr(cfg, "breakevenEscape_bufferPct", 0.0005)),
+                    )
+                    if _be_exit:
+                        exitReason = _be_reason
 
             if exitReason is None and pos is not None and pos.entry > 0:
                 burstExit = burst_exit_reason(pos, bidTicks, bid, spread, cfg, logger=logTrade)
@@ -2215,7 +2255,7 @@ def main():
                 continue
 
             # Skip non-critical exits if expected PnL net would be negative (paying fees for nothing)
-            _fee_rate_exit = float(getattr(cfg, 'feeRate', 0.001) or 0.001)
+            _fee_rate_exit = _fee_model.fee_rate  # use the single fee model, not a separate config key
             _non_critical_exits = ("TIME", "PROTECT", "PSELL STALE", "PSELL FAST")
             _is_non_critical = any(exitReason.startswith(e) for e in _non_critical_exits)
             if _is_non_critical and pos is not None and pos.entry > 0:
@@ -2352,6 +2392,7 @@ def main():
                 "price": exitPx,
                 "reason": exitReason,
                 "pnl": pnl,
+                "pnl_net": _pnl_detail["net_pnl"],
                 "profile": profile.name,
                 "dry_run": int(getattr(cfg, "dryRun", False)),
                 "spread_pct": float(spread) * 100.0,
@@ -2394,6 +2435,8 @@ def main():
             # cooldown and reset
             cooldownUntil = time.time() + (cfg.cooldownWin if pnl > 0 else cfg.cooldownLoss)
             pos = None
+            _dyn = None
+            clear_dynamics(_dynamics_path)
             # force immediate resync after sell
             syncState["next"] = 0.0
             

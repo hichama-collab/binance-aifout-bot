@@ -41,9 +41,7 @@ class MomentumV1:
             return False
         if mom_pct < self.momMinPct:
             return False
-            return False
         if float(ind.get('up_ratio', 0.0)) < self.momMinUpRatio:
-            return False
             return False
         rsi = float(ind.get("rsi", 0.0))
         return (self.p.rsiMin <= rsi <= self.p.rsiMax)
