@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "updated_at": "2026-05-16T16:33:10Z",
+  "fee_rate_used": 0.001,
+  "tokens": {
+    "HBARUSDC": {
+      "n_trades": 1,
+      "pnl_net_total": -0.042741,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.042741,
+      "last_30_trades_pnl_net": -0.042741,
+      "quality_score": 0.5,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "CHIPUSDC": {
+      "n_trades": 1,
+      "pnl_net_total": -0.022748,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.022748,
+      "last_30_trades_pnl_net": -0.022748,
+      "quality_score": 0.5,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "ONDOUSDC": {
+      "n_trades": 2,
+      "pnl_net_total": -0.073248,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.036624,
+      "last_30_trades_pnl_net": -0.073248,
+      "quality_score": 0.5,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "PENDLEUSDC": {
+      "n_trades": 5,
+      "pnl_net_total": -0.117457,
+      "winrate": 0.2,
+      "avg_pnl_net": -0.023491,
+      "last_30_trades_pnl_net": -0.117457,
+      "quality_score": 0.0,
+      "blocked_until_ts": null,
+      "block_reason": "n>=5 and pnl_net_total<-0.1"
+    },
+    "ALGOUSDC": {
+      "n_trades": 1,
+      "pnl_net_total": -0.0456,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.0456,
+      "last_30_trades_pnl_net": -0.0456,
+      "quality_score": 0.5,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "DOGEUSDC": {
+      "n_trades": 1,
+      "pnl_net_total": -0.037509,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.037509,
+      "last_30_trades_pnl_net": -0.037509,
+      "quality_score": 0.5,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "ORDIUSDC": {
+      "n_trades": 4,
+      "pnl_net_total": 0.00651,
+      "winrate": 0.25,
+      "avg_pnl_net": 0.001628,
+      "last_30_trades_pnl_net": 0.00651,
+      "quality_score": 0.441,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "NEARUSDC": {
+      "n_trades": 1,
+      "pnl_net_total": -0.037558,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.037558,
+      "last_30_trades_pnl_net": -0.037558,
+      "quality_score": 0.5,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "ICPUSDC": {
+      "n_trades": 4,
+      "pnl_net_total": -0.157226,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.039307,
+      "last_30_trades_pnl_net": -0.157226,
+      "quality_score": 0.0,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "CRVUSDC": {
+      "n_trades": 1,
+      "pnl_net_total": -0.043774,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.043774,
+      "last_30_trades_pnl_net": -0.043774,
+      "quality_score": 0.5,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "ORCAUSDC": {
+      "n_trades": 4,
+      "pnl_net_total": -0.28056,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.07014,
+      "last_30_trades_pnl_net": -0.28056,
+      "quality_score": 0.0,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "FETUSDC": {
+      "n_trades": 1,
+      "pnl_net_total": -0.02508,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.02508,
+      "last_30_trades_pnl_net": -0.02508,
+      "quality_score": 0.5,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "TAOUSDC": {
+      "n_trades": 2,
+      "pnl_net_total": -0.083232,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.041616,
+      "last_30_trades_pnl_net": -0.083232,
+      "quality_score": 0.5,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "INJUSDC": {
+      "n_trades": 2,
+      "pnl_net_total": -0.085124,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.042562,
+      "last_30_trades_pnl_net": -0.085124,
+      "quality_score": 0.5,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "OPUSDC": {
+      "n_trades": 2,
+      "pnl_net_total": 0.048995,
+      "winrate": 1.0,
+      "avg_pnl_net": 0.024497,
+      "last_30_trades_pnl_net": 0.048995,
+      "quality_score": 0.5,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "TONUSDC": {
+      "n_trades": 2,
+      "pnl_net_total": -0.08625,
+      "winrate": 0.0,
+      "avg_pnl_net": -0.043125,
+      "last_30_trades_pnl_net": -0.08625,
+      "quality_score": 0.5,
+      "blocked_until_ts": null,
+      "block_reason": null
+    },
+    "UNIUSDC": {
+      "n_trades": 5,
+      "pnl_net_total": 0.02154,
+      "winrate": 0.6,
+      "avg_pnl_net": 0.004308,
+      "last_30_trades_pnl_net": 0.02154,
+      "quality_score": 0.573,
+      "blocked_until_ts": null,
+      "block_reason": null
+    }
+  }
+}
