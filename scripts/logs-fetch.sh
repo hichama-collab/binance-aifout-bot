@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 repo_dir="$(pwd)"
 trade_dir="$(cd "${repo_dir}/.." && pwd)"
 
-REMOTE_HOST="${REMOTE_HOST:-root@46.224.209.99}"
+REMOTE_HOST="${REMOTE_HOST:-root@178.105.180.143}"
 REMOTE_LOGS_DIR="${REMOTE_LOGS_DIR:-/opt/binance-aifout-bot/data/logs}"
 LOCAL_LOGS_DIR="${LOCAL_LOGS_DIR:-${repo_dir}/data/logs}"
 SSH_KEY="${SSH_KEY:-${trade_dir}/.ssh/id_ed25519}"
