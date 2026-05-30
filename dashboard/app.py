@@ -821,4 +821,4 @@ def internal_error(e):
 
 if __name__ == "__main__":
     log.info(f"BotDash starting on port {DASH_PORT}")
-    app.run(host="127.0.0.1", port=DASH_PORT, debug=False)
+    app.run(host="0.0.0.0", port=DASH_PORT, debug=False)
