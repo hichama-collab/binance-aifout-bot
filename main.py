@@ -360,8 +360,13 @@ from state.position import Position
 
 from indicators.basic import fmt, computeSignals, computeMarketContext
 
-# NEW: Import range logic for BTC Range V1
-from btc_range_v1.logic import build_range_snapshot, range_market_ok, entry_signal, update_position, RangeSnapshot
+# Range V1 — optional module, disabled if not installed
+try:
+    from btc_range_v1.logic import build_range_snapshot, range_market_ok, entry_signal, update_position, RangeSnapshot
+    _RANGE_V1_AVAILABLE = True
+except ModuleNotFoundError:
+    _RANGE_V1_AVAILABLE = False
+    build_range_snapshot = range_market_ok = entry_signal = update_position = RangeSnapshot = None
 from strategy.pic_filter import check_near_peak
 from strategy.position_dynamics import (
     PositionDynamics, init_dynamics, update_dynamics,
@@ -673,8 +678,8 @@ def main():
     momRangeRelaxPct = float(getattr(cfg, "momRangeRelaxPct", 0.6))
     momRangeRelaxUpRatio = float(getattr(cfg, "momRangeRelaxUpRatio", 0.75))
 
-    # NEW: BTC Range V1 params
-    range_enabled = bool(getattr(cfg, "rangeEnabled", False))
+    # BTC Range V1 params — disabled if module not installed
+    range_enabled = bool(getattr(cfg, "rangeEnabled", False)) and _RANGE_V1_AVAILABLE
     range_timeframe = str(getattr(cfg, "rangeTimeframe", "5m"))
     range_window_bars = int(getattr(cfg, "rangeWindowBars", 24))
 
