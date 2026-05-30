@@ -36,13 +36,26 @@ if [ "${LOCAL_AHEAD}" -gt 0 ]; then
   git reset --hard "origin/${branch}"
 fi
 
-# Discard any local modifications to tracked files
+# Preserve secret files before any git operation
+for secret in .env dashboard/botdash.env; do
+  if [ -f "${secret}" ]; then
+    cp "${secret}" "${secret}.vps_backup"
+  fi
+done
+
+# Discard local modifications to tracked files (except secrets)
 if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "WARN: local modifications detected — stashing"
-  git stash push -m "vps_update auto-stash $(date +%Y%m%dT%H%M%S)" || git checkout -- .
+  git checkout -- . 2>/dev/null || true
 fi
 
 git pull --rebase --autostash origin "${branch}"
+
+# Restore secret files (never let git overwrite them)
+for secret in .env dashboard/botdash.env; do
+  if [ -f "${secret}.vps_backup" ]; then
+    mv "${secret}.vps_backup" "${secret}"
+  fi
+done
 
 if [ -x "./scripts/trade-memory-sync.sh" ]; then
   ./scripts/trade-memory-sync.sh || true
