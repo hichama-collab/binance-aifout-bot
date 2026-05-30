@@ -28,6 +28,20 @@ fi
 
 echo "Updating branch: ${branch}"
 git fetch origin "${branch}"
+
+# If there are local commits not in origin (e.g. accidental VPS commits), reset hard
+LOCAL_AHEAD=$(git rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo 0)
+if [ "${LOCAL_AHEAD}" -gt 0 ]; then
+  echo "WARN: ${LOCAL_AHEAD} local commit(s) not in origin — resetting to origin/${branch}"
+  git reset --hard "origin/${branch}"
+fi
+
+# Discard any local modifications to tracked files
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "WARN: local modifications detected — stashing"
+  git stash push -m "vps_update auto-stash $(date +%Y%m%dT%H%M%S)" || git checkout -- .
+fi
+
 git pull --rebase --autostash origin "${branch}"
 
 if [ -x "./scripts/trade-memory-sync.sh" ]; then
@@ -41,3 +55,13 @@ git log -1 --oneline
 echo
 echo "Git status:"
 git status -sb
+
+# Restart services if running on VPS (systemd available)
+if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1; then
+  for svc in binance-aifout-bot botdash; do
+    if systemctl is-active --quiet "${svc}.service"; then
+      echo "Restarting ${svc}.service ..."
+      systemctl restart "${svc}.service"
+    fi
+  done
+fi
