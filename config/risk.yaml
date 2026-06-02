@@ -31,20 +31,20 @@ profiles:
     mom_relax_strong_mult: 0.6
     mom_relax_mid_mult: 0.8
     riskPct: 0.008
-    tpPct: 0.013               # was 0.009
-    armPct: 0.008              # was 0.006
+    tpPct: 0.008               # was 0.013 — cible plus réaliste (0.8%)
+    armPct: 0.004              # was 0.008 — trail s'arme plus tôt (0.4%)
     trailPct: 0.004
     feeBufPct: 0.0015
     protect_arm_pct: 0.0040    # was 0.0024
     protect_lock_pct: 0.0020   # was 0.0012
     protect_giveback_pct: 0.0020  # was 0.0012
-    psell_min_age_sec: 45      # was 35
+    psell_min_age_sec: 80      # was 45 — plus de temps avant évaluation PSELL
     psell_min_loss_pct: 0.0050 # was 0.0035
     psell_current_loss_pct: 0.0040  # was 0.0026
-    psell_stale_age_sec: 90    # was 75
+    psell_stale_age_sec: 140   # was 90 — plus de temps avant sortie stale
     psell_stale_loss_pct: 0.0020    # was 0.0012
     psell_confirm_ticks: 4
-    psell_fail_age_sec: 55     # was 45
+    psell_fail_age_sec: 100    # was 55 — était trop agressif (coupait à 55s)
     psell_fail_loss_pct: 0.0018     # was 0.0012
     psell_fail_max_high_pct: 0.0018
     psell_5m_age_sec: 0        # was 35 — ROLL5 désactivé
@@ -66,13 +66,13 @@ profiles:
     burst_entry_enabled: true
     burst_lookback_ticks: 3    # was 4
     burst_max_window_sec: 2.5  # was 4.0
-    burst_min_return_pct: 0.00020
+    burst_min_return_pct: 0.00080  # was 0.00020 — filtrer les micro-mouvements non profitables
     burst_min_return_vs_fee_buf: 0.8
     burst_min_move_vs_spread: 4.0
-    burst_min_velocity_pct_per_sec: 0.00060  # was 0.00050
-    burst_min_efficiency: 0.55
-    burst_min_pressure_ratio: 1.8
-    burst_max_single_drop_pct: 0.00010
+    burst_min_velocity_pct_per_sec: 0.00060
+    burst_min_efficiency: 0.70     # was 0.55 — burst plus directionnel
+    burst_min_pressure_ratio: 2.5  # was 1.8 — conviction acheteur plus forte
+    burst_max_single_drop_pct: 0.00030  # was 0.00010 — permet micro-corrections
     burst_spread_max_mult: 1.6
     burst_force_cross_spread: true
     burst_exit_confirm_ticks: 3
@@ -86,7 +86,7 @@ profiles:
     burst_follow_ttl_sec: 4.0
     burst_follow_min_extension_pct: 0.00008
     burst_exit_under_entry_pct: 0.00004
-    tp_min_pct: 0.006          # was 0.004
+    tp_min_pct: 0.004          # was 0.006
     maxPosTime: 240
     hardMaxPosTime: 1200
     cap_usdc: 1000
@@ -271,7 +271,7 @@ positionDynamics:
 trailingStop:
   enabled: true
   drawdownPct: 0.004           # retrace 0.4% depuis le pic → sortie
-  minGainArmingPct: 0.005      # s'arme seulement si max_gain >= 0.5%
+  minGainArmingPct: 0.003      # was 0.005 — s'arme dès 0.3% gain (cohérent avec tpPct 0.8%)
 
 breakevenEscape:
   enabled: true
