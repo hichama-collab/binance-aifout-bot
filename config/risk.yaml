@@ -65,11 +65,11 @@ profiles:
     flow_max_single_drop_pct: 0.0025
     burst_entry_enabled: true
     burst_lookback_ticks: 3    # was 4
-    burst_max_window_sec: 2.5  # was 4.0
-    burst_min_return_pct: 0.00080  # was 0.00020 — filtrer les micro-mouvements non profitables
+    burst_max_window_sec: 6.0  # was 2.5 — élargi: marché calme = ticks toutes les 2-3s
+    burst_min_return_pct: 0.00080  # filtrer les micro-mouvements non profitables
     burst_min_return_vs_fee_buf: 0.8
     burst_min_move_vs_spread: 4.0
-    burst_min_velocity_pct_per_sec: 0.00060
+    burst_min_velocity_pct_per_sec: 0.00015  # was 0.00060 — ajusté pour fenêtre 6s
     burst_min_efficiency: 0.70     # was 0.55 — burst plus directionnel
     burst_min_pressure_ratio: 2.5  # was 1.8 — conviction acheteur plus forte
     burst_max_single_drop_pct: 0.00030  # was 0.00010 — permet micro-corrections
