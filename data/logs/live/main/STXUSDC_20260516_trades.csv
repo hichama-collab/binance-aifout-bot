@@ -1,2 +1,0 @@
-ts_utc,symbol,event,side,qty,price,reason,pnl,profile,dry_run,spread_pct,mom_pct,mom_range_pct,up_ratio,rsi,ema1_ok,ema5_ok,vol_ok,bid,ask,mid,entry_price,p1,p2,p3,p4,entry_vs_mid_pct,mid_vs_entry_pct
-1778916196,STXUSDC,DECIDE_HOLD,,,,HOLD_BURST_EMA,,,major,0,0.04122011541631863,0.16511867905057234,0.20648358455502805,50.0,51.97321233026405,0,0,1,0.2426,0.2427,0.24265,,0.24265,0.2424,0.24230000000000002,0.24225,,
