@@ -1,0 +1,2 @@
+ts_utc,symbol,event,side,qty,price,reason,pnl,profile,dry_run,spread_pct,mom_pct,mom_range_pct,up_ratio,rsi,ema1_ok,ema5_ok,vol_ok,bid,ask,mid,entry_price,p1,p2,p3,p4,entry_vs_mid_pct,mid_vs_entry_pct
+1780444686,INJUSDC,DECIDE_HOLD,,,,HOLD_BURST_EMA,,,major,0,0.03033520400424359,0.15948963317383627,0.15948963317383627,36.36363636363637,64.47219707976187,1,0,1,6.593,6.595,6.593999999999999,,6.593999999999999,6.5865,6.5855,6.5865,,
