@@ -129,7 +129,7 @@ def ensureCsvHeader(cfg, symbol: str, ctx: LogDayContext):
     path = base / f"{symbol}_{day}_trades.csv"
 
     fieldnames = [
-        "ts_utc", "symbol", "event", "side", "qty", "price", "reason", "pnl",
+        "ts_utc", "symbol", "event", "side", "qty", "price", "reason", "pnl", "pnl_net",
         "profile", "dry_run", "spread_pct", "mom_pct", "mom_range_pct", "up_ratio",
         "rsi", "ema1_ok", "ema5_ok", "vol_ok", "bid", "ask", "mid",
         "entry_price", "p1", "p2", "p3", "p4", "entry_vs_mid_pct", "mid_vs_entry_pct",

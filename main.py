@@ -968,9 +968,21 @@ def main():
                             logTrade(f"ENTRY_RECOVERED symbol={symbol} entry={_recovered_entry} from_disk=true")
                 except Exception:
                     pass
+                try:
+                    if _recovered_entry <= 0:
+                        _pp = load_position(_persisted_path)
+                        if _pp is not None and _pp.symbol == symbol and float(_pp.entry_price) > 0:
+                            _recovered_entry = float(_pp.entry_price)
+                            logTrade(f"ENTRY_RECOVERED symbol={symbol} entry={_recovered_entry} from_persisted=true")
+                except Exception:
+                    pass
                 if _recovered_entry > 0:
                     pos.entry = _recovered_entry
-                    pos.high = float(bid)
+                    try:
+                        _pp_high = load_position(_persisted_path)
+                        pos.high = max(float(bid), float(getattr(_pp_high, "high_seen", 0.0) or 0.0), _recovered_entry)
+                    except Exception:
+                        pos.high = float(bid)
                     pos.stop = 0.0
                     try:
                         pos.init_stops(cfg, profile, tick=tick)
@@ -2367,7 +2379,7 @@ def main():
             pnl_gross = _pnl_detail["gross_pnl"]
             daily_pnl_net += pnl
             _circuit_breaker.record_trade(pnl)
-            clear_position(_persisted_path)
+            is_partial_sell = filledQty < max(0.0, sellQty - (float(step) * 0.5))
             mid_vs_entry_pct = ((float(mid) - float(pos.entry)) / float(pos.entry) * 100.0) if pos.entry > 0 else ""
             exit_s1, exit_s5, _ = load_signal_snapshot(time.time())
             exit_rsi = ""
@@ -2386,12 +2398,13 @@ def main():
                     exit_ema5_ok = ""
                     exit_vol_ok = ""
             
-            print("SELL_FILLED", filledQty, "@", fmt(exitPx), "PNL", fmt(pnl, Decimal('0.0001')), exitReason)
-            logTrade(f"SELL symbol={symbol} qty={filledQty} exit={exitPx} pnl={pnl} reason={exitReason} profile={profile.name}")
+            sell_event = "SELL_PARTIAL_FILLED" if is_partial_sell else "SELL_FILLED"
+            print(sell_event, filledQty, "@", fmt(exitPx), "PNL", fmt(pnl, Decimal('0.0001')), exitReason)
+            logTrade(f"SELL symbol={symbol} event={sell_event} qty={filledQty} exit={exitPx} pnl={pnl} reason={exitReason} profile={profile.name}")
             logCsv({
                 "ts_utc": local_timestamp(),
                 "symbol": symbol,
-                "event": "SELL_FILLED",
+                "event": sell_event,
                 "side": "SELL",
                 "qty": filledQty,
                 "price": exitPx,
@@ -2428,6 +2441,44 @@ def main():
                 "entry": float(pos.entry),
                 "exit": float(exitPx),
             }
+
+            remainingQty = round_step(max(0.0, float(freeBase or 0.0) - float(filledQty or 0.0)), step)
+            remainingNotional = remainingQty * bid
+            if remainingQty > 0 and remainingNotional >= float(minNotional):
+                pos.qty = remainingQty
+                try:
+                    pos.high = max(float(getattr(pos, "high", pos.entry)), float(bid))
+                except Exception:
+                    pass
+                try:
+                    _pos_file = runtime_dir / "active_position.json"
+                    _pos_file.parent.mkdir(parents=True, exist_ok=True)
+                    _pos_file.write_text(json.dumps({
+                        "symbol": symbol,
+                        "entry": float(getattr(pos, 'entry', 0.0)),
+                        "qty": float(getattr(pos, 'qty', 0.0)),
+                        "ts_entry": float(getattr(pos, 'ts_entry', time.time())),
+                    }), encoding="utf-8")
+                    save_position(PersistedPosition(
+                        symbol=symbol,
+                        entry_price=float(getattr(pos, 'entry', 0.0)),
+                        entry_qty=float(getattr(pos, 'qty', 0.0)),
+                        entry_ts=float(getattr(pos, 'ts_entry', time.time())),
+                        entry_reason="PARTIAL_SELL_REMAINING",
+                        high_seen=float(getattr(pos, 'high', getattr(pos, 'entry', 0.0))),
+                        buy_notional=float(getattr(pos, 'entry', 0.0)) * float(getattr(pos, 'qty', 0.0)),
+                    ), _persisted_path)
+                    logTrade(
+                        f"SELL_PARTIAL_REMAINING symbol={symbol} qty={remainingQty} "
+                        f"notional={remainingNotional} minNotional={minNotional}"
+                    )
+                except Exception:
+                    pass
+                syncState["next"] = 0.0
+                time.sleep(cfg.idleSleep)
+                continue
+
+            clear_position(_persisted_path)
 
             # Remove persisted entry file on clean exit
             try:

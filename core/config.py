@@ -240,6 +240,33 @@ class Config:
     # internal floor above exchange MIN_NOTIONAL when desired
     minOrderNotionalUsdc: float = 0.0
 
+    # fees / circuit breaker
+    defaultFeeRate: float = 0.001
+    useBnbForFees: bool = False
+    minProfitBufferPct: float = 0.0
+    dailyMaxLossUsdc: float = 1.0
+    maxConsecutiveLosses: int = 5
+    cooldownAfterBreakSec: float = 3600.0
+
+    # top-level feature toggles from risk.yaml
+    tokenQuality_enabled: bool = True
+    tokenQuality_minQualityScore: float = 0.3
+    tokenQuality_minTradesForBlock: int = 5
+    tokenQuality_blockPnlThreshold: float = -0.10
+    tokenQuality_blockWinrateThreshold: float = 0.20
+    tokenQuality_respectBlocked: bool = True
+    tokenQuality_rebuildOnStart: bool = True
+    picFilter_enabled: bool = False
+    picFilter_lookbackSec: int = 180
+    picFilter_thresholdPct: float = 0.001
+    positionDynamics_enabled: bool = True
+    trailingStop_enabled: bool = True
+    trailingStop_drawdownPct: float = 0.004
+    trailingStop_minGainArmingPct: float = 0.005
+    breakevenEscape_enabled: bool = True
+    breakevenEscape_minGainArmingPct: float = 0.003
+    breakevenEscape_bufferPct: float = 0.0005
+
 
     # entry anti-chase (tick microtrend)
     tickEntryEnabled: bool = False
@@ -398,9 +425,63 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("burst_follow_min_extension_pct", "burstFollowMinExtensionPct"),
         ("burst_exit_under_entry_pct", "burstExitUnderEntryPct"),
         ("min_order_notional_usdc", "minOrderNotionalUsdc"),
+        ("fee_rate", "defaultFeeRate"),
+        ("daily_max_loss_usdc", "dailyMaxLossUsdc"),
+        ("max_consecutive_losses", "maxConsecutiveLosses"),
+        ("cooldown_after_break_sec", "cooldownAfterBreakSec"),
     ]:
         if k_yaml in p and k_cfg in fields:
             updates[k_cfg] = p[k_yaml]
+
+    for section, pairs in [
+        ("fees", [
+            ("defaultFeeRate", "defaultFeeRate"),
+            ("fee_rate", "defaultFeeRate"),
+            ("useBnbForFees", "useBnbForFees"),
+            ("minProfitBufferPct", "minProfitBufferPct"),
+        ]),
+        ("circuitBreaker", [
+            ("dailyMaxLossUsdc", "dailyMaxLossUsdc"),
+            ("daily_max_loss_usdc", "dailyMaxLossUsdc"),
+            ("maxConsecutiveLosses", "maxConsecutiveLosses"),
+            ("max_consecutive_losses", "maxConsecutiveLosses"),
+            ("cooldownAfterBreakSec", "cooldownAfterBreakSec"),
+            ("cooldown_after_break_sec", "cooldownAfterBreakSec"),
+        ]),
+        ("tokenQuality", [
+            ("enabled", "tokenQuality_enabled"),
+            ("minQualityScore", "tokenQuality_minQualityScore"),
+            ("minTradesForBlock", "tokenQuality_minTradesForBlock"),
+            ("blockPnlThreshold", "tokenQuality_blockPnlThreshold"),
+            ("blockWinrateThreshold", "tokenQuality_blockWinrateThreshold"),
+            ("respectBlocked", "tokenQuality_respectBlocked"),
+            ("rebuildOnStart", "tokenQuality_rebuildOnStart"),
+        ]),
+        ("picFilter", [
+            ("enabled", "picFilter_enabled"),
+            ("lookbackSec", "picFilter_lookbackSec"),
+            ("thresholdPct", "picFilter_thresholdPct"),
+        ]),
+        ("positionDynamics", [
+            ("enabled", "positionDynamics_enabled"),
+        ]),
+        ("trailingStop", [
+            ("enabled", "trailingStop_enabled"),
+            ("drawdownPct", "trailingStop_drawdownPct"),
+            ("minGainArmingPct", "trailingStop_minGainArmingPct"),
+        ]),
+        ("breakevenEscape", [
+            ("enabled", "breakevenEscape_enabled"),
+            ("minGainArmingPct", "breakevenEscape_minGainArmingPct"),
+            ("bufferPct", "breakevenEscape_bufferPct"),
+        ]),
+    ]:
+        section_data = data.get(section) or {}
+        if not isinstance(section_data, dict):
+            continue
+        for k_yaml, k_cfg in pairs:
+            if k_yaml in section_data and k_cfg in fields:
+                updates[k_cfg] = section_data[k_yaml]
 
     if "strategyParams" in fields:
         updates["strategyParams"] = s

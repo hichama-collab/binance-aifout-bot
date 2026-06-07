@@ -54,6 +54,12 @@ def waitFillOrCancel(
     if dryRun:
         return True, _fake_order(symbol, side, qty, price, orderId)
 
+    def _executed_qty(order: dict) -> float:
+        try:
+            return float(order.get("executedQty", 0.0) or 0.0)
+        except Exception:
+            return 0.0
+
     t0 = time.time()
     nextLog = t0
     poll_failures = 0
@@ -74,7 +80,7 @@ def waitFillOrCancel(
         if st == "FILLED":
             return True, o
         if st in ("CANCELED", "REJECTED", "EXPIRED"):
-            return False, o
+            return _executed_qty(o) > 0.0, o
 
         now = time.time()
         if now >= nextLog:
@@ -96,4 +102,4 @@ def waitFillOrCancel(
     except Exception as e:
         print('ORDER_FINAL_POLL_FAIL', symbol, orderId, type(e).__name__, str(e))
         o = {'symbol': symbol, 'orderId': orderId, 'status': 'UNKNOWN'}
-    return (o.get("status") == "FILLED"), o
+    return (o.get("status") == "FILLED") or (_executed_qty(o) > 0.0), o
