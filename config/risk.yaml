@@ -97,6 +97,9 @@ profiles:
     min_range_entry_pct: 0.0002
     min_range_vs_spread: 0.45
     min_order_notional_usdc: 5.0
+    min_filled_notional_usdc: 6.0
+    topup_after_partial_buy: true
+    topup_max_attempts: 2
     fee_rate: 0.001
     daily_max_loss_usdc: 3.0
 
@@ -277,3 +280,16 @@ breakevenEscape:
   enabled: true
   minGainArmingPct: 0.003      # s'arme si max_gain >= 0.3%
   bufferPct: 0.0005            # 0.05% au-dessus du vrai breakeven
+
+# ── Entry Guard ──────────────────────────────────────────────────────────────
+# Repère défensif autour du prix d'achat:
+# - protège un trade qui revient vers breakeven après un gain
+# - coupe plus vite si le prix passe sous l'entry avec tape faible
+entryGuard:
+  enabled: true
+  minAgeSec: 3.0
+  armGainPct: 0.0025
+  netFloorPct: 0.0002
+  givebackPct: 0.0015
+  lossCutPct: 0.0015
+  lossAgeSec: 12.0

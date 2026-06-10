@@ -266,6 +266,16 @@ class Config:
     breakevenEscape_enabled: bool = True
     breakevenEscape_minGainArmingPct: float = 0.003
     breakevenEscape_bufferPct: float = 0.0005
+    entryGuard_enabled: bool = True
+    entryGuardMinAgeSec: float = 3.0
+    entryGuardArmGainPct: float = 0.0025
+    entryGuardNetFloorPct: float = 0.0002
+    entryGuardGivebackPct: float = 0.0015
+    entryGuardLossCutPct: float = 0.0015
+    entryGuardLossAgeSec: float = 12.0
+    minFilledNotionalUsdc: float = 6.0
+    topupAfterPartialBuy: bool = True
+    topupMaxAttempts: int = 2
 
 
     # entry anti-chase (tick microtrend)
@@ -425,6 +435,9 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("burst_follow_min_extension_pct", "burstFollowMinExtensionPct"),
         ("burst_exit_under_entry_pct", "burstExitUnderEntryPct"),
         ("min_order_notional_usdc", "minOrderNotionalUsdc"),
+        ("min_filled_notional_usdc", "minFilledNotionalUsdc"),
+        ("topup_after_partial_buy", "topupAfterPartialBuy"),
+        ("topup_max_attempts", "topupMaxAttempts"),
         ("fee_rate", "defaultFeeRate"),
         ("daily_max_loss_usdc", "dailyMaxLossUsdc"),
         ("max_consecutive_losses", "maxConsecutiveLosses"),
@@ -474,6 +487,15 @@ def applyRiskConfig(cfg: Config) -> Config:
             ("enabled", "breakevenEscape_enabled"),
             ("minGainArmingPct", "breakevenEscape_minGainArmingPct"),
             ("bufferPct", "breakevenEscape_bufferPct"),
+        ]),
+        ("entryGuard", [
+            ("enabled", "entryGuard_enabled"),
+            ("minAgeSec", "entryGuardMinAgeSec"),
+            ("armGainPct", "entryGuardArmGainPct"),
+            ("netFloorPct", "entryGuardNetFloorPct"),
+            ("givebackPct", "entryGuardGivebackPct"),
+            ("lossCutPct", "entryGuardLossCutPct"),
+            ("lossAgeSec", "entryGuardLossAgeSec"),
         ]),
     ]:
         section_data = data.get(section) or {}

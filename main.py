@@ -339,6 +339,66 @@ def burst_exit_reason(pos, ticks, bid: float, spread: float, cfg, logger=None):
     return None
 
 
+def entry_guard_exit_reason(pos, ticks, bid: float, spread: float, mom_pct: float, up_ratio: float, cfg, fee_rate: float):
+    if pos is None or bid <= 0:
+        return None
+    entry = float(getattr(pos, "entry", 0.0) or 0.0)
+    qty = float(getattr(pos, "qty", 0.0) or 0.0)
+    if entry <= 0 or qty <= 0:
+        return None
+
+    age_sec = max(0.0, time.time() - float(getattr(pos, "ts_entry", time.time())))
+    min_age = float(getattr(cfg, "entryGuardMinAgeSec", 3.0) or 0.0)
+    if age_sec < min_age:
+        return None
+
+    gross_pct = (float(bid) - entry) / entry
+    net_pct = gross_pct - (float(fee_rate) * 2.0)
+    peak = max(float(getattr(pos, "high", bid) or bid), float(bid), entry)
+    peak_gain_pct = max(0.0, (peak - entry) / entry)
+    giveback_pct = max(0.0, (peak - float(bid)) / peak) if peak > 0 else 0.0
+    descending = descending_tape_ok(ticks, 3)
+    weak_tape = descending or (float(mom_pct) <= 0.0) or (
+        float(up_ratio) < max(0.35, float(getattr(cfg, "momMinUpRatio", 0.0) or 0.0) * 0.6)
+    )
+
+    arm_gain = max(
+        float(getattr(cfg, "entryGuardArmGainPct", 0.0025) or 0.0),
+        float(fee_rate) * 2.0,
+    )
+    net_floor = float(getattr(cfg, "entryGuardNetFloorPct", 0.0002) or 0.0)
+    giveback_trigger = float(getattr(cfg, "entryGuardGivebackPct", 0.0015) or 0.0)
+
+    if (
+        peak_gain_pct >= arm_gain
+        and net_pct <= net_floor
+        and giveback_pct >= giveback_trigger
+        and weak_tape
+    ):
+        return (
+            f"ENTRY_GUARD_PROTECT age={age_sec:.1f}s net={net_pct*100:.4f}% "
+            f"gross={gross_pct*100:.4f}% peak={peak_gain_pct*100:.4f}% "
+            f"giveback={giveback_pct*100:.4f}% bid={bid:.8f} entry={entry:.8f}"
+        )
+
+    loss_cut = max(
+        float(getattr(cfg, "entryGuardLossCutPct", 0.0015) or 0.0),
+        float(fee_rate) * 0.75,
+    )
+    loss_age = max(
+        float(getattr(cfg, "entryGuardLossAgeSec", 12.0) or 0.0),
+        float(getattr(cfg, "entryFillTtlSec", 2.5) or 2.5) * 3.0,
+    )
+    if gross_pct <= -loss_cut and (weak_tape or age_sec >= loss_age):
+        return (
+            f"ENTRY_GUARD_LOSS_CUT age={age_sec:.1f}s net={net_pct*100:.4f}% "
+            f"gross={gross_pct*100:.4f}% cut={loss_cut*100:.4f}% "
+            f"bid={bid:.8f} entry={entry:.8f}"
+        )
+
+    return None
+
+
 def ticks_fresh(ticks, max_age_sec: float) -> bool:
     if not ticks:
         return False
@@ -1951,6 +2011,88 @@ def main():
                 quoteQty = float(info.get("cummulativeQuoteQty", execQty * buyPx))
                 entryPx = quoteQty / execQty if execQty > 0 else buyPx
 
+                min_filled_notional = max(
+                    float(minNotional),
+                    float(getattr(cfg, "minFilledNotionalUsdc", 6.0) or 0.0),
+                )
+                if (
+                    bool(getattr(cfg, "topupAfterPartialBuy", True))
+                    and execQty > 0
+                    and quoteQty < min_filled_notional
+                    and not bool(getattr(cfg, "dryRun", False))
+                ):
+                    topup_attempts = max(1, int(getattr(cfg, "topupMaxAttempts", 2) or 1))
+                    for topupAttempt in range(1, topup_attempts + 1):
+                        if quoteQty >= min_filled_notional:
+                            break
+                        topup_usdc = get_usdc_balance_safe(bx, cfg)
+                        if topup_usdc is None:
+                            topup_usdc = 0.0
+                        topupPx = compute_buy_price(float(bid), float(ask), True, tick)
+                        missing_notional = max(0.0, min_filled_notional - quoteQty)
+                        # Binance applies MIN_NOTIONAL to the top-up order itself.
+                        topup_notional_target = max(float(minNotional), missing_notional)
+                        topupQty = round_step_up(topup_notional_target / topupPx, step)
+                        topupNotional = topupQty * topupPx
+                        if topupQty <= 0 or topupNotional > (float(topup_usdc) + 1e-9):
+                            logTrade(
+                                f"BUY_TOPUP_SKIPPED attempt={topupAttempt} current_notional={quoteQty:.8f} "
+                                f"target={min_filled_notional:.8f} topup_notional={topupNotional:.8f} "
+                                f"usdc={float(topup_usdc):.8f}"
+                            )
+                            break
+                        logTrade(
+                            f"BUY_TOPUP_START attempt={topupAttempt} current_notional={quoteQty:.8f} "
+                            f"target={min_filled_notional:.8f} topup_qty={topupQty:.8f} "
+                            f"topup_notional={topupNotional:.8f} px={topupPx:.8f}"
+                        )
+                        try:
+                            topupOrder = placeLimit(
+                                bx, symbol, "BUY",
+                                topupQty, topupPx,
+                                stepQ=step, tickQ=tick,
+                                dryRun=getattr(cfg, "dryRun", False),
+                            )
+                            topupFilled, topupInfo = waitFillOrCancel(
+                                bx, symbol, topupOrder["orderId"],
+                                float(getattr(cfg, "entryFillTtlSec", cfg.orderTtl)), cfg.orderPoll,
+                                dryRun=getattr(cfg, "dryRun", False),
+                                side="BUY",
+                                qty=topupQty,
+                                price=topupPx,
+                                maxRestRetries=int(getattr(cfg, "orderRestMaxRetries", 3)),
+                                restBackoffSec=float(getattr(cfg, "orderRestBackoffSec", 0.2)),
+                            )
+                            if topupFilled:
+                                topupExecQty = float(topupInfo.get("executedQty", topupQty))
+                                topupQuoteQty = float(topupInfo.get("cummulativeQuoteQty", topupExecQty * topupPx))
+                                execQty += topupExecQty
+                                quoteQty += topupQuoteQty
+                                entryPx = quoteQty / execQty if execQty > 0 else entryPx
+                                logTrade(
+                                    f"BUY_TOPUP_FILLED attempt={topupAttempt} qty={topupExecQty:.8f} "
+                                    f"quote={topupQuoteQty:.8f} total_notional={quoteQty:.8f} "
+                                    f"entry={entryPx:.8f}"
+                                )
+                            else:
+                                logTrade(
+                                    f"BUY_TOPUP_NOFILL attempt={topupAttempt} current_notional={quoteQty:.8f} "
+                                    f"target={min_filled_notional:.8f}"
+                                )
+                                break
+                        except Exception as e:
+                            logErr("BUY_TOPUP_FAIL", e)
+                            logTrade(
+                                f"BUY_TOPUP_FAIL attempt={topupAttempt} current_notional={quoteQty:.8f} "
+                                f"target={min_filled_notional:.8f} err={type(e).__name__}:{e}"
+                            )
+                            break
+                    if quoteQty < float(minNotional):
+                        logTrade(
+                            f"BUY_BELOW_SELLABLE_NOTIONAL total_notional={quoteQty:.8f} "
+                            f"minNotional={float(minNotional):.8f} target={min_filled_notional:.8f}"
+                        )
+
                 if pos is None:
                     pos = Position(qty=execQty, entry=entryPx, high=entryPx, stop=0.0, ts_entry=time.time())
                     pos.init_stops(cfg, profile, tick=tick)
@@ -2123,6 +2265,25 @@ def main():
                 burstExit = burst_exit_reason(pos, bidTicks, bid, spread, cfg, logger=logTrade)
                 if burstExit:
                     exitReason = burstExit
+
+            if (
+                exitReason is None
+                and pos is not None
+                and pos.entry > 0
+                and bool(getattr(cfg, "entryGuard_enabled", True))
+            ):
+                entryGuardExit = entry_guard_exit_reason(
+                    pos,
+                    bidTicks,
+                    bid,
+                    spread,
+                    momPct,
+                    upRatio,
+                    cfg,
+                    _fee_model.fee_rate,
+                )
+                if entryGuardExit:
+                    exitReason = entryGuardExit
 
             # Additional SELL rules (P algo, MID-based)
             # Exit weak losers earlier when the tape is rolling over or stalling too long.
