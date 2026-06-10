@@ -80,6 +80,58 @@
   </div>
 
   {# ================================================================
+     LIVE DECISION MONITOR
+     ================================================================ #}
+  <div x-show="!loading" x-cloak class="monitor-panel mb-4">
+    <div class="monitor-main">
+      <div>
+        <div class="card-title mb-2">Décision Live</div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="badge" :class="decisionBadgeClass" x-text="decisionLabel"></span>
+          <span class="text-xs text-[#848E9C]">
+            Data <span class="num" x-text="fmtAgeSec(monitorMetrics.age_sec)"></span>
+          </span>
+          <span class="text-xs text-[#848E9C]" x-show="monitorDecision.age_sec != null">
+            Décision <span class="num" x-text="fmtAgeSec(monitorDecision.age_sec)"></span>
+          </span>
+        </div>
+        <div class="monitor-detail" x-text="monitorDecision.detail || monitorMetrics.log_file || 'En attente du prochain signal exploitable'"></div>
+      </div>
+      <div class="monitor-state">
+        <span class="sse-dot" :class="monitorMetrics.state === 'IN_POS' ? 'connected' : 'reconnecting'"></span>
+        <span x-text="monitorMetrics.state || 'unknown'"></span>
+      </div>
+    </div>
+
+    <div class="monitor-grid">
+      <div class="monitor-metric">
+        <span>Spread</span>
+        <strong class="num" x-text="fmtMetric(monitorMetrics.spread_pct, 4, '%')"></strong>
+      </div>
+      <div class="monitor-metric">
+        <span>Momentum</span>
+        <strong class="num" :class="pnlClass(monitorMetrics.mom_pct)" x-text="fmtMetric(monitorMetrics.mom_pct, 2, '%')"></strong>
+      </div>
+      <div class="monitor-metric">
+        <span>Range</span>
+        <strong class="num" x-text="fmtMetric(monitorMetrics.mom_range_pct, 2, '%')"></strong>
+      </div>
+      <div class="monitor-metric">
+        <span>Up ratio</span>
+        <strong class="num" x-text="fmtMetric(monitorMetrics.up_ratio, 2, '%')"></strong>
+      </div>
+      <div class="monitor-metric">
+        <span>Bid</span>
+        <strong class="num" x-text="fmtPrice(monitorMetrics.bid)"></strong>
+      </div>
+      <div class="monitor-metric">
+        <span>Ask</span>
+        <strong class="num" x-text="fmtPrice(monitorMetrics.ask)"></strong>
+      </div>
+    </div>
+  </div>
+
+  {# ================================================================
      POSITION OUVERTE
      ================================================================ #}
   <div x-show="!loading" x-cloak class="mb-4">

@@ -377,6 +377,109 @@ def _get_position() -> Optional[dict]:
     return pos
 
 
+def _parse_float(raw: str) -> Optional[float]:
+    try:
+        return float(raw)
+    except Exception:
+        return None
+
+
+def _line_ts_epoch(line: str) -> Optional[float]:
+    m = re.match(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})Z\]", line)
+    if not m:
+        return None
+    try:
+        dt = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return None
+
+
+def _parse_kv_metrics(line: str) -> dict:
+    fields = {}
+    for key in ("MOM", "RANGE", "UP", "SPREAD", "BID", "ASK", "MID"):
+        m = re.search(rf"\b{key}:([-+]?\d+(?:\.\d+)?)%?", line)
+        if m:
+            fields[key.lower()] = _parse_float(m.group(1))
+    state = re.search(r"\bSTATE:([A-Z_]+)", line)
+    if state:
+        fields["state"] = state.group(1)
+    return fields
+
+
+def _parse_decision_line(line: str) -> dict:
+    ts_epoch = _line_ts_epoch(line)
+    reason = ""
+    detail = ""
+    m = re.search(r"DECIDE_HOLD reason=([A-Z0-9_]+)(.*)$", line)
+    if m:
+        reason = m.group(1)
+        detail = m.group(2).strip()
+    return {
+        "ts_epoch": ts_epoch,
+        "reason": reason,
+        "detail": detail,
+        **_parse_kv_metrics(line),
+    }
+
+
+def _parse_chk_line(line: str) -> dict:
+    return {
+        "ts_epoch": _line_ts_epoch(line),
+        **_parse_kv_metrics(line),
+    }
+
+
+def _latest_symbol_log(symbol: str) -> Optional[Path]:
+    if not symbol or symbol == "UNKNOWN":
+        pattern = str(LOG_DIR / "**" / "*_trades.log")
+    else:
+        pattern = str(LOG_DIR / "**" / f"{symbol}_*_trades.log")
+    return find_latest(pattern)
+
+
+def _get_live_monitor(symbol: str) -> dict:
+    runtime = safe_read_json(RUNTIME_DIR / "bot_status.json")
+    latest_log = _latest_symbol_log(symbol)
+    last_chk = {}
+    last_hold = {}
+
+    if latest_log:
+        for line in reversed(tail_file(latest_log, 600)):
+            if not last_hold and "DECIDE_HOLD reason=" in line:
+                last_hold = _parse_decision_line(line)
+            if not last_chk and "CHK " in line:
+                last_chk = _parse_chk_line(line)
+            if last_hold and last_chk:
+                break
+
+    ts = runtime.get("ts") or last_chk.get("ts_epoch")
+    age_sec = max(0.0, time.time() - float(ts)) if ts else None
+    metrics = {
+        "symbol": runtime.get("symbol") or symbol,
+        "state": runtime.get("state") or last_chk.get("state") or "unknown",
+        "bid": runtime.get("bid") if runtime.get("bid") is not None else last_chk.get("bid"),
+        "ask": runtime.get("ask") if runtime.get("ask") is not None else last_chk.get("ask"),
+        "spread_pct": runtime.get("spread_pct") if runtime.get("spread_pct") is not None else last_chk.get("spread"),
+        "mom_pct": runtime.get("mom_pct") if runtime.get("mom_pct") is not None else last_chk.get("mom"),
+        "mom_range_pct": runtime.get("mom_range_pct") if runtime.get("mom_range_pct") is not None else last_chk.get("range"),
+        "up_ratio": runtime.get("up_ratio") if runtime.get("up_ratio") is not None else last_chk.get("up"),
+        "ts_epoch": ts,
+        "age_sec": round(age_sec, 1) if age_sec is not None else None,
+        "log_file": str(latest_log.relative_to(LOG_DIR)) if latest_log else "",
+    }
+    decision_age = None
+    if last_hold.get("ts_epoch"):
+        decision_age = max(0.0, time.time() - float(last_hold["ts_epoch"]))
+    decision = {
+        "reason": last_hold.get("reason") or ("NO_ENTRY_SIGNAL" if metrics["state"] == "IDLE" else ""),
+        "detail": last_hold.get("detail", ""),
+        "age_sec": round(decision_age, 1) if decision_age is not None else None,
+        "ts_epoch": last_hold.get("ts_epoch"),
+    }
+    return {"metrics": metrics, "decision": decision, "runtime": runtime}
+
+
 def _get_trades(limit: int = 500) -> list:
     try:
         rows = load_closed_trades()
@@ -603,6 +706,7 @@ def api_snapshot():
         symbol, profile, dry_run = detect_symbol_profile()
         unit_state = read_unit_state("binance-aifout-bot.service")
         pos = _get_position()
+        monitor = _get_live_monitor(symbol)
         pnl_rows = extract_closed_pnl_rows(trades)
         stats_data = compute_stats(trades)
         streaks = compute_streaks(pnl_rows)
@@ -621,6 +725,7 @@ def api_snapshot():
                 "dry_run": dry_run,
             },
             "position": pos,
+            "monitor": monitor,
             "pnl": _build_pnl_buckets(trades, fx),
             "stats": {
                 **stats_data,

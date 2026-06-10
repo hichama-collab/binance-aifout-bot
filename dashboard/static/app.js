@@ -313,6 +313,7 @@ function botDashboard() {
     // Position
     position: null,
     positionLive: null,
+    monitor: null,
 
     // Services
     services: [],
@@ -375,6 +376,7 @@ function botDashboard() {
         this.profile = d.bot?.profile || '—';
         this.dryRun = !!d.bot?.dry_run;
         this.position = d.position;
+        this.monitor = d.monitor || null;
         this.pnlToday = d.pnl?.today;
         this.pnlSession = d.pnl?.session;
         this.pnlWeek = d.pnl?.week;
@@ -447,6 +449,29 @@ function botDashboard() {
       return 'badge-inactive';
     },
 
+    get monitorMetrics() {
+      return this.monitor?.metrics || {};
+    },
+
+    get monitorDecision() {
+      return this.monitor?.decision || {};
+    },
+
+    get decisionLabel() {
+      const reason = this.monitorDecision.reason || '';
+      if (!reason) return '—';
+      if (reason === 'NO_ENTRY_SIGNAL') return 'Pas de signal';
+      return formatReason(reason);
+    },
+
+    get decisionBadgeClass() {
+      const reason = this.monitorDecision.reason || '';
+      if (!reason) return 'badge-inactive';
+      if (reason.includes('SPREAD') || reason.includes('CIRCUIT') || reason.includes('MIN_NOTIONAL')) return 'badge-error';
+      if (reason.includes('NO_ENTRY') || reason.includes('MOM') || reason.includes('RANGE') || reason.includes('TAPE')) return 'badge-warning';
+      return 'badge-inactive';
+    },
+
     pnlClass(v) { return colorClass(v); },
     fmtUsdc(v) { return fmt.usdc(v, true); },
     fmtPct(v) { return fmt.pct(v, true); },
@@ -457,6 +482,16 @@ function botDashboard() {
     fmtSymbol(v) { return fmt.symbol(v); },
     fmtDuration(v) { return fmt.duration(v); },
     fmtReason(v) { return formatReason(v); },
+    fmtMetric(v, decimals = 2, suffix = '') {
+      if (v == null || isNaN(v)) return '—';
+      return `${Number(v).toFixed(decimals)}${suffix}`;
+    },
+    fmtAgeSec(v) {
+      if (v == null || isNaN(v)) return '—';
+      if (v < 60) return `${Math.round(v)}s`;
+      if (v < 3600) return `${Math.floor(v / 60)}m ${Math.round(v % 60)}s`;
+      return `${Math.floor(v / 3600)}h ${Math.floor((v % 3600) / 60)}m`;
+    },
     binanceUrl(sym) {
       const base = fmt.symbol(sym || '');
       return `https://www.binance.com/en/trade/${base}_USDC?type=spot`;
