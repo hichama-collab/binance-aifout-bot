@@ -1,34 +1,38 @@
 
 *$py.class
+.coverage
+.DS_Store
+.eggs/
+.idea/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.vscode/
+__pycache__/
+*.egg-info/
+*.log
+*.py[cod]
+*.swp
+Thumbs.db
 archivelog/
 build/
-.coverage
-#*.csv
-dashboard/botdash.env
-# Dashboard secrets / local overrides
-#data/
-#data/runtime/
-#data/runtime/*.db
-#data/runtime/*.sqlite3
 dist/
-.DS_Store
-*.egg-info/
-.eggs/
 env/
 ENV/
 htmlcov/
-.idea/
-#*.log
-.mypy_cache/
-# OS / editor
-__pycache__/
-*.py[cod]
-.pytest_cache/
-# Python
-.ruff_cache/
-# Runtime / bot data (generated)
+
+# Local secrets / runtime overrides
+.env
+.btc_range.env
+.btc_range_dash.env
 .service.env
-*.swp
-Thumbs.db
-.venv/
-.vscode/
+config/.service.env
+dashboard/botdash.env
+
+# Generated bot runtime data
+data/logs/
+data/runtime/
+data/**/*.csv
+data/**/*.sqlite3
+dashboard/.venv/
