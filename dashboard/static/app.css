@@ -408,6 +408,109 @@ td.num, th.num {
 }
 
 /* =========================================================
+   8b. Bot Control
+   ========================================================= */
+
+.control-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 1.15fr);
+  gap: 1.25rem;
+}
+
+.control-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.control-kv {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: rgba(11, 14, 17, 0.28);
+}
+
+.control-kv span {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.control-kv strong {
+  display: block;
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-size: 0.86rem;
+}
+
+.control-actions {
+  min-width: 0;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.manual-token-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+}
+
+.control-actions .input {
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: #0B0E11;
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.control-actions .input:focus {
+  border-color: rgba(240, 185, 11, 0.72);
+  box-shadow: 0 0 0 2px rgba(240, 185, 11, 0.12);
+}
+
+.control-help {
+  margin-top: 0.5rem;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .control-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .control-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .manual-token-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
    9. Table
    ========================================================= */
 

@@ -840,6 +840,38 @@ def main():
     # NEW: Runtime dir for status JSON
     runtime_dir = Path(getattr(cfg, "dataDir", "data")) / "runtime"
 
+    def clear_runtime_position_state(reason: str, detail: str = ""):
+        nonlocal _dyn
+        try:
+            clear_position(_persisted_path)
+        except Exception as e:
+            try:
+                logErr("CLEAR_PERSISTED_POSITION_FAIL", e)
+            except Exception:
+                pass
+        try:
+            _pos_file = runtime_dir / "active_position.json"
+            if _pos_file.exists():
+                _pos_file.unlink()
+        except Exception as e:
+            try:
+                logErr("CLEAR_ACTIVE_POSITION_FAIL", e)
+            except Exception:
+                pass
+        try:
+            clear_dynamics(_dynamics_path)
+        except Exception as e:
+            try:
+                logErr("CLEAR_DYNAMICS_FAIL", e)
+            except Exception:
+                pass
+        _dyn = None
+        try:
+            suffix = f" {detail}" if detail else ""
+            logTrade(f"POSITION_STATE_CLEARED reason={reason}{suffix}")
+        except Exception:
+            pass
+
     def sync_log_day_anchor(position):
         if position is None:
             logDayCtx.clear_anchor()
@@ -1259,6 +1291,7 @@ def main():
                             f"NEAR_PEAK dist={_pic.distance_from_peak_pct*100:.3f}%"
                             f" peak={_pic.peak_price} lookback={_pic.peak_lookback_s}s",
                             spread, momPct, momRangePct, upRatio,
+                            bid, ask, mid, P1, P2, P3, P4,
                         )
                         continue
 
@@ -1285,12 +1318,15 @@ def main():
                 min_range_entry_pct = float(getattr(cfg, "minRangeEntryPct", 0.0) or 0.0)
                 min_range_vs_spread = float(getattr(cfg, "minRangeVsSpread", 0.0) or 0.0)
                 required_range_pct = max(min_range_entry_pct, float(spread) * min_range_vs_spread)
-                strict_up_moves = int(P1 > P2) + int(P2 > P3) + int(P3 > P4)
+                has_p_window = all(v is not None for v in (P1, P2, P3, P4))
+                strict_up_moves = (int(P1 > P2) + int(P2 > P3) + int(P3 > P4)) if has_p_window else 0
                 entry_min_strict_ups = max(1, int(getattr(cfg, "entryMinStrictUps", 1) or 1))
                 hard_min_up_ratio = float(getattr(cfg, "entryHardMinUpRatio", 0.0) or 0.0)
-                tape_progress_pct = ((float(P1) - float(P4)) / float(P4)) if (P1 is not None and P4 is not None and float(P4) > 0) else 0.0
+                tape_progress_pct = ((float(P1) - float(P4)) / float(P4)) if (has_p_window and float(P4) > 0) else 0.0
                 min_tape_progress_pct = float(getattr(cfg, "entryMinTapeProgressPct", 0.0) or 0.0)
                 min_tape_progress_vs_spread = float(getattr(cfg, "entryMinTapeProgressVsSpread", 0.0) or 0.0)
+                min_profit_buffer_pct = float(getattr(cfg, "minProfitBufferPct", 0.0) or 0.0)
+                fee_edge_pct = (float(_fee_model.fee_rate) * 2.0) + float(spread) + min_profit_buffer_pct
                 required_tape_progress_pct = max(
                     min_tape_progress_pct,
                     float(spread) * min_tape_progress_vs_spread,
@@ -1510,6 +1546,32 @@ def main():
                         P3,
                         P4,
                         detail=f"hard_min_up_ratio={hard_min_up_ratio*100:.2f}%",
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
+                if (not burstOverride and not rangeOverride) and fee_edge_pct > 0 and tape_progress_pct < fee_edge_pct:
+                    maybe_hold(
+                        now,
+                        'HOLD_EDGE',
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                        detail=(
+                            f"tape_progress={tape_progress_pct*100:.4f}% "
+                            f"fee_edge={fee_edge_pct*100:.4f}% "
+                            f"fees={(float(_fee_model.fee_rate) * 2.0)*100:.4f}% "
+                            f"spread={float(spread)*100:.4f}% "
+                            f"buffer={min_profit_buffer_pct*100:.4f}%"
+                        ),
                     )
                     time.sleep(cfg.idleSleep)
                     continue
@@ -2214,6 +2276,45 @@ def main():
                 continue
 
             if pos is None:
+                if not buySignal:
+                    if pendingSwitchSymbol:
+                        hold_reason = "HOLD_TOKEN_SWITCH_PENDING"
+                        hold_detail = f"pending_symbol={pendingSwitchSymbol}"
+                    elif not has_new_tick:
+                        hold_reason = "HOLD_NO_NEW_TICK"
+                        hold_detail = f"tick_seq={tick_seq}"
+                    elif not pEntryEnabled and not range_signal and not burstOk:
+                        hold_reason = "HOLD_NO_ENTRY_SIGNAL"
+                        hold_detail = (
+                            f"p_entry=0 range_signal=0 burst_ok=0 "
+                            f"burst_enabled={int(bool(getattr(cfg, 'burstEntryEnabled', False)))}"
+                        )
+                    elif pEntryEnabled and any(v is None for v in (P1, P2, P3, P4)):
+                        hold_reason = "HOLD_PDATA"
+                        hold_detail = "waiting_for_p_window"
+                    else:
+                        hold_reason = "HOLD_NO_ENTRY_SIGNAL"
+                        p_progress = ((float(P1) - float(P4)) / float(P4) * 100.0) if P1 is not None and P4 not in (None, 0) else 0.0
+                        hold_detail = (
+                            f"range_signal={int(bool(range_signal))} burst_ok={int(bool(burstOk))} "
+                            f"p_entry={int(bool(pEntryEnabled))} p_progress={p_progress:.4f}%"
+                        )
+                    maybe_hold(
+                        now,
+                        hold_reason,
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                        detail=hold_detail,
+                    )
                 time.sleep(cfg.idleSleep)
                 continue
 
@@ -2464,6 +2565,10 @@ def main():
                     logTrade(f"DUST_SKIP_SELL asset={baseAsset} qty={sellQty} notional={sellQty*bid} minNotional={minNotional} step={step}")
                 except Exception:
                     pass
+                clear_runtime_position_state(
+                    "DUST_SKIP_SELL",
+                    detail=f"asset={baseAsset} qty={sellQty} notional={sellQty*bid:.8f} minNotional={float(minNotional):.8f}",
+                )
                 pos = None
                 cooldownUntil = time.time() + float(getattr(cfg, "dustCooldownSec", 60))
                 syncState["next"] = 0.0
@@ -2503,6 +2608,10 @@ def main():
                         logTrade(f"DUST_SKIP_SELL asset={baseAsset} qty={sellQty} notional={notional} minNotional={minNotional} step={step} msg={msg}")
                     except Exception:
                         pass
+                    clear_runtime_position_state(
+                        "DUST_SKIP_SELL_REJECTED",
+                        detail=f"asset={baseAsset} qty={sellQty} notional={notional:.8f} minNotional={float(minNotional):.8f}",
+                    )
                     pos = None
                     cooldownUntil = time.time() + float(getattr(cfg, "dustCooldownSec", 60))
                     syncState["next"] = 0.0
@@ -2639,21 +2748,11 @@ def main():
                 time.sleep(cfg.idleSleep)
                 continue
 
-            clear_position(_persisted_path)
-
-            # Remove persisted entry file on clean exit
-            try:
-                _pos_file = runtime_dir / "active_position.json"
-                if _pos_file.exists():
-                    _pos_file.unlink()
-            except Exception:
-                pass
+            clear_runtime_position_state("SELL_FILLED")
 
             # cooldown and reset
             cooldownUntil = time.time() + (cfg.cooldownWin if pnl > 0 else cfg.cooldownLoss)
             pos = None
-            _dyn = None
-            clear_dynamics(_dynamics_path)
             # force immediate resync after sell
             syncState["next"] = 0.0
             

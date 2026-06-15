@@ -35,6 +35,77 @@
        x-text="'Erreur: ' + error"></div>
 
   {# ================================================================
+     BOT CONTROL
+     ================================================================ #}
+  <div class="card mb-6">
+    <div class="card-header">
+      <span class="card-title">Pilotage Bot</span>
+      <span class="badge" :class="control.mode === 'auto' ? 'badge-active' : 'badge-warning'"
+            x-text="control.mode === 'auto' ? 'AUTO' : 'MANUEL'"></span>
+    </div>
+
+    <div class="control-grid">
+      <div class="control-summary">
+        <div class="control-kv">
+          <span>Token</span>
+          <strong class="font-mono" x-text="control.symbol || '—'"></strong>
+        </div>
+        <div class="control-kv">
+          <span>Profile</span>
+          <strong class="font-mono" x-text="control.profile || '—'"></strong>
+        </div>
+        <div class="control-kv">
+          <span>Selector</span>
+          <strong :class="control.auto_selector ? 'text-[#0ECB81]' : 'text-[#F0B90B]'"
+                  x-text="control.auto_selector ? 'actif' : 'arrêté'"></strong>
+        </div>
+        <div class="control-kv">
+          <span>Env</span>
+          <strong class="font-mono truncate" x-text="control.service_env || '—'"></strong>
+        </div>
+      </div>
+
+      <div class="control-actions">
+        <label class="form-label" for="manual-token">Token manuel</label>
+        <div class="manual-token-row">
+          <input id="manual-token"
+                 class="input"
+                 type="text"
+                 placeholder="ex: TON ou TONUSDC"
+                 x-model="manualToken"
+                 @keydown.enter="setManualToken()"
+                 autocomplete="off" />
+          <button class="btn btn-primary"
+                  :disabled="controlBusy || !manualToken.trim()"
+                  @click="setManualToken()">
+            Appliquer
+          </button>
+        </div>
+        <div class="control-help">
+          Le mode manuel stoppe le timer de sélection, écrit le token dans <span class="font-mono">.service.env</span>, puis redémarre le bot.
+        </div>
+        <div class="flex flex-wrap gap-2 mt-3">
+          <button class="btn btn-sm btn-ghost"
+                  :disabled="controlBusy || !control.auto_selector"
+                  @click="stopSelector()">
+            Stop auto
+          </button>
+          <button class="btn btn-sm btn-ghost"
+                  :disabled="controlBusy || control.auto_selector"
+                  @click="startSelector()">
+            Reprendre auto
+          </button>
+          <button class="btn btn-sm btn-ghost"
+                  :disabled="controlBusy"
+                  @click="restartBot()">
+            Restart bot
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ================================================================
      SERVICE CARDS — 4 services
      ================================================================ #}
   <div class="grid-4 mb-6">

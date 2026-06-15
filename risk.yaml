@@ -54,7 +54,7 @@ profiles:
     reentry_loss_cooldown_sec: 180   # was 90 — s'applique maintenant aux bursts aussi
     reentry_trail_cooldown_sec: 60
     reentry_recovery_pct: 0.0015
-    p_entry_enabled: false
+    p_entry_enabled: true
     entry_hard_min_up_ratio: 0.38 # was 0.45
     entry_min_strict_ups: 2
     entry_min_tape_progress_pct: 0.0002

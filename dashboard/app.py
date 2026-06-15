@@ -36,7 +36,7 @@ load_dotenv("/opt/binance-aifout-bot/dashboard/botdash.env")
 BASE_DIR = Path(os.environ.get("BOT_BASE_DIR", "/opt/binance-aifout-bot"))
 LOG_DIR = Path(os.environ.get("BOT_LOG_DIR", BASE_DIR / "data/logs"))
 RUNTIME_DIR = Path(os.environ.get("BOT_RUNTIME_DIR", BASE_DIR / "data/runtime"))
-SERVICE_ENV = Path(os.environ.get("BOT_SERVICE_ENV", BASE_DIR / "service.env"))
+SERVICE_ENV = Path(os.environ.get("BOT_SERVICE_ENV", BASE_DIR / ".service.env"))
 DASH_PORT = int(os.environ.get("DASH_PORT", 8099))
 DASH_USER = os.environ.get("DASH_USER", "admin")
 DASH_PASS = os.environ.get("DASH_PASS", "changeme")
@@ -164,22 +164,79 @@ def systemctl(action: str, unit: str) -> tuple:
         return False, str(e)
 
 
-def detect_symbol_profile() -> tuple:
-    env_path = SERVICE_ENV
-    symbol, profile, dry_run = "UNKNOWN", "major", 0
+def read_service_env() -> dict:
+    data = {}
     try:
-        with open(env_path) as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("SYMBOL="):
-                    symbol = line.split("=", 1)[1]
-                elif line.startswith("PROFILE="):
-                    profile = line.split("=", 1)[1]
-                elif line.startswith("DRY_RUN="):
-                    dry_run = int(line.split("=", 1)[1])
+        with open(SERVICE_ENV, encoding="utf-8") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                data[key.strip()] = value.strip()
     except Exception:
         pass
+    return data
+
+
+def write_service_env(updates: dict) -> None:
+    data = read_service_env()
+    data.update({k: str(v).strip() for k, v in updates.items() if v is not None})
+    ordered_keys = ["PROFILE", "SYMBOL", "DRY_RUN"]
+    keys = ordered_keys + sorted(k for k in data if k not in ordered_keys)
+    SERVICE_ENV.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SERVICE_ENV.with_suffix(SERVICE_ENV.suffix + ".tmp")
+    lines = [f"{k}={data.get(k, '')}" for k in keys if k in data]
+    tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    tmp.replace(SERVICE_ENV)
+
+
+def normalize_symbol(raw: str) -> str:
+    symbol = (raw or "").strip().upper().replace("/", "").replace("-", "")
+    if symbol and not symbol.endswith("USDC"):
+        symbol = f"{symbol}USDC"
+    if not re.fullmatch(r"[A-Z0-9]{2,30}USDC", symbol or ""):
+        abort(400, "Invalid symbol")
+    return symbol
+
+
+def _boolish(value: str) -> int:
+    return 1 if str(value or "").strip().lower() in ("1", "true", "yes", "on") else 0
+
+
+def detect_symbol_profile() -> tuple:
+    env = read_service_env()
+    symbol = env.get("SYMBOL") or "UNKNOWN"
+    profile = env.get("PROFILE") or "major"
+    dry_run = _boolish(env.get("DRY_RUN", ""))
     return symbol, profile, dry_run
+
+
+def get_control_state() -> dict:
+    selector_timer = read_unit_state("token-profile-selector.timer")
+    selector_service = read_unit_state("token-profile-selector.service")
+    bot_service = read_unit_state("binance-aifout-bot.service")
+    symbol, profile, dry_run = detect_symbol_profile()
+    auto_selector = selector_timer.get("state") == "active"
+    return {
+        "symbol": symbol,
+        "profile": profile,
+        "dry_run": dry_run,
+        "mode": "auto" if auto_selector else "manual",
+        "auto_selector": auto_selector,
+        "service_env": str(SERVICE_ENV),
+        "bot": bot_service,
+        "selector_timer": selector_timer,
+        "selector_service": selector_service,
+    }
+
+
+def stop_selector() -> list:
+    results = []
+    for unit in ("token-profile-selector.timer", "token-profile-selector.service"):
+        ok, output = systemctl("stop", unit)
+        results.append({"unit": unit, "action": "stop", "ok": ok, "output": output})
+    return results
 
 
 def get_fx_usdc_eur() -> Optional[float]:
@@ -641,13 +698,14 @@ def api_control():
 @require_basic_auth
 def api_config():
     data = request.get_json(force=True) or {}
-    lines = []
-    for key in ("SYMBOL", "DRY_RUN", "PROFILE"):
-        if key in data:
-            lines.append(f"{key}={data[key]}")
     try:
-        with open(SERVICE_ENV, "w") as f:
-            f.write("\n".join(lines) + "\n")
+        updates = {}
+        if "SYMBOL" in data:
+            updates["SYMBOL"] = normalize_symbol(str(data["SYMBOL"]))
+        for key in ("DRY_RUN", "PROFILE"):
+            if key in data:
+                updates[key] = data[key]
+        write_service_env(updates)
         log.info(f"config written: {data}")
         return jsonify({"ok": True})
     except Exception as e:
@@ -734,6 +792,7 @@ def api_snapshot():
                 "drawdown_max": drawdown,
             },
             "services": services_list,
+            "control": get_control_state(),
             "fx": fx,
         })
     except Exception as e:
@@ -879,6 +938,80 @@ def api_service_action(name: str, action: str):
     ok, output = systemctl(action, unit)
     log.info(f"service_action: {action} {unit} ok={ok}")
     return jsonify({"ok": ok, "output": output, "unit": unit, "action": action})
+
+
+@app.route("/api/bot/control-state")
+@require_basic_auth
+def api_bot_control_state():
+    return jsonify(get_control_state())
+
+
+@app.route("/api/bot/manual-token", methods=["POST"])
+@require_token_auth
+def api_bot_manual_token():
+    data = request.get_json(force=True) or {}
+    symbol = normalize_symbol(str(data.get("symbol", "")))
+    profile = str(data.get("profile") or "").strip().lower()
+    restart = bool(data.get("restart", True))
+    pos = _get_position()
+    if pos and not bool(data.get("force", False)):
+        return jsonify({
+            "ok": False,
+            "error": (
+                "Position ouverte detectee. Changement de token refuse pour eviter "
+                "de relancer le bot sur un autre symbole."
+            ),
+            "position": pos,
+        }), 409
+
+    updates = {"SYMBOL": symbol}
+    if profile:
+        if not re.fullmatch(r"[a-z0-9_-]{2,32}", profile):
+            abort(400, "Invalid profile")
+        updates["PROFILE"] = profile
+
+    selector_results = stop_selector()
+    write_service_env(updates)
+    restart_result = None
+    if restart:
+        ok, output = systemctl("restart", "binance-aifout-bot.service")
+        restart_result = {"unit": "binance-aifout-bot.service", "action": "restart", "ok": ok, "output": output}
+    log.warning(f"manual token selected: symbol={symbol} profile={profile or '-'} restart={restart}")
+    return jsonify({
+        "ok": True,
+        "mode": "manual",
+        "symbol": symbol,
+        "selector": selector_results,
+        "restart": restart_result,
+        "control": get_control_state(),
+    })
+
+
+@app.route("/api/bot/selector/<action>", methods=["POST"])
+@require_token_auth
+def api_bot_selector_action(action: str):
+    if action not in ("start", "stop", "restart"):
+        abort(400, "Invalid action")
+    results = []
+    if action == "stop":
+        results = stop_selector()
+    else:
+        timer_action = "restart" if action == "restart" else "start"
+        ok, output = systemctl(timer_action, "token-profile-selector.timer")
+        results.append({"unit": "token-profile-selector.timer", "action": timer_action, "ok": ok, "output": output})
+        if action == "restart":
+            ok, output = systemctl("restart", "token-profile-selector.service")
+            results.append({"unit": "token-profile-selector.service", "action": "restart", "ok": ok, "output": output})
+    log.warning(f"selector {action} requested")
+    return jsonify({"ok": all(r["ok"] for r in results), "results": results, "control": get_control_state()})
+
+
+@app.route("/api/bot/restart", methods=["POST"])
+@require_token_auth
+def api_bot_restart():
+    ok, output = systemctl("restart", "binance-aifout-bot.service")
+    log.warning(f"bot restart requested: ok={ok}")
+    return jsonify({"ok": ok, "output": output, "control": get_control_state()})
 
 
 @app.route("/api/bot/pause", methods=["POST"])

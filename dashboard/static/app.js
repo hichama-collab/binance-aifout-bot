@@ -663,6 +663,9 @@ const ACTION_LOG_KEY = 'botdash_action_log';
 function botServices() {
   return {
     services: [],
+    control: {},
+    manualToken: '',
+    controlBusy: false,
     loading: true,
     error: null,
     actionLog: [],
@@ -704,6 +707,8 @@ function botServices() {
         if (!r.ok) throw new Error(await r.text());
         const d = await r.json();
         this.services = d.services || [];
+        this.control = d.control || {};
+        if (!this.manualToken && this.control.symbol) this.manualToken = this.control.symbol;
         this.loading = false;
       } catch (e) {
         this.error = e.message;
@@ -727,6 +732,78 @@ function botServices() {
         this._log(unit, action, false, e.message);
       } finally {
         this.actionInProgress[key] = false;
+      }
+    },
+
+    async setManualToken() {
+      const symbol = (this.manualToken || '').trim().toUpperCase();
+      if (!symbol) return;
+      this.controlBusy = true;
+      try {
+        const r = await fetch('/api/bot/manual-token', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol, restart: true }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || d.output || r.statusText);
+        this.control = d.control || this.control;
+        this.manualToken = d.symbol || symbol;
+        this._log('bot', 'manual-token', true, `symbol=${this.manualToken}`);
+        await this.fetchServices();
+      } catch (e) {
+        this._log('bot', 'manual-token', false, e.message);
+      } finally {
+        this.controlBusy = false;
+      }
+    },
+
+    async stopSelector() {
+      this.controlBusy = true;
+      try {
+        const r = await fetch('/api/bot/selector/stop', { method: 'POST', credentials: 'same-origin' });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || r.statusText);
+        this.control = d.control || this.control;
+        this._log('token-profile-selector.timer', 'stop-auto', true, 'manual mode');
+        await this.fetchServices();
+      } catch (e) {
+        this._log('token-profile-selector.timer', 'stop-auto', false, e.message);
+      } finally {
+        this.controlBusy = false;
+      }
+    },
+
+    async startSelector() {
+      this.controlBusy = true;
+      try {
+        const r = await fetch('/api/bot/selector/start', { method: 'POST', credentials: 'same-origin' });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || r.statusText);
+        this.control = d.control || this.control;
+        this._log('token-profile-selector.timer', 'start-auto', true, 'auto mode');
+        await this.fetchServices();
+      } catch (e) {
+        this._log('token-profile-selector.timer', 'start-auto', false, e.message);
+      } finally {
+        this.controlBusy = false;
+      }
+    },
+
+    async restartBot() {
+      this.controlBusy = true;
+      try {
+        const r = await fetch('/api/bot/restart', { method: 'POST', credentials: 'same-origin' });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || d.output || r.statusText);
+        this.control = d.control || this.control;
+        this._log('binance-aifout-bot.service', 'restart', true, d.output || '');
+        await this.fetchServices();
+      } catch (e) {
+        this._log('binance-aifout-bot.service', 'restart', false, e.message);
+      } finally {
+        this.controlBusy = false;
       }
     },
 
