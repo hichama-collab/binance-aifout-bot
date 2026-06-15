@@ -646,6 +646,13 @@ def api_wallet():
     return jsonify(wallet)
 
 
+@app.route("/api/portfolio")
+@require_basic_auth
+def api_portfolio():
+    portfolio = safe_read_json(RUNTIME_DIR / "portfolio.json")
+    return jsonify(portfolio)
+
+
 @app.route("/api/logs")
 @require_basic_auth
 def api_logs():
@@ -770,6 +777,7 @@ def api_snapshot():
         symbol, profile, dry_run = detect_symbol_profile()
         unit_state = read_unit_state("binance-aifout-bot.service")
         pos = _get_position()
+        portfolio = safe_read_json(RUNTIME_DIR / "portfolio.json")
         monitor = _get_live_monitor(symbol)
         pnl_rows = extract_closed_pnl_rows(trades)
         stats_data = compute_stats(trades)
@@ -789,6 +797,7 @@ def api_snapshot():
                 "dry_run": dry_run,
             },
             "position": pos,
+            "portfolio": portfolio,
             "monitor": monitor,
             "pnl": _build_pnl_buckets(trades, fx),
             "stats": {

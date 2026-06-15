@@ -6,12 +6,70 @@ from typing import Optional
 from state.position import Position
 
 
+_QUOTE_OR_NON_POSITION_ASSETS = {"USDC", "USDT", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
+
+
 def _safe_book_bid(bx, symbol: str) -> float:
     try:
         t = bx.get("/api/v3/ticker/bookTicker", {"symbol": symbol}, signed=False)
         return float(t.get("bidPrice", 0.0))
     except Exception:
         return 0.0
+
+
+def _safe_book_bid_map(bx) -> dict:
+    try:
+        rows = bx.get("/api/v3/ticker/bookTicker", signed=False)
+        if not isinstance(rows, list):
+            return {}
+        out = {}
+        for row in rows:
+            try:
+                sym = str(row.get("symbol", "")).upper()
+                bid = float(row.get("bidPrice", 0.0) or 0.0)
+            except Exception:
+                continue
+            if sym and bid > 0:
+                out[sym] = bid
+        return out
+    except Exception:
+        return {}
+
+
+def _balance_qty(balance: dict) -> tuple[float, float, float]:
+    free = float(balance.get("free", 0.0) or 0.0)
+    locked = float(balance.get("locked", 0.0) or 0.0)
+    return free, locked, free + locked
+
+
+def _wallet_holdings(balances: list, bid_map: dict, min_notional: float) -> list:
+    holdings = []
+    for b in balances:
+        asset = str(b.get("asset", "")).upper()
+        if not asset or asset in _QUOTE_OR_NON_POSITION_ASSETS:
+            continue
+        try:
+            free, locked, qty = _balance_qty(b)
+        except Exception:
+            continue
+        if qty <= 0:
+            continue
+        symbol = f"{asset}USDC"
+        bid = float(bid_map.get(symbol, 0.0) or 0.0)
+        notional = qty * bid if bid > 0 else 0.0
+        if notional < float(min_notional):
+            continue
+        holdings.append({
+            "asset": asset,
+            "symbol": symbol,
+            "free": free,
+            "locked": locked,
+            "qty": qty,
+            "bid": bid,
+            "notional": notional,
+        })
+    holdings.sort(key=lambda h: h["notional"], reverse=True)
+    return holdings
 
 
 
@@ -101,12 +159,22 @@ def _position_payload(now: float, symbol: str, pos: Optional[Position], reason: 
     }
 
 
-def _write_runtime_snapshot(now: float, symbol: str, acc: dict, balances: list, pos: Optional[Position], reason: str = "") -> None:
+def _write_runtime_snapshot(
+    now: float,
+    symbol: str,
+    acc: dict,
+    balances: list,
+    pos: Optional[Position],
+    reason: str = "",
+    holdings: Optional[list] = None,
+) -> None:
     try:
         rt = _runtime_dir()
         _safe_write_json(rt / "account.json", {"ts": now, "symbol": symbol, "account": acc})
         _safe_write_json(rt / "wallet.json", {"ts": now, "symbol": symbol, "balances": balances})
         _safe_write_json(rt / "position.json", _position_payload(now, symbol, pos, reason))
+        if holdings is not None:
+            _safe_write_json(rt / "portfolio.json", {"ts": now, "symbol": symbol, "holdings": holdings})
     except Exception:
         pass
 
@@ -154,6 +222,7 @@ def walletSyncEvery(
 
     balances = acc.get("balances", [])
     base = symbol.replace("USDC", "")
+    bid_map = _safe_book_bid_map(bx)
 
     free_base = 0.0
     locked_base = 0.0
@@ -170,16 +239,52 @@ def walletSyncEvery(
     qty_now = free_base + locked_base
 
     # Dust detection must include MIN_NOTIONAL (not only step).
-    bid = _safe_book_bid(bx, symbol)
+    bid = float(bid_map.get(symbol, 0.0) or 0.0) or _safe_book_bid(bx, symbol)
     notional = (qty_now * bid) if (qty_now > 0 and bid > 0) else 0.0
     dust_frac = float(getattr(cfg, "dustStepFraction", 0.5))
-    is_dust = (qty_now <= (float(step) * dust_frac)) or (notional > 0 and notional < float(minNotional))
+    qty_floor = float(step) * dust_frac
+    holdings = _wallet_holdings(balances, bid_map, float(minNotional))
+    external_holding = next((h for h in holdings if h.get("symbol") != symbol), None)
 
+    if qty_now <= qty_floor:
+        reason = "wallet_cleared" if pos is not None else "wallet_empty"
+        if external_holding is not None and pos is None:
+            _write_runtime_snapshot(now, symbol, acc, balances, None, "external_symbol_found", holdings)
+            return None, syncState, {
+                "changed": True,
+                "usdc": free_usdc,
+                "reason": "external_symbol_found",
+                "external_symbol": external_holding["symbol"],
+                "external_asset": external_holding["asset"],
+                "wallet_qty": external_holding["qty"],
+                "wallet_notional": external_holding["notional"],
+                "holdings": holdings,
+            }
+        _write_runtime_snapshot(now, symbol, acc, balances, None, reason, holdings)
+        return None, syncState, {
+            "changed": pos is not None,
+            "usdc": free_usdc,
+            "reason": reason,
+            "holdings": holdings,
+        }
+
+    is_dust = notional > 0 and notional < float(minNotional)
     if is_dust:
-        _write_runtime_snapshot(now, symbol, acc, balances, None, "wallet_dust")
+        _write_runtime_snapshot(now, symbol, acc, balances, None, "wallet_dust", holdings)
         if pos is not None:
-            return None, syncState, {"changed": True, "usdc": free_usdc, "reason": "wallet_dust"}
-        return None, syncState, {"usdc": free_usdc, "reason": "wallet_dust"}
+            return None, syncState, {"changed": True, "usdc": free_usdc, "reason": "wallet_dust", "holdings": holdings}
+        if external_holding is not None:
+            return None, syncState, {
+                "changed": True,
+                "usdc": free_usdc,
+                "reason": "external_symbol_found",
+                "external_symbol": external_holding["symbol"],
+                "external_asset": external_holding["asset"],
+                "wallet_qty": external_holding["qty"],
+                "wallet_notional": external_holding["notional"],
+                "holdings": holdings,
+            }
+        return None, syncState, {"usdc": free_usdc, "reason": "wallet_dust", "holdings": holdings}
 
     # Wallet has base asset but no local pos => adopt it immediately.
     # Prefer Binance fills for entry; fallback to current bid so the bot does not stay blind.
@@ -216,7 +321,7 @@ def walletSyncEvery(
             p.init_stops(cfg, getattr(cfg, "profile", None), tick=float(getattr(cfg, "tick", 0.0) or 0.0))
         except Exception:
             pass
-        _write_runtime_snapshot(now, symbol, acc, balances, p, reason)
+        _write_runtime_snapshot(now, symbol, acc, balances, p, reason, holdings)
         return p, syncState, {
             "changed": True,
             "usdc": free_usdc,
@@ -225,6 +330,7 @@ def walletSyncEvery(
             "cost_basis": estimated_entry if estimated_entry > 0 else entry,
             "wallet_qty": qty_now,
             "wallet_notional": notional,
+            "holdings": holdings,
         }
 
     # pos exists: if divergence qty, resync qty
@@ -234,9 +340,23 @@ def walletSyncEvery(
         qty_pos = 0.0
 
     if abs(qty_now - qty_pos) > (float(step) * 0.5):
+        delta = qty_now - qty_pos
         pos.qty = qty_now
-        _write_runtime_snapshot(now, symbol, acc, balances, pos, "qty_mismatch")
-        return pos, syncState, {"changed": True, "usdc": free_usdc, "reason": "qty_mismatch"}
+        if delta > 0:
+            entry, entry_source = _estimate_entry_from_recent_trades(bx, symbol, qty_now, float(step))
+            if entry > 0:
+                setattr(pos, "cost_basis", entry)
+                setattr(pos, "entry_source", f"{entry_source}_qty_mismatch")
+        _write_runtime_snapshot(now, symbol, acc, balances, pos, "qty_mismatch", holdings)
+        return pos, syncState, {
+            "changed": True,
+            "usdc": free_usdc,
+            "reason": "qty_mismatch",
+            "wallet_qty": qty_now,
+            "wallet_notional": notional,
+            "qty_delta": delta,
+            "holdings": holdings,
+        }
 
-    _write_runtime_snapshot(now, symbol, acc, balances, pos, "wallet_sync")
-    return pos, syncState, {"usdc": free_usdc}
+    _write_runtime_snapshot(now, symbol, acc, balances, pos, "wallet_sync", holdings)
+    return pos, syncState, {"usdc": free_usdc, "reason": "wallet_sync", "holdings": holdings}

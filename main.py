@@ -593,6 +593,40 @@ def _read_service_env_symbol(env_path: Path) -> str | None:
         return None
 
 
+def _write_service_env_symbol(symbol: str, log_fn=None) -> None:
+    env_path = resolveServiceEnvPath()
+    if env_path is None:
+        env_path = Path(__file__).resolve().parent / ".service.env"
+    try:
+        lines = []
+        seen_symbol = False
+        if env_path.exists():
+            lines = env_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        out = []
+        for line in lines:
+            if "=" not in line or line.strip().startswith("#"):
+                out.append(line)
+                continue
+            key, _ = line.split("=", 1)
+            if key.strip().upper() == "SYMBOL":
+                out.append(f"SYMBOL={symbol}")
+                seen_symbol = True
+            else:
+                out.append(line)
+        if not seen_symbol:
+            out.append(f"SYMBOL={symbol}")
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = env_path.with_suffix(env_path.suffix + ".tmp")
+        tmp.write_text("\n".join(out) + "\n", encoding="utf-8")
+        tmp.replace(env_path)
+    except Exception as exc:
+        if log_fn is not None:
+            try:
+                log_fn(f"SERVICE_ENV_SYMBOL_WRITE_FAIL symbol={symbol} err={type(exc).__name__}:{exc}")
+            except Exception:
+                pass
+
+
 def _resolve_start_symbol() -> str | None:
     """
     Resolve trading symbol from argv, env, then .service.env.
@@ -992,6 +1026,93 @@ def main():
         except Exception:
             pass
 
+    def handle_wallet_sync_info(syncInfo: dict, current_bid: float):
+        nonlocal pos, _dyn, pendingSwitchSymbol, pendingSwitchLogged, last_env_mtime
+        if not isinstance(syncInfo, dict):
+            return
+        sync_reason = str(syncInfo.get("reason", ""))
+
+        if sync_reason == "external_symbol_found" and pos is None:
+            external_symbol = str(syncInfo.get("external_symbol") or "").upper()
+            if external_symbol and external_symbol != symbol:
+                try:
+                    logTrade(
+                        f"WALLET_EXTERNAL_POSITION_FOUND current={symbol} "
+                        f"external={external_symbol} qty={syncInfo.get('wallet_qty','')} "
+                        f"notional={syncInfo.get('wallet_notional','')}"
+                    )
+                except Exception:
+                    pass
+                _write_service_env_symbol(external_symbol, log_fn=logTrade)
+                _reexec_to_symbol(symbol, external_symbol, source="wallet_external_position", log_fn=logTrade)
+
+        if sync_reason in ("wallet_cleared", "wallet_dust") and bool(syncInfo.get("changed")):
+            clear_runtime_position_state(sync_reason, f"wallet_qty={syncInfo.get('wallet_qty','')}")
+            pos = None
+            _dyn = None
+            return
+
+        # If Binance wallet contains the active base asset, promote it to a
+        # first-class bot position so dashboard/exits/restarts stay aligned.
+        if pos is None or not bool(syncInfo.get("changed")):
+            return
+        if sync_reason not in ("wallet_found", "wallet_found_market_entry", "qty_mismatch"):
+            return
+        try:
+            if float(getattr(pos, "entry", 0.0) or 0.0) > 0 and float(getattr(pos, "stop", 0.0) or 0.0) <= 0:
+                pos.init_stops(cfg, profile, tick=tick)
+        except Exception:
+            pass
+        try:
+            _pos_file = runtime_dir / "active_position.json"
+            _pos_file.parent.mkdir(parents=True, exist_ok=True)
+            _pos_file.write_text(json.dumps({
+                "symbol": symbol,
+                "entry": float(getattr(pos, 'entry', 0.0)),
+                "entry_price": float(getattr(pos, 'entry', 0.0)),
+                "cost_basis": float(getattr(pos, 'cost_basis', getattr(pos, 'entry', 0.0)) or 0.0),
+                "entry_source": str(syncInfo.get('entry_source', '')),
+                "qty": float(getattr(pos, 'qty', 0.0)),
+                "ts_entry": float(getattr(pos, 'ts_entry', time.time())),
+                "source": sync_reason,
+            }), encoding="utf-8")
+            if float(getattr(pos, "entry", 0.0) or 0.0) > 0:
+                save_position(PersistedPosition(
+                    symbol=symbol,
+                    entry_price=float(getattr(pos, 'entry', 0.0)),
+                    entry_qty=float(getattr(pos, 'qty', 0.0)),
+                    entry_ts=float(getattr(pos, 'ts_entry', time.time())),
+                    entry_reason=f"WALLET_SYNC_{sync_reason}",
+                    high_seen=float(getattr(pos, 'high', getattr(pos, 'entry', 0.0))),
+                    buy_notional=float(getattr(pos, 'entry', 0.0)) * float(getattr(pos, 'qty', 0.0)),
+                ), _persisted_path)
+        except Exception as e:
+            logErr("WALLET_POSITION_PERSIST_FAIL", e)
+        try:
+            if bool(getattr(cfg, "positionDynamics_enabled", True)) and float(getattr(pos, "entry", 0.0) or 0.0) > 0:
+                _dyn_existing = load_dynamics(_dynamics_path)
+                if _dyn_existing and abs(_dyn_existing.entry_price - float(getattr(pos, 'entry', 0.0))) < 0.000001:
+                    _dyn = _dyn_existing
+                else:
+                    _dyn = init_dynamics(
+                        float(getattr(pos, 'entry', 0.0)),
+                        float(getattr(pos, 'ts_entry', time.time())),
+                        current_bid,
+                    )
+                    save_dynamics(_dyn, _dynamics_path)
+        except Exception as e:
+            logErr("WALLET_DYNAMICS_INIT_FAIL", e)
+        try:
+            logTrade(
+                f"WALLET_POSITION_SYNCED symbol={symbol} qty={getattr(pos,'qty',0)} "
+                f"entry={getattr(pos,'entry',0)} stop={getattr(pos,'stop',0)} "
+                f"reason={sync_reason} entry_source={syncInfo.get('entry_source','')} "
+                f"cost_basis={syncInfo.get('cost_basis','')} notional={syncInfo.get('wallet_notional','')} "
+                f"qty_delta={syncInfo.get('qty_delta','')}"
+            )
+        except Exception:
+            pass
+
     while True:
         free_usdc = 0.0
         try:
@@ -1015,6 +1136,16 @@ def main():
                     ticks.pop(0)
                 while bidTicks and bidTicks[0][0] < cutoff:
                     bidTicks.pop(0)
+
+            # Wallet is authoritative and must be reconciled even during cooldown.
+            pos, syncState, syncInfo = walletSyncEvery(
+                bx, symbol, pos, cfg,
+                step=step,
+                minNotional=minNotional,
+                syncState=syncState,
+                intervalSec=float(getattr(cfg, 'walletSyncSec', 5))
+            )
+            handle_wallet_sync_info(syncInfo, bid)
             
             # cooldown log so it doesn't look frozen
             if now < cooldownUntil:
@@ -1028,74 +1159,6 @@ def main():
                     print(f"CHK COOLDOWN:{fmt(left)}s BID:{fmt(bid)} ASK:{fmt(ask)}")
                 time.sleep(cfg.idleSleep)
                 continue
-            
-            # sync wallet -> adopt/clear position
-            pos, syncState, syncInfo = walletSyncEvery(
-                bx, symbol, pos, cfg,
-                step=step,
-                minNotional=minNotional,
-                syncState=syncState,
-                intervalSec=float(getattr(cfg, 'walletSyncSec', 5))
-            )
-
-            # If Binance wallet contains the active base asset, promote it to a
-            # first-class bot position so dashboard/exits/restarts stay aligned.
-            if pos is not None and isinstance(syncInfo, dict) and syncInfo.get("changed"):
-                sync_reason = str(syncInfo.get("reason", "wallet_sync"))
-                if sync_reason in ("wallet_found", "wallet_found_market_entry", "qty_mismatch"):
-                    try:
-                        if float(getattr(pos, "entry", 0.0) or 0.0) > 0 and float(getattr(pos, "stop", 0.0) or 0.0) <= 0:
-                            pos.init_stops(cfg, profile, tick=tick)
-                    except Exception:
-                        pass
-                    try:
-                        _pos_file = runtime_dir / "active_position.json"
-                        _pos_file.parent.mkdir(parents=True, exist_ok=True)
-                        _pos_file.write_text(json.dumps({
-                            "symbol": symbol,
-                            "entry": float(getattr(pos, 'entry', 0.0)),
-                            "entry_price": float(getattr(pos, 'entry', 0.0)),
-                            "cost_basis": float(getattr(pos, 'cost_basis', getattr(pos, 'entry', 0.0)) or 0.0),
-                            "entry_source": str(syncInfo.get('entry_source', '')),
-                            "qty": float(getattr(pos, 'qty', 0.0)),
-                            "ts_entry": float(getattr(pos, 'ts_entry', time.time())),
-                            "source": sync_reason,
-                        }), encoding="utf-8")
-                        if float(getattr(pos, "entry", 0.0) or 0.0) > 0:
-                            save_position(PersistedPosition(
-                                symbol=symbol,
-                                entry_price=float(getattr(pos, 'entry', 0.0)),
-                                entry_qty=float(getattr(pos, 'qty', 0.0)),
-                                entry_ts=float(getattr(pos, 'ts_entry', time.time())),
-                                entry_reason=f"WALLET_SYNC_{sync_reason}",
-                                high_seen=float(getattr(pos, 'high', getattr(pos, 'entry', 0.0))),
-                                buy_notional=float(getattr(pos, 'entry', 0.0)) * float(getattr(pos, 'qty', 0.0)),
-                            ), _persisted_path)
-                    except Exception as e:
-                        logErr("WALLET_POSITION_PERSIST_FAIL", e)
-                    try:
-                        if bool(getattr(cfg, "positionDynamics_enabled", True)) and float(getattr(pos, "entry", 0.0) or 0.0) > 0:
-                            _dyn_existing = load_dynamics(_dynamics_path)
-                            if _dyn_existing and abs(_dyn_existing.entry_price - float(getattr(pos, 'entry', 0.0))) < 0.000001:
-                                _dyn = _dyn_existing
-                            else:
-                                _dyn = init_dynamics(
-                                    float(getattr(pos, 'entry', 0.0)),
-                                    float(getattr(pos, 'ts_entry', time.time())),
-                                    bid,
-                                )
-                                save_dynamics(_dyn, _dynamics_path)
-                    except Exception as e:
-                        logErr("WALLET_DYNAMICS_INIT_FAIL", e)
-                    try:
-                        logTrade(
-                            f"WALLET_POSITION_SYNCED symbol={symbol} qty={getattr(pos,'qty',0)} "
-                            f"entry={getattr(pos,'entry',0)} stop={getattr(pos,'stop',0)} "
-                            f"reason={sync_reason} entry_source={syncInfo.get('entry_source','')} "
-                            f"cost_basis={syncInfo.get('cost_basis','')} notional={syncInfo.get('wallet_notional','')}"
-                        )
-                    except Exception:
-                        pass
 
             # cache USDC balance from wallet sync (used for entry sizing)
             usdc = None

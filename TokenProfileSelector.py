@@ -18,6 +18,8 @@ BLOCKED_SYMBOLS_PATH = Path(
     (os.getenv("BOT_BLOCKED_SYMBOLS_PATH") or str(ROOT_PATH / "data" / "blocked_symbols.txt")).strip()
 ).resolve()
 SELECTOR_STATE_PATH = ROOT_PATH / "data" / "runtime" / "selector_state.json"
+RUNTIME_POSITION_PATH = ROOT_PATH / "data" / "runtime" / "position.json"
+RUNTIME_PORTFOLIO_PATH = ROOT_PATH / "data" / "runtime" / "portfolio.json"
 # Durée minimale sur un token avant de switcher (en minutes)
 SELECTOR_MIN_HOLD_MINUTES = float(os.getenv("SELECTOR_MIN_HOLD_MINUTES", "10"))
 # Amélioration minimale du score pour justifier un switch pendant la période de garde
@@ -39,6 +41,8 @@ SELECTOR_MAX_WINDOW_PCT_UNKNOWN = float(os.getenv("SELECTOR_MAX_WINDOW_PCT_UNKNO
 SELECTOR_MIN_24H_CHANGE_PCT = float(os.getenv("SELECTOR_MIN_24H_CHANGE_PCT", "-8.0"))
 SELECTOR_MAX_24H_CHANGE_PCT = float(os.getenv("SELECTOR_MAX_24H_CHANGE_PCT", "12.0"))
 SELECTOR_UNKNOWN_SCORE_PENALTY = float(os.getenv("SELECTOR_UNKNOWN_SCORE_PENALTY", "0.05"))
+SELECTOR_RESPECT_WALLET_POSITION = os.getenv("SELECTOR_RESPECT_WALLET_POSITION", "1") != "0"
+SELECTOR_RUNTIME_LOCK_MAX_AGE_SEC = float(os.getenv("SELECTOR_RUNTIME_LOCK_MAX_AGE_SEC", "300"))
 DEFAULT_PROFILE = (os.getenv("SELECTOR_PROFILE", "major") or "major").strip()
 
 
@@ -95,6 +99,63 @@ def _read_env_file(path: str) -> dict:
     except Exception:
         pass
     return out
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _runtime_wallet_lock() -> dict | None:
+    if not SELECTOR_RESPECT_WALLET_POSITION:
+        return None
+
+    pos = _read_json(RUNTIME_POSITION_PATH)
+    try:
+        qty = float(pos.get("qty", 0.0) or 0.0)
+    except Exception:
+        qty = 0.0
+    symbol = str(pos.get("symbol") or "").upper()
+    if symbol and qty > 0:
+        return {
+            "source": "position",
+            "symbol": symbol,
+            "qty": qty,
+            "reason": str(pos.get("reason") or ""),
+            "age_sec": max(0.0, time.time() - float(pos.get("ts", 0.0) or 0.0)),
+        }
+
+    portfolio = _read_json(RUNTIME_PORTFOLIO_PATH)
+    try:
+        age_sec = max(0.0, time.time() - float(portfolio.get("ts", 0.0) or 0.0))
+    except Exception:
+        age_sec = SELECTOR_RUNTIME_LOCK_MAX_AGE_SEC + 1
+    if age_sec > SELECTOR_RUNTIME_LOCK_MAX_AGE_SEC:
+        return None
+    holdings = portfolio.get("holdings") or []
+    if not isinstance(holdings, list) or not holdings:
+        return None
+    top = holdings[0] if isinstance(holdings[0], dict) else {}
+    symbol = str(top.get("symbol") or "").upper()
+    try:
+        qty = float(top.get("qty", 0.0) or 0.0)
+        notional = float(top.get("notional", 0.0) or 0.0)
+    except Exception:
+        qty = 0.0
+        notional = 0.0
+    if symbol and qty > 0 and notional > 0:
+        return {
+            "source": "portfolio",
+            "symbol": symbol,
+            "qty": qty,
+            "notional": notional,
+            "age_sec": age_sec,
+        }
+    return None
 
 def _is_symbol_safe(sym: str) -> bool:
     # Exclude any non-ASCII symbols (e.g. Chinese characters) and empty values.
@@ -455,10 +516,23 @@ def write_service_env(symbol: str, pct: float, profile: str):
     )
 
 def main():
-    sync_info = sync_trade_memory()
-    score_map = load_token_scores()
     env_now = _read_env_file(SERVICE_ENV_PATH)
     current_symbol = (env_now.get("SYMBOL") or "").strip().upper()
+    wallet_lock = _runtime_wallet_lock()
+    if wallet_lock:
+        locked_symbol = wallet_lock.get("symbol", "")
+        print(
+            "TOKEN_SELECTOR: wallet position lock active — no token switch "
+            f"current={current_symbol or '-'} locked={locked_symbol} "
+            f"source={wallet_lock.get('source','')} qty={wallet_lock.get('qty','')} "
+            f"notional={wallet_lock.get('notional','')} age={wallet_lock.get('age_sec',''):.1f}s"
+        )
+        if locked_symbol and locked_symbol != current_symbol:
+            write_service_env(locked_symbol, 0.0, DEFAULT_PROFILE)
+        return 0
+
+    sync_info = sync_trade_memory()
+    score_map = load_token_scores()
     blocked_symbols = load_blocked_symbols(BLOCKED_SYMBOLS_PATH)
     current_symbol_score = score_map.get(current_symbol, {}) if current_symbol else {}
     current_symbol_blocked = current_symbol in blocked_symbols or bool(current_symbol_score.get("is_toxic"))

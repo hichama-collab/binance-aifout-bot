@@ -442,6 +442,23 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("daily_max_loss_usdc", "dailyMaxLossUsdc"),
         ("max_consecutive_losses", "maxConsecutiveLosses"),
         ("cooldown_after_break_sec", "cooldownAfterBreakSec"),
+        ("position_dynamics_enabled", "positionDynamics_enabled"),
+        ("trailing_stop_enabled", "trailingStop_enabled"),
+        ("trailing_stop_drawdown_pct", "trailingStop_drawdownPct"),
+        ("trailing_stop_min_gain_arming_pct", "trailingStop_minGainArmingPct"),
+        ("breakeven_escape_enabled", "breakevenEscape_enabled"),
+        ("breakeven_escape_min_gain_arming_pct", "breakevenEscape_minGainArmingPct"),
+        ("breakeven_escape_buffer_pct", "breakevenEscape_bufferPct"),
+        ("entry_guard_enabled", "entryGuard_enabled"),
+        ("entry_guard_min_age_sec", "entryGuardMinAgeSec"),
+        ("entry_guard_arm_gain_pct", "entryGuardArmGainPct"),
+        ("entry_guard_net_floor_pct", "entryGuardNetFloorPct"),
+        ("entry_guard_giveback_pct", "entryGuardGivebackPct"),
+        ("entry_guard_loss_cut_pct", "entryGuardLossCutPct"),
+        ("entry_guard_loss_age_sec", "entryGuardLossAgeSec"),
+        ("pic_filter_enabled", "picFilter_enabled"),
+        ("pic_filter_lookback_sec", "picFilter_lookbackSec"),
+        ("pic_filter_threshold_pct", "picFilter_thresholdPct"),
     ]:
         if k_yaml in p and k_cfg in fields:
             updates[k_cfg] = p[k_yaml]
@@ -502,7 +519,7 @@ def applyRiskConfig(cfg: Config) -> Config:
         if not isinstance(section_data, dict):
             continue
         for k_yaml, k_cfg in pairs:
-            if k_yaml in section_data and k_cfg in fields:
+            if k_yaml in section_data and k_cfg in fields and k_cfg not in updates:
                 updates[k_cfg] = section_data[k_yaml]
 
     if "strategyParams" in fields:
