@@ -1038,6 +1038,65 @@ def main():
                 intervalSec=float(getattr(cfg, 'walletSyncSec', 5))
             )
 
+            # If Binance wallet contains the active base asset, promote it to a
+            # first-class bot position so dashboard/exits/restarts stay aligned.
+            if pos is not None and isinstance(syncInfo, dict) and syncInfo.get("changed"):
+                sync_reason = str(syncInfo.get("reason", "wallet_sync"))
+                if sync_reason in ("wallet_found", "wallet_found_market_entry", "qty_mismatch"):
+                    try:
+                        if float(getattr(pos, "entry", 0.0) or 0.0) > 0 and float(getattr(pos, "stop", 0.0) or 0.0) <= 0:
+                            pos.init_stops(cfg, profile, tick=tick)
+                    except Exception:
+                        pass
+                    try:
+                        _pos_file = runtime_dir / "active_position.json"
+                        _pos_file.parent.mkdir(parents=True, exist_ok=True)
+                        _pos_file.write_text(json.dumps({
+                            "symbol": symbol,
+                            "entry": float(getattr(pos, 'entry', 0.0)),
+                            "entry_price": float(getattr(pos, 'entry', 0.0)),
+                            "cost_basis": float(getattr(pos, 'cost_basis', getattr(pos, 'entry', 0.0)) or 0.0),
+                            "entry_source": str(syncInfo.get('entry_source', '')),
+                            "qty": float(getattr(pos, 'qty', 0.0)),
+                            "ts_entry": float(getattr(pos, 'ts_entry', time.time())),
+                            "source": sync_reason,
+                        }), encoding="utf-8")
+                        if float(getattr(pos, "entry", 0.0) or 0.0) > 0:
+                            save_position(PersistedPosition(
+                                symbol=symbol,
+                                entry_price=float(getattr(pos, 'entry', 0.0)),
+                                entry_qty=float(getattr(pos, 'qty', 0.0)),
+                                entry_ts=float(getattr(pos, 'ts_entry', time.time())),
+                                entry_reason=f"WALLET_SYNC_{sync_reason}",
+                                high_seen=float(getattr(pos, 'high', getattr(pos, 'entry', 0.0))),
+                                buy_notional=float(getattr(pos, 'entry', 0.0)) * float(getattr(pos, 'qty', 0.0)),
+                            ), _persisted_path)
+                    except Exception as e:
+                        logErr("WALLET_POSITION_PERSIST_FAIL", e)
+                    try:
+                        if bool(getattr(cfg, "positionDynamics_enabled", True)) and float(getattr(pos, "entry", 0.0) or 0.0) > 0:
+                            _dyn_existing = load_dynamics(_dynamics_path)
+                            if _dyn_existing and abs(_dyn_existing.entry_price - float(getattr(pos, 'entry', 0.0))) < 0.000001:
+                                _dyn = _dyn_existing
+                            else:
+                                _dyn = init_dynamics(
+                                    float(getattr(pos, 'entry', 0.0)),
+                                    float(getattr(pos, 'ts_entry', time.time())),
+                                    bid,
+                                )
+                                save_dynamics(_dyn, _dynamics_path)
+                    except Exception as e:
+                        logErr("WALLET_DYNAMICS_INIT_FAIL", e)
+                    try:
+                        logTrade(
+                            f"WALLET_POSITION_SYNCED symbol={symbol} qty={getattr(pos,'qty',0)} "
+                            f"entry={getattr(pos,'entry',0)} stop={getattr(pos,'stop',0)} "
+                            f"reason={sync_reason} entry_source={syncInfo.get('entry_source','')} "
+                            f"cost_basis={syncInfo.get('cost_basis','')} notional={syncInfo.get('wallet_notional','')}"
+                        )
+                    except Exception:
+                        pass
+
             # cache USDC balance from wallet sync (used for entry sizing)
             usdc = None
             try:

@@ -431,6 +431,8 @@ def _get_position() -> Optional[dict]:
     pos = safe_read_json(RUNTIME_DIR / "position.json")
     if not pos or float(pos.get("qty", 0)) == 0:
         return None
+    if "entry_price" not in pos and "entry" in pos:
+        pos["entry_price"] = pos.get("entry")
     return pos
 
 
@@ -442,11 +444,15 @@ def _parse_float(raw: str) -> Optional[float]:
 
 
 def _line_ts_epoch(line: str) -> Optional[float]:
-    m = re.match(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})Z\]", line)
+    m = re.match(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(Z|[+-]\d{4})\]", line)
     if not m:
         return None
     try:
-        dt = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        raw_dt, raw_tz = m.group(1), m.group(2)
+        if raw_tz == "Z":
+            dt = datetime.strptime(raw_dt, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        else:
+            dt = datetime.strptime(f"{raw_dt}{raw_tz}", "%Y-%m-%d %H:%M:%S%z")
         return dt.timestamp()
     except Exception:
         return None
@@ -852,7 +858,7 @@ def api_stream():
                     if pos:
                         symbol = pos.get("symbol", "")
                         qty = float(pos.get("qty", 0))
-                        entry = float(pos.get("entry_price", pos.get("price", 0)))
+                        entry = float(pos.get("entry_price", pos.get("entry", pos.get("price", 0))))
                         # Try to get current price
                         current_price = None
                         try:
@@ -878,8 +884,8 @@ def api_stream():
                             "pnl_usdc": pnl_usdc,
                             "pnl_pct": pnl_pct,
                             "opened_at": datetime.fromtimestamp(
-                                float(pos.get("ts", 0)), tz=timezone.utc
-                            ).isoformat() if pos.get("ts") else None,
+                                float(pos.get("ts_entry", pos.get("ts", 0))), tz=timezone.utc
+                            ).isoformat() if (pos.get("ts_entry") or pos.get("ts")) else None,
                         })
                         yield f"event: position\ndata: {pos_event}\n\n"
 

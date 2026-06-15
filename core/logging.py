@@ -33,7 +33,11 @@ def _resolve_log_base_dir(cfg) -> Path:
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%d")
+    return datetime.now().astimezone().strftime("%Y%m%d")
+
+
+def _log_timestamp() -> str:
+    return datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S%z")
 
 
 class LogDayContext:
@@ -69,7 +73,7 @@ def tradeLogger(cfg, symbol: str, ctx: LogDayContext):
     path = base / f"{symbol}_{day}_trades.log"
 
     def _log(msg: str):
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+        ts = _log_timestamp()
         line = f"[{ts}] {msg}\n"
         try:
             with path.open("a", encoding="utf-8") as f:
@@ -111,7 +115,7 @@ def errorLogger(cfg, symbol: str, ctx: LogDayContext):
     path = base / f"{symbol}_{day}_errors.log"
 
     def _log(label: str, exc: Exception):
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+        ts = _log_timestamp()
         line = f"[{ts}] ERR {label}: {exc}\n"
         try:
             with path.open("a", encoding="utf-8") as f:
