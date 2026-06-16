@@ -105,9 +105,9 @@ profiles:
 
   btc_48h:
     cap_usdc: 1000
-    mom_window_sec: 45
-    mom_min_pct: 0.00018
-    mom_min_up_ratio: 0.52
+    mom_window_sec: 35
+    mom_min_pct: 0.00012
+    mom_min_up_ratio: 0.38
     mom_range_min_pct: 0
     mom_use_instant: false
     mom_lookback: 6
@@ -144,13 +144,13 @@ profiles:
     protect_arm_pct: 0.005
     protect_lock_pct: 0.0018
     protect_giveback_pct: 0.003
-    psell_min_age_sec: 240
-    psell_min_loss_pct: 0.007
-    psell_current_loss_pct: 0.006
-    psell_stale_age_sec: 900
-    psell_stale_loss_pct: 0.003
+    psell_min_age_sec: 600
+    psell_min_loss_pct: 0.009
+    psell_current_loss_pct: 0.008
+    psell_stale_age_sec: 3600
+    psell_stale_loss_pct: 0.006
     psell_confirm_ticks: 5
-    psell_fail_age_sec: 300
+    psell_fail_age_sec: 0
     psell_fail_loss_pct: 0.003
     psell_fail_max_high_pct: 0.002
     psell_5m_age_sec: 0
@@ -161,24 +161,25 @@ profiles:
     reentry_trail_cooldown_sec: 180
     reentry_recovery_pct: 0.002
     p_entry_enabled: true
-    entry_hard_min_up_ratio: 0.45
-    entry_min_strict_ups: 2
-    entry_min_tape_progress_pct: 0.00008
+    entry_hard_min_up_ratio: 0.35
+    entry_min_strict_ups: 1
+    entry_min_tape_progress_pct: 0.00003
     entry_min_tape_progress_vs_spread: 2.0
+    entry_fee_edge_mult: 0.0
     flow_defense_enabled: true
     flow_lookback: 10
     flow_min_ratio: 1.25
     flow_max_single_drop_pct: 0.0015
     burst_entry_enabled: true
-    burst_lookback_ticks: 4
-    burst_max_window_sec: 15.0
-    burst_min_return_pct: 0.00035
-    burst_min_return_vs_fee_buf: 0.8
-    burst_min_move_vs_spread: 8.0
-    burst_min_velocity_pct_per_sec: 0.00003
-    burst_min_efficiency: 0.65
-    burst_min_pressure_ratio: 1.6
-    burst_max_single_drop_pct: 0.00015
+    burst_lookback_ticks: 6
+    burst_max_window_sec: 45.0
+    burst_min_return_pct: 0.00018
+    burst_min_return_vs_fee_buf: 0.0
+    burst_min_move_vs_spread: 4.0
+    burst_min_velocity_pct_per_sec: 0.000004
+    burst_min_efficiency: 0.45
+    burst_min_pressure_ratio: 1.15
+    burst_max_single_drop_pct: 0.00030
     burst_spread_max_mult: 1.4
     burst_force_cross_spread: true
     burst_exit_confirm_ticks: 4
@@ -206,6 +207,7 @@ profiles:
     daily_max_loss_usdc: 1.0
     max_consecutive_losses: 3
     cooldown_after_break_sec: 7200
+    token_quality_override_manual_symbol: true
     position_dynamics_enabled: true
     trailing_stop_enabled: true
     trailing_stop_drawdown_pct: 0.006
@@ -218,9 +220,9 @@ profiles:
     entry_guard_arm_gain_pct: 0.004
     entry_guard_net_floor_pct: 0.0002
     entry_guard_giveback_pct: 0.003
-    entry_guard_loss_cut_pct: 0.006
-    entry_guard_loss_age_sec: 180
-    pic_filter_enabled: true
+    entry_guard_loss_cut_pct: 0.010
+    entry_guard_loss_age_sec: 1200
+    pic_filter_enabled: false
     pic_filter_lookback_sec: 300
     pic_filter_threshold_pct: 0.0005
 

@@ -53,7 +53,9 @@ def momentum_ok(
     for _, b in win[1:]:
         if b > last:
             ups += 1
-        tot += 1
+            tot += 1
+        elif b < last:
+            tot += 1
         last = b
 
     up_ratio = (ups / tot) if tot else 0.0
@@ -95,7 +97,9 @@ def instant_momentum_ok(ticks, threshold_pct: float, lookback: int, min_up_ratio
         b = float(b)
         if b > last:
             ups += 1
-        tot += 1
+            tot += 1
+        elif b < last:
+            tot += 1
         last = b
     up_ratio = (ups / tot) if tot else 0.0
     ok = (mom >= float(threshold_pct)) and (up_ratio >= float(min_up_ratio))
@@ -833,11 +837,21 @@ def main():
     blocked_symbols_file = Path(getattr(cfg, "blockedSymbolsFile", Path("data/blocked_symbols.txt")))
     blockedSymbols.update(load_blocked_symbols(blocked_symbols_file))
     toxicSymbols, toxicReasons = load_toxic_symbols()
+    override_manual_block = bool(getattr(cfg, "tokenQuality_overrideManualSymbol", False))
     blockedSymbols.update(toxicSymbols)
     if toxicSymbols:
         msg = (
             f"TOXIC_MEMORY_LOADED count={len(toxicSymbols)} "
             f"symbols={','.join(sorted(toxicSymbols)[:10])}"
+        )
+        print(msg)
+        logTrade(msg)
+    if override_manual_block and symbol in toxicSymbols:
+        block_reason = toxicReasons.get(symbol) or "persisted_blocked_symbol"
+        blockedSymbols.discard(symbol)
+        msg = (
+            f"SYMBOL_BLOCK_OVERRIDE symbol={symbol} profile={cfg.profileName} "
+            f"reason={block_reason}"
         )
         print(msg)
         logTrade(msg)
@@ -1448,7 +1462,12 @@ def main():
                 min_tape_progress_pct = float(getattr(cfg, "entryMinTapeProgressPct", 0.0) or 0.0)
                 min_tape_progress_vs_spread = float(getattr(cfg, "entryMinTapeProgressVsSpread", 0.0) or 0.0)
                 min_profit_buffer_pct = float(getattr(cfg, "minProfitBufferPct", 0.0) or 0.0)
-                fee_edge_pct = (float(_fee_model.fee_rate) * 2.0) + float(spread) + min_profit_buffer_pct
+                entry_fee_edge_mult = float(getattr(cfg, "entryFeeEdgeMult", 1.0) or 0.0)
+                fee_edge_pct = (
+                    (float(_fee_model.fee_rate) * 2.0)
+                    + float(spread)
+                    + min_profit_buffer_pct
+                ) * entry_fee_edge_mult
                 required_tape_progress_pct = max(
                     min_tape_progress_pct,
                     float(spread) * min_tape_progress_vs_spread,
@@ -2417,8 +2436,17 @@ def main():
                     else:
                         hold_reason = "HOLD_NO_ENTRY_SIGNAL"
                         p_progress = ((float(P1) - float(P4)) / float(P4) * 100.0) if P1 is not None and P4 not in (None, 0) else 0.0
+                        _burst_ret = float((burstStats or {}).get("return_pct", 0.0) or 0.0) * 100.0
+                        _burst_need = float((burstStats or {}).get("required_return_pct", 0.0) or 0.0) * 100.0
+                        _burst_eff = float((burstStats or {}).get("efficiency", 0.0) or 0.0)
+                        _burst_pressure = float((burstStats or {}).get("pressure_ratio", 0.0) or 0.0)
                         hold_detail = (
-                            f"range_signal={int(bool(range_signal))} burst_ok={int(bool(burstOk))} "
+                            f"mom_ok={int(bool(momOk))} mom_min={float(momMinPct)*100:.4f}% "
+                            f"up_min={float(momMinUpRatio)*100:.2f}% "
+                            f"range_signal={int(bool(range_signal))} "
+                            f"burst_ok={int(bool(burstOk))} burst_ret={_burst_ret:.4f}% "
+                            f"burst_need={_burst_need:.4f}% burst_eff={_burst_eff:.3f} "
+                            f"burst_pressure={_burst_pressure:.2f} "
                             f"p_entry={int(bool(pEntryEnabled))} p_progress={p_progress:.4f}%"
                         )
                     maybe_hold(
@@ -2543,11 +2571,6 @@ def main():
                             min_loss_pct * 0.75,
                         )
                     fail_age_sec = float(getattr(cfg, "psellFailAgeSec", 0.0) or 0.0)
-                    if fail_age_sec <= 0.0:
-                        fail_age_sec = max(
-                            min_signal_exit_sec + 20.0,
-                            min(60.0, float(getattr(cfg, "maxPosTime", 240.0) or 240.0) * 0.25),
-                        )
                     fail_loss_pct = float(getattr(cfg, "psellFailLossPct", 0.0) or 0.0)
                     if fail_loss_pct <= 0.0:
                         fail_loss_pct = max(
@@ -2585,7 +2608,8 @@ def main():
                         and weak_tape
                     )
                     fail_signal = (
-                        age_sec >= fail_age_sec
+                        fail_age_sec > 0.0
+                        and age_sec >= fail_age_sec
                         and (latest_ref < fail_guard)
                         and (peak_progress_pct <= fail_max_high_pct)
                         and weak_tape
@@ -2657,7 +2681,7 @@ def main():
 
             # Skip non-critical exits if expected PnL net would be negative (paying fees for nothing)
             _fee_rate_exit = _fee_model.fee_rate  # use the single fee model, not a separate config key
-            _non_critical_exits = ("TIME", "PROTECT", "PSELL STALE", "PSELL FAST")
+            _non_critical_exits = ("TIME", "PROTECT", "PSELL STALE", "PSELL FAST", "PSELL FAIL")
             _is_non_critical = any(exitReason.startswith(e) for e in _non_critical_exits)
             if _is_non_critical and pos is not None and pos.entry > 0:
                 _exp_buy_cost = float(pos.entry) * float(getattr(pos, 'qty', 0.0))

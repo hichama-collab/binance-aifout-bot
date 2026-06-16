@@ -193,6 +193,7 @@ class Config:
     entryMinStrictUps: int = 1
     entryMinTapeProgressPct: float = 0.0
     entryMinTapeProgressVsSpread: float = 0.0
+    entryFeeEdgeMult: float = 1.0
 
     # 5m rollover exit guard
     psell5mAgeSec: float = 0.0
@@ -256,6 +257,7 @@ class Config:
     tokenQuality_blockWinrateThreshold: float = 0.20
     tokenQuality_respectBlocked: bool = True
     tokenQuality_rebuildOnStart: bool = True
+    tokenQuality_overrideManualSymbol: bool = False
     picFilter_enabled: bool = False
     picFilter_lookbackSec: int = 180
     picFilter_thresholdPct: float = 0.001
@@ -403,6 +405,7 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("entry_min_strict_ups", "entryMinStrictUps"),
         ("entry_min_tape_progress_pct", "entryMinTapeProgressPct"),
         ("entry_min_tape_progress_vs_spread", "entryMinTapeProgressVsSpread"),
+        ("entry_fee_edge_mult", "entryFeeEdgeMult"),
         ("psell_5m_age_sec", "psell5mAgeSec"),
         ("psell_5m_loss_pct", "psell5mLossPct"),
         ("psell_5m_drop_pct", "psell5mDropPct"),
@@ -442,6 +445,7 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("daily_max_loss_usdc", "dailyMaxLossUsdc"),
         ("max_consecutive_losses", "maxConsecutiveLosses"),
         ("cooldown_after_break_sec", "cooldownAfterBreakSec"),
+        ("token_quality_override_manual_symbol", "tokenQuality_overrideManualSymbol"),
         ("position_dynamics_enabled", "positionDynamics_enabled"),
         ("trailing_stop_enabled", "trailingStop_enabled"),
         ("trailing_stop_drawdown_pct", "trailingStop_drawdownPct"),
