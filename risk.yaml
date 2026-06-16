@@ -181,12 +181,12 @@ profiles:
     burst_force_cross_spread: true
     burst_exit_confirm_ticks: 4
     burst_exit_giveback_mult: 0.65
-    burst_exit_min_drawdown_pct: 0.00020
+    burst_exit_min_drawdown_pct: 0.00100
     burst_exit_drawdown_vs_spread: 10.0
     burst_fail_ttl_sec: 20.0
     burst_fail_loss_pct: 0.003
     burst_fail_loss_vs_spread: 10.0
-    burst_reversal_min_peak_pct: 0.0018
+    burst_reversal_min_peak_pct: 0.0025
     burst_follow_ttl_sec: 8.0
     burst_follow_min_extension_pct: 0.00008
     burst_exit_under_entry_pct: 0.00008

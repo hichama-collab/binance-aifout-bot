@@ -2681,7 +2681,15 @@ def main():
 
             # Skip non-critical exits if expected PnL net would be negative (paying fees for nothing)
             _fee_rate_exit = _fee_model.fee_rate  # use the single fee model, not a separate config key
-            _non_critical_exits = ("TIME", "PROTECT", "PSELL STALE", "PSELL FAST", "PSELL FAIL")
+            _non_critical_exits = (
+                "TIME",
+                "PROTECT",
+                "PSELL STALE",
+                "PSELL FAST",
+                "PSELL FAIL",
+                "BURST_REVERSAL",
+                "ENTRY_GUARD_PROTECT",
+            )
             _is_non_critical = any(exitReason.startswith(e) for e in _non_critical_exits)
             if _is_non_critical and pos is not None and pos.entry > 0:
                 _exp_buy_cost = float(pos.entry) * float(getattr(pos, 'qty', 0.0))
@@ -2691,6 +2699,25 @@ def main():
                 _hard_stop_pct = float(getattr(cfg, 'psellMinLossPct', 0.005) or 0.005)
                 _is_hard_stop = float(bid) < float(pos.entry) * (1.0 - _hard_stop_pct * 2)
                 if _exp_pnl_net < 0 and not _is_hard_stop:
+                    maybe_hold(
+                        now,
+                        "HOLD_NEGATIVE_EXIT",
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                        detail=(
+                            f"exit={exitReason} expected_pnl={_exp_pnl_net:.6f} "
+                            f"fees={_exp_fees:.6f} hard_stop={int(_is_hard_stop)}"
+                        ),
+                    )
                     time.sleep(cfg.idleSleep)
                     continue
 
