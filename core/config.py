@@ -261,6 +261,8 @@ class Config:
     picFilter_enabled: bool = False
     picFilter_lookbackSec: int = 180
     picFilter_thresholdPct: float = 0.001
+    entryEmaFilter_enabled: bool = True
+    burstEmaFilter_enabled: bool = True
     positionDynamics_enabled: bool = True
     trailingStop_enabled: bool = True
     trailingStop_drawdownPct: float = 0.004
@@ -268,6 +270,10 @@ class Config:
     breakevenEscape_enabled: bool = True
     breakevenEscape_minGainArmingPct: float = 0.003
     breakevenEscape_bufferPct: float = 0.0005
+    returnToEntry_enabled: bool = False
+    returnToEntry_minDrawdownPct: float = 0.004
+    returnToEntry_triggerBelowEntryPct: float = 0.0005
+    returnToEntry_minAgeSec: float = 120.0
     entryGuard_enabled: bool = True
     entryGuardMinAgeSec: float = 3.0
     entryGuardArmGainPct: float = 0.0025
@@ -446,6 +452,8 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("max_consecutive_losses", "maxConsecutiveLosses"),
         ("cooldown_after_break_sec", "cooldownAfterBreakSec"),
         ("token_quality_override_manual_symbol", "tokenQuality_overrideManualSymbol"),
+        ("entry_ema_filter_enabled", "entryEmaFilter_enabled"),
+        ("burst_ema_filter_enabled", "burstEmaFilter_enabled"),
         ("position_dynamics_enabled", "positionDynamics_enabled"),
         ("trailing_stop_enabled", "trailingStop_enabled"),
         ("trailing_stop_drawdown_pct", "trailingStop_drawdownPct"),
@@ -453,6 +461,10 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("breakeven_escape_enabled", "breakevenEscape_enabled"),
         ("breakeven_escape_min_gain_arming_pct", "breakevenEscape_minGainArmingPct"),
         ("breakeven_escape_buffer_pct", "breakevenEscape_bufferPct"),
+        ("return_to_entry_enabled", "returnToEntry_enabled"),
+        ("return_to_entry_min_drawdown_pct", "returnToEntry_minDrawdownPct"),
+        ("return_to_entry_trigger_below_entry_pct", "returnToEntry_triggerBelowEntryPct"),
+        ("return_to_entry_min_age_sec", "returnToEntry_minAgeSec"),
         ("entry_guard_enabled", "entryGuard_enabled"),
         ("entry_guard_min_age_sec", "entryGuardMinAgeSec"),
         ("entry_guard_arm_gain_pct", "entryGuardArmGainPct"),
@@ -508,6 +520,12 @@ def applyRiskConfig(cfg: Config) -> Config:
             ("enabled", "breakevenEscape_enabled"),
             ("minGainArmingPct", "breakevenEscape_minGainArmingPct"),
             ("bufferPct", "breakevenEscape_bufferPct"),
+        ]),
+        ("returnToEntry", [
+            ("enabled", "returnToEntry_enabled"),
+            ("minDrawdownPct", "returnToEntry_minDrawdownPct"),
+            ("triggerBelowEntryPct", "returnToEntry_triggerBelowEntryPct"),
+            ("minAgeSec", "returnToEntry_minAgeSec"),
         ]),
         ("entryGuard", [
             ("enabled", "entryGuard_enabled"),

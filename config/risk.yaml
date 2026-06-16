@@ -135,21 +135,21 @@ profiles:
     ticks_keep_min_sec: 120
     mom_relax_strong_mult: 0.7
     mom_relax_mid_mult: 0.9
-    riskPct: 0.012
-    tpPct: 0.012
-    tp_min_pct: 0.006
-    armPct: 0.006
-    trailPct: 0.006
+    riskPct: 0.0065
+    tpPct: 0.008
+    tp_min_pct: 0.004
+    armPct: 0.0032
+    trailPct: 0.0035
     feeBufPct: 0.0012
-    protect_arm_pct: 0.005
-    protect_lock_pct: 0.0018
-    protect_giveback_pct: 0.003
-    psell_min_age_sec: 600
-    psell_min_loss_pct: 0.009
-    psell_current_loss_pct: 0.008
-    psell_stale_age_sec: 3600
-    psell_stale_loss_pct: 0.006
-    psell_confirm_ticks: 5
+    protect_arm_pct: 0.003
+    protect_lock_pct: 0.0022
+    protect_giveback_pct: 0.0012
+    psell_min_age_sec: 240
+    psell_min_loss_pct: 0.006
+    psell_current_loss_pct: 0.0055
+    psell_stale_age_sec: 900
+    psell_stale_loss_pct: 0.0045
+    psell_confirm_ticks: 4
     psell_fail_age_sec: 0
     psell_fail_loss_pct: 0.003
     psell_fail_max_high_pct: 0.002
@@ -157,9 +157,9 @@ profiles:
     psell_5m_loss_pct: 0.003
     psell_5m_drop_pct: 0.0015
     psell_5m_negative_ret_pct: -0.0003
-    reentry_loss_cooldown_sec: 600
-    reentry_trail_cooldown_sec: 180
-    reentry_recovery_pct: 0.002
+    reentry_loss_cooldown_sec: 240
+    reentry_trail_cooldown_sec: 120
+    reentry_recovery_pct: 0.0012
     p_entry_enabled: true
     entry_hard_min_up_ratio: 0.35
     entry_min_strict_ups: 1
@@ -173,7 +173,7 @@ profiles:
     burst_entry_enabled: true
     burst_lookback_ticks: 6
     burst_max_window_sec: 45.0
-    burst_min_return_pct: 0.00018
+    burst_min_return_pct: 0.00015
     burst_min_return_vs_fee_buf: 0.0
     burst_min_move_vs_spread: 4.0
     burst_min_velocity_pct_per_sec: 0.000004
@@ -193,7 +193,7 @@ profiles:
     burst_follow_ttl_sec: 8.0
     burst_follow_min_extension_pct: 0.00008
     burst_exit_under_entry_pct: 0.00008
-    maxPosTime: 7200
+    maxPosTime: 3600
     hardMaxPosTime: 0
     mom_max_pct: 0.006
     rsi_buy_max: 74
@@ -208,6 +208,8 @@ profiles:
     max_consecutive_losses: 3
     cooldown_after_break_sec: 7200
     token_quality_override_manual_symbol: true
+    entry_ema_filter_enabled: false
+    burst_ema_filter_enabled: false
     position_dynamics_enabled: true
     trailing_stop_enabled: true
     trailing_stop_drawdown_pct: 0.006
@@ -215,13 +217,17 @@ profiles:
     breakeven_escape_enabled: true
     breakeven_escape_min_gain_arming_pct: 0.0035
     breakeven_escape_buffer_pct: 0.0005
+    return_to_entry_enabled: true
+    return_to_entry_min_drawdown_pct: 0.0040
+    return_to_entry_trigger_below_entry_pct: 0.0005
+    return_to_entry_min_age_sec: 180
     entry_guard_enabled: true
     entry_guard_min_age_sec: 60
     entry_guard_arm_gain_pct: 0.004
     entry_guard_net_floor_pct: 0.0002
     entry_guard_giveback_pct: 0.003
-    entry_guard_loss_cut_pct: 0.010
-    entry_guard_loss_age_sec: 1200
+    entry_guard_loss_cut_pct: 0.0055
+    entry_guard_loss_age_sec: 240
     pic_filter_enabled: false
     pic_filter_lookback_sec: 300
     pic_filter_threshold_pct: 0.0005

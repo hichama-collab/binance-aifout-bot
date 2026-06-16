@@ -435,6 +435,7 @@ from strategy.pic_filter import check_near_peak
 from strategy.position_dynamics import (
     PositionDynamics, init_dynamics, update_dynamics,
     check_trailing_stop, check_breakeven_escape,
+    check_return_to_entry_escape,
     save_dynamics, load_dynamics, clear_dynamics,
 )
 
@@ -1517,7 +1518,7 @@ def main():
                     ema1_ok = bool(getattr(s1, "ema_ok", False))
                     ema5_ok_burst = bool(getattr(s5_burst, "ema_ok", False)) if s5_burst is not None else False
                     vol_ok = bool(getattr(s1, "vol_ok", False))
-                    if not ema1_ok:
+                    if bool(getattr(cfg, "burstEmaFilter_enabled", True)) and not ema1_ok:
                         maybe_hold(
                             now,
                             'HOLD_BURST_EMA',
@@ -1542,7 +1543,7 @@ def main():
                         )
                         time.sleep(cfg.idleSleep)
                         continue
-                    if not ema5_ok_burst:
+                    if bool(getattr(cfg, "burstEmaFilter_enabled", True)) and not ema5_ok_burst:
                         maybe_hold(
                             now,
                             'HOLD_BURST_EMA',
@@ -1973,7 +1974,9 @@ def main():
                         and momRangePct >= max(required_range_pct * 1.15, 0.0008)
                         and upRatio >= max(float(getattr(cfg, "momMinUpRatio", 0.0) or 0.0), 0.45)
                     )
-                    if not ema1_ok or (not ema5_ok and not strong_trend_resume):
+                    if bool(getattr(cfg, "entryEmaFilter_enabled", True)) and (
+                        not ema1_ok or (not ema5_ok and not strong_trend_resume)
+                    ):
                         maybe_hold(
                             now,
                             'HOLD_EMA',
@@ -2511,6 +2514,20 @@ def main():
                     )
                     if _be_exit:
                         exitReason = _be_reason
+
+                # Return-to-entry escape: after a meaningful drawdown, leave when price
+                # comes back close to the original buy price.
+                if exitReason is None and bool(getattr(cfg, "returnToEntry_enabled", False)):
+                    _rte_exit, _rte_reason = check_return_to_entry_escape(
+                        _dyn,
+                        bid,
+                        time.time(),
+                        min_drawdown_pct=float(getattr(cfg, "returnToEntry_minDrawdownPct", 0.004)),
+                        trigger_below_entry_pct=float(getattr(cfg, "returnToEntry_triggerBelowEntryPct", 0.0005)),
+                        min_age_sec=float(getattr(cfg, "returnToEntry_minAgeSec", 120.0)),
+                    )
+                    if _rte_exit:
+                        exitReason = _rte_reason
 
             if exitReason is None and pos is not None and pos.entry > 0:
                 burstExit = burst_exit_reason(pos, bidTicks, bid, spread, cfg, logger=logTrade)

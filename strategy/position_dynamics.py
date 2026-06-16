@@ -145,6 +145,53 @@ def check_breakeven_escape(
     )
 
 
+def check_return_to_entry_escape(
+    dyn: PositionDynamics,
+    current_bid: float,
+    now_ts: float,
+    min_drawdown_pct: float = 0.004,
+    trigger_below_entry_pct: float = 0.0005,
+    min_age_sec: float = 120.0,
+) -> tuple[bool, str]:
+    """
+    Exit a rescued loser when price comes back close to the buy price.
+
+    This is intentionally different from breakeven escape: it can accept a
+    small fee/slippage loss to avoid holding a position that already proved
+    weak after entry.
+    """
+    if dyn.entry_price <= 0:
+        return False, "return_to_entry_invalid_entry"
+
+    age_sec = max(0.0, float(now_ts) - float(dyn.entry_ts))
+    if age_sec < min_age_sec:
+        return False, f"return_to_entry_too_young age={age_sec:.1f}s"
+
+    if not dyn.has_been_below_entry:
+        return False, "return_to_entry_not_underwater"
+
+    if dyn.max_drawdown_pct < min_drawdown_pct:
+        return False, (
+            f"return_to_entry_not_armed max_dd={dyn.max_drawdown_pct*100:.3f}% "
+            f"need={min_drawdown_pct*100:.3f}%"
+        )
+
+    trigger_price = dyn.entry_price * (1.0 - trigger_below_entry_pct)
+    if current_bid < trigger_price:
+        return False, (
+            f"return_to_entry_wait bid={current_bid:.8f} "
+            f"target={trigger_price:.8f}"
+        )
+
+    distance_pct = (current_bid - dyn.entry_price) / dyn.entry_price
+    return True, (
+        f"RETURN_TO_ENTRY_ESCAPE entry={dyn.entry_price:.8f} "
+        f"bid={current_bid:.8f} target={trigger_price:.8f} "
+        f"distance={distance_pct*100:.3f}% "
+        f"max_dd={dyn.max_drawdown_pct*100:.3f}% age={age_sec:.1f}s"
+    )
+
+
 # ── Persistence ──────────────────────────────────────────────────────────────
 
 def save_dynamics(dyn: PositionDynamics, path: Path) -> None:
