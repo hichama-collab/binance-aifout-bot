@@ -181,6 +181,7 @@ class Config:
     psellFailAgeSec: float = 0.0
     psellFailLossPct: float = 0.0
     psellFailMaxHighPct: float = 0.0
+    psellAllowNegativeExit: bool = False
 
     # anti-whipsaw re-entry guards
     reentryLossCooldownSec: float = 90.0
@@ -189,6 +190,7 @@ class Config:
 
     # entry quality guards
     pEntryEnabled: bool = True
+    pSampleIntervalSec: float = 0.0
     entryHardMinUpRatio: float = 0.0
     entryMinStrictUps: int = 1
     entryMinTapeProgressPct: float = 0.0
@@ -209,6 +211,7 @@ class Config:
 
     # burst mode: catch fast impulsive moves and bypass slow entry gates
     burstEntryEnabled: bool = False
+    burstRequireTape: bool = False
     burstLookbackTicks: int = 4
     burstMaxWindowSec: float = 4.0
     burstMinReturnPct: float = 0.00020
@@ -403,10 +406,12 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("psell_fail_age_sec", "psellFailAgeSec"),
         ("psell_fail_loss_pct", "psellFailLossPct"),
         ("psell_fail_max_high_pct", "psellFailMaxHighPct"),
+        ("psell_allow_negative_exit", "psellAllowNegativeExit"),
         ("reentry_loss_cooldown_sec", "reentryLossCooldownSec"),
         ("reentry_trail_cooldown_sec", "reentryTrailCooldownSec"),
         ("reentry_recovery_pct", "reentryRecoveryPct"),
         ("p_entry_enabled", "pEntryEnabled"),
+        ("p_sample_interval_sec", "pSampleIntervalSec"),
         ("entry_hard_min_up_ratio", "entryHardMinUpRatio"),
         ("entry_min_strict_ups", "entryMinStrictUps"),
         ("entry_min_tape_progress_pct", "entryMinTapeProgressPct"),
@@ -421,6 +426,7 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("flow_min_ratio", "flowMinRatio"),
         ("flow_max_single_drop_pct", "flowMaxSingleDropPct"),
         ("burst_entry_enabled", "burstEntryEnabled"),
+        ("burst_require_tape", "burstRequireTape"),
         ("burst_lookback_ticks", "burstLookbackTicks"),
         ("burst_max_window_sec", "burstMaxWindowSec"),
         ("burst_min_return_pct", "burstMinReturnPct"),

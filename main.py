@@ -1255,17 +1255,41 @@ def main():
             ema5_ok = None
             vol_ok = None
 
-            # P1..P4 (MID-based)
-            def _get_p(tl, n_from_end: int):
-                try:
-                    return float(tl[-n_from_end][1])
-                except Exception:
-                    return None
+            # P1..P4 (MID-based). For slow symbols like BTC, optionally sample
+            # points over time instead of taking four adjacent websocket ticks.
+            def _get_p_points(tl, count: int = 4, min_interval_sec: float = 0.0):
+                points = []
+                if not tl:
+                    return [None] * count
+                if min_interval_sec <= 0:
+                    for n_from_end in range(1, count + 1):
+                        try:
+                            points.append(float(tl[-n_from_end][1]))
+                        except Exception:
+                            points.append(None)
+                    return points
 
-            P1 = _get_p(ticks, 1)
-            P2 = _get_p(ticks, 2)
-            P3 = _get_p(ticks, 3)
-            P4 = _get_p(ticks, 4)
+                last_ts = None
+                for ts, px in reversed(tl):
+                    try:
+                        ts_f = float(ts)
+                        px_f = float(px)
+                    except Exception:
+                        continue
+                    if last_ts is None or (last_ts - ts_f) >= min_interval_sec:
+                        points.append(px_f)
+                        last_ts = ts_f
+                        if len(points) >= count:
+                            break
+                while len(points) < count:
+                    points.append(None)
+                return points
+
+            P1, P2, P3, P4 = _get_p_points(
+                ticks,
+                4,
+                float(getattr(cfg, "pSampleIntervalSec", 0.0) or 0.0),
+            )
 
             # NEW: Range analysis for BTC Range V1
             range_snapshot = None
@@ -1473,6 +1497,87 @@ def main():
                     min_tape_progress_pct,
                     float(spread) * min_tape_progress_vs_spread,
                 )
+
+                if burstOverride and bool(getattr(cfg, "burstRequireTape", False)):
+                    if not has_p_window:
+                        maybe_hold(
+                            now,
+                            'HOLD_BURST_TAPE',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            detail="waiting_for_p_window",
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+                    if strict_up_moves < entry_min_strict_ups:
+                        maybe_hold(
+                            now,
+                            'HOLD_BURST_TAPE',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            detail=f"strict_ups={strict_up_moves} need={entry_min_strict_ups}",
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+                    if required_tape_progress_pct > 0 and tape_progress_pct < required_tape_progress_pct:
+                        maybe_hold(
+                            now,
+                            'HOLD_BURST_TAPE',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            detail=(
+                                f"tape_progress={tape_progress_pct*100:.4f}% "
+                                f"required={required_tape_progress_pct*100:.4f}%"
+                            ),
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
+                    if hard_min_up_ratio > 0 and upRatio < hard_min_up_ratio:
+                        maybe_hold(
+                            now,
+                            'HOLD_BURST_TAPE',
+                            spread,
+                            momPct,
+                            momRangePct,
+                            upRatio,
+                            bid,
+                            ask,
+                            mid,
+                            P1,
+                            P2,
+                            P3,
+                            P4,
+                            detail=f"up_ratio={upRatio*100:.2f}% need={hard_min_up_ratio*100:.2f}%",
+                        )
+                        time.sleep(cfg.idleSleep)
+                        continue
 
                 if burstOverride:
                     burst_spread_limit = float(spreadLimit) * float(getattr(cfg, "burstSpreadMaxMult", 1.0) or 1.0)
@@ -2708,6 +2813,10 @@ def main():
                 "ENTRY_GUARD_PROTECT",
             )
             _is_non_critical = any(exitReason.startswith(e) for e in _non_critical_exits)
+            _psell_negative_allowed = (
+                bool(getattr(cfg, "psellAllowNegativeExit", False))
+                and exitReason.startswith("PSELL")
+            )
             if _is_non_critical and pos is not None and pos.entry > 0:
                 _exp_buy_cost = float(pos.entry) * float(getattr(pos, 'qty', 0.0))
                 _exp_sell_rev = float(bid) * float(getattr(pos, 'qty', 0.0))
@@ -2715,7 +2824,7 @@ def main():
                 _exp_pnl_net = _exp_sell_rev - _exp_buy_cost - _exp_fees
                 _hard_stop_pct = float(getattr(cfg, 'psellMinLossPct', 0.005) or 0.005)
                 _is_hard_stop = float(bid) < float(pos.entry) * (1.0 - _hard_stop_pct * 2)
-                if _exp_pnl_net < 0 and not _is_hard_stop:
+                if _exp_pnl_net < 0 and not _is_hard_stop and not _psell_negative_allowed:
                     maybe_hold(
                         now,
                         "HOLD_NEGATIVE_EXIT",

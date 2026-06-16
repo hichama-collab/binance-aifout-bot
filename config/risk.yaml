@@ -132,7 +132,7 @@ profiles:
     order_rest_max_retries: 3
     order_rest_backoff_sec: 0.2
     allow_warmup_entry: false
-    ticks_keep_min_sec: 120
+    ticks_keep_min_sec: 180
     mom_relax_strong_mult: 0.7
     mom_relax_mid_mult: 0.9
     riskPct: 0.0065
@@ -144,26 +144,28 @@ profiles:
     protect_arm_pct: 0.003
     protect_lock_pct: 0.0022
     protect_giveback_pct: 0.0012
-    psell_min_age_sec: 240
-    psell_min_loss_pct: 0.006
-    psell_current_loss_pct: 0.0055
-    psell_stale_age_sec: 900
-    psell_stale_loss_pct: 0.0045
+    psell_min_age_sec: 90
+    psell_min_loss_pct: 0.003
+    psell_current_loss_pct: 0.0022
+    psell_stale_age_sec: 420
+    psell_stale_loss_pct: 0.0018
     psell_confirm_ticks: 4
-    psell_fail_age_sec: 0
-    psell_fail_loss_pct: 0.003
-    psell_fail_max_high_pct: 0.002
+    psell_fail_age_sec: 120
+    psell_fail_loss_pct: 0.002
+    psell_fail_max_high_pct: 0.0015
+    psell_allow_negative_exit: true
     psell_5m_age_sec: 0
     psell_5m_loss_pct: 0.003
     psell_5m_drop_pct: 0.0015
     psell_5m_negative_ret_pct: -0.0003
     reentry_loss_cooldown_sec: 240
     reentry_trail_cooldown_sec: 120
-    reentry_recovery_pct: 0.0012
+    reentry_recovery_pct: 0.0008
     p_entry_enabled: true
-    entry_hard_min_up_ratio: 0.35
-    entry_min_strict_ups: 1
-    entry_min_tape_progress_pct: 0.00003
+    p_sample_interval_sec: 20
+    entry_hard_min_up_ratio: 0.45
+    entry_min_strict_ups: 2
+    entry_min_tape_progress_pct: 0.00012
     entry_min_tape_progress_vs_spread: 2.0
     entry_fee_edge_mult: 0.0
     flow_defense_enabled: true
@@ -171,6 +173,7 @@ profiles:
     flow_min_ratio: 1.25
     flow_max_single_drop_pct: 0.0015
     burst_entry_enabled: true
+    burst_require_tape: true
     burst_lookback_ticks: 6
     burst_max_window_sec: 45.0
     burst_min_return_pct: 0.00015
@@ -218,16 +221,16 @@ profiles:
     breakeven_escape_min_gain_arming_pct: 0.0035
     breakeven_escape_buffer_pct: 0.0005
     return_to_entry_enabled: true
-    return_to_entry_min_drawdown_pct: 0.0040
+    return_to_entry_min_drawdown_pct: 0.0020
     return_to_entry_trigger_below_entry_pct: 0.0005
-    return_to_entry_min_age_sec: 180
+    return_to_entry_min_age_sec: 120
     entry_guard_enabled: true
     entry_guard_min_age_sec: 60
     entry_guard_arm_gain_pct: 0.004
     entry_guard_net_floor_pct: 0.0002
     entry_guard_giveback_pct: 0.003
-    entry_guard_loss_cut_pct: 0.0055
-    entry_guard_loss_age_sec: 240
+    entry_guard_loss_cut_pct: 0.0035
+    entry_guard_loss_age_sec: 180
     pic_filter_enabled: false
     pic_filter_lookback_sec: 300
     pic_filter_threshold_pct: 0.0005
