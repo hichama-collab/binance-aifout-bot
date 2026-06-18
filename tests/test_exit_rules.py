@@ -2,6 +2,7 @@ import time
 import pytest
 from strategy.exit_rules import evaluate_exit
 from strategy.regime import RegimeSnapshot
+from main import strict_p_tape_exit_reason
 
 
 def _make_cfg(**kwargs):
@@ -58,3 +59,18 @@ def test_not_exit_in_gain_no_signal():
     result = evaluate_exit(100.0, 10.0, time.time()-5, "BURST", 1000.0, 100.35,
                            ticks, 100.3, 100.31, 0.0003, _regime(), 0.001, cfg)
     assert not result.should_exit
+
+
+def test_strict_p_tape_exit_uses_p1_as_newest_point():
+    reason = strict_p_tape_exit_reason(99.0, 100.0, 101.0, 102.0)
+    assert reason is not None
+    assert reason.startswith("PSELL_DIRECT_TAPE")
+
+
+def test_strict_p_tape_exit_does_not_trigger_on_rising_prices():
+    assert strict_p_tape_exit_reason(102.0, 101.0, 100.0, 99.0) is None
+
+
+def test_strict_p_tape_exit_requires_strict_decrease():
+    assert strict_p_tape_exit_reason(99.0, 100.0, 100.0, 102.0) is None
+    assert strict_p_tape_exit_reason(99.0, None, 101.0, 102.0) is None

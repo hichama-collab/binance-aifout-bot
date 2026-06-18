@@ -183,6 +183,7 @@ class Config:
     psellFailLossPct: float = 0.0
     psellFailMaxHighPct: float = 0.0
     psellAllowNegativeExit: bool = False
+    psellStrictPTapeExitEnabled: bool = False
 
     # anti-whipsaw re-entry guards
     reentryLossCooldownSec: float = 90.0
@@ -410,6 +411,7 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("psell_fail_loss_pct", "psellFailLossPct"),
         ("psell_fail_max_high_pct", "psellFailMaxHighPct"),
         ("psell_allow_negative_exit", "psellAllowNegativeExit"),
+        ("psell_strict_p_tape_exit_enabled", "psellStrictPTapeExitEnabled"),
         ("reentry_loss_cooldown_sec", "reentryLossCooldownSec"),
         ("reentry_trail_cooldown_sec", "reentryTrailCooldownSec"),
         ("reentry_recovery_pct", "reentryRecoveryPct"),

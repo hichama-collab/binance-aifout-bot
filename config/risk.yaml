@@ -157,6 +157,7 @@ profiles:
     psell_fail_loss_pct: 0.002
     psell_fail_max_high_pct: 0.0015
     psell_allow_negative_exit: true
+    psell_strict_p_tape_exit_enabled: true
     psell_5m_age_sec: 0
     psell_5m_loss_pct: 0.003
     psell_5m_drop_pct: 0.0015

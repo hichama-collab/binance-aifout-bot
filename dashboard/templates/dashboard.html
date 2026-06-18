@@ -1,4 +1,3 @@
-{# === FILE: dashboard/templates/dashboard.html === #}
 {% extends 'base.html' %}
 {% block title %}Live{% endblock %}
 
@@ -7,31 +6,16 @@
 {% endblock %}
 
 {% block content %}
-<div x-data="botDashboard()"
-     x-init="
-       init();
-       $watch('sse', val => {
-         if(val) {
-           window.__sseStatus = val.status;
-           setInterval(() => { window.__sseStatus = val.status; }, 500);
-         }
-       });
-     "
-     class="page-content">
-
-  {# ── Loading skeleton ── #}
-  <div x-show="loading" class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-    <div class="skeleton h-24 rounded-xl"></div>
-    <div class="skeleton h-24 rounded-xl"></div>
-    <div class="skeleton h-24 rounded-xl hidden md:block"></div>
+<div x-data="botDashboard()" x-init="init()" class="page-content dashboard-live">
+  <div x-show="loading" class="live-loading">
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
   </div>
 
-  {# ── Error banner ── #}
-  <div x-show="error" x-cloak
-       class="error-banner mb-3"
+  <div x-show="error" x-cloak class="error-banner compact-banner"
        x-text="'Erreur: ' + error"></div>
 
-  <section x-show="!loading" x-cloak class="health-strip mb-3" :class="healthClass">
+  <section x-show="!loading" x-cloak class="health-strip" :class="healthClass">
     <div class="health-indicator" aria-hidden="true"></div>
     <div class="health-copy">
       <strong x-text="healthState.title"></strong>
@@ -40,281 +24,148 @@
     <a class="health-action" :href="healthHref" x-text="healthState.action"></a>
   </section>
 
-  {# ================================================================
-     HERO SECTION — 3 cards
-     ================================================================ #}
-  <div x-show="!loading" class="grid-stats mb-4" x-cloak>
-
-    {# Card 1: PnL Today #}
-    <div class="stat-card">
-      <div class="stat-label">PnL Aujourd'hui</div>
-      <div class="stat-value num"
-           :class="pnlClass(pnlToday?.usdc)"
-           x-text="fmtUsdc(pnlToday?.usdc)">—</div>
-      <div class="stat-sub num" x-text="pnlToday?.eur != null ? fmtUsdc(pnlToday.eur).replace('USDC','EUR') : '—'"></div>
-      <div class="stat-trend mt-1" :class="pnlClass(pnlSession?.usdc)">
-        <span class="text-[#848E9C]">Session:</span>
-        <span class="num ml-1" x-text="fmtUsdc(pnlSession?.usdc)"></span>
+  <section x-show="!loading" x-cloak class="trading-surface">
+    <header class="live-symbol-header">
+      <div class="live-symbol">
+        <span class="market-dot" :class="botStatus === 'active' ? 'is-live' : 'is-off'"></span>
+        <div>
+          <strong x-text="fmtSymbol(activeToken) || '—'"></strong>
+          <span>
+            <span x-text="profile"></span>
+            <span> · </span>
+            <span x-text="control.mode === 'auto' ? 'Auto' : 'Manuel'"></span>
+          </span>
+        </div>
       </div>
-    </div>
-
-    {# Card 2: Token actif #}
-    <div class="stat-card">
-      <div class="stat-label">Token Actif</div>
-      <div class="flex items-center gap-2 mt-1">
-        <div class="text-xl font-bold font-mono tracking-tight text-[#EAECEF]"
-             x-text="fmtSymbol(activeToken) || '—'"></div>
-        <span x-show="dryRun" class="badge badge-dry">DRY</span>
-      </div>
-      <div class="flex items-center gap-1.5 mt-1">
+      <div class="live-status">
         <span class="badge" :class="botStatusClass" x-text="botStatus"></span>
-        <span class="text-xs text-[#848E9C]" x-text="fmtDuration(botSince)"></span>
+        <span x-text="fmtDuration(botSince)"></span>
       </div>
-      <div class="stat-sub mt-1">
-        <span class="text-[#F0B90B] font-semibold" x-text="profile"></span>
-        <span class="mx-1">·</span>
-        <span x-text="control.mode === 'auto' ? 'Auto' : 'Manuel'"></span>
-      </div>
-    </div>
+    </header>
 
-    {# Card 3: PnL Semaine #}
-    <div class="stat-card col-span-2 md:col-span-1">
-      <div class="stat-label">PnL Semaine</div>
-      <div class="stat-value num"
-           :class="pnlClass(pnlWeek?.usdc)"
-           x-text="fmtUsdc(pnlWeek?.usdc)">—</div>
-      <div class="stat-sub num" x-text="pnlWeek?.eur != null ? fmtUsdc(pnlWeek.eur).replace('USDC','EUR') : '—'"></div>
-      <div class="stat-trend mt-1 text-[#848E9C]">
-        FX: <span class="text-[#B7BDC6] font-mono ml-1" x-text="pnlFx ? pnlFx.toFixed(4) : '—'"></span>
-      </div>
-    </div>
-  </div>
-
-  {# ================================================================
-     LIVE DECISION MONITOR
-     ================================================================ #}
-  <div x-show="!loading" x-cloak class="monitor-panel mb-4">
-    <div class="monitor-main">
+    <div class="live-pnl-strip">
       <div>
-        <div class="card-title mb-2">Décision Live</div>
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="badge" :class="decisionBadgeClass" x-text="decisionLabel"></span>
-          <span class="text-xs text-[#848E9C]">
-            Data <span class="num" x-text="fmtAgeSec(monitorMetrics.age_sec)"></span>
-          </span>
-          <span class="text-xs text-[#848E9C]" x-show="monitorDecision.age_sec != null">
-            Décision <span class="num" x-text="fmtAgeSec(monitorDecision.age_sec)"></span>
-          </span>
-        </div>
-        <div class="monitor-detail" x-text="monitorDecision.detail || monitorMetrics.log_file || 'En attente du prochain signal exploitable'"></div>
+        <span>Aujourd'hui</span>
+        <strong class="num" :class="pnlClass(pnlToday?.usdc)"
+                x-text="fmtUsdc(pnlToday?.usdc)"></strong>
       </div>
-      <div class="monitor-state">
-        <span class="sse-dot" :class="monitorMetrics.state === 'IN_POS' ? 'connected' : 'reconnecting'"></span>
-        <span x-text="monitorMetrics.state || 'unknown'"></span>
+      <div>
+        <span>Session</span>
+        <strong class="num" :class="pnlClass(pnlSession?.usdc)"
+                x-text="fmtUsdc(pnlSession?.usdc)"></strong>
+      </div>
+      <div>
+        <span>Semaine</span>
+        <strong class="num" :class="pnlClass(pnlWeek?.usdc)"
+                x-text="fmtUsdc(pnlWeek?.usdc)"></strong>
       </div>
     </div>
 
-    <div class="monitor-grid">
-      <div class="monitor-metric">
-        <span>Spread</span>
-        <strong class="num" x-text="fmtMetric(monitorMetrics.spread_pct, 4, '%')"></strong>
+    <div id="position-live" class="live-position" :class="{'has-position': hasPosition}">
+      <div class="live-position-title">
+        <span class="position-state-dot" :class="hasPosition ? 'open' : 'idle'"></span>
+        <strong x-text="hasPosition ? 'Position ouverte' : 'Aucune position'"></strong>
+        <span x-show="hasPosition" x-text="fmtAgo(activePosition?.ts_entry || activePosition?.ts || activePosition?.opened_at)"></span>
       </div>
-      <div class="monitor-metric">
-        <span>Momentum</span>
-        <strong class="num" :class="pnlClass(monitorMetrics.mom_pct)" x-text="fmtMetric(monitorMetrics.mom_pct, 2, '%')"></strong>
-      </div>
-      <div class="monitor-metric">
-        <span>Range</span>
-        <strong class="num" x-text="fmtMetric(monitorMetrics.mom_range_pct, 2, '%')"></strong>
-      </div>
-      <div class="monitor-metric">
-        <span>Up ratio</span>
-        <strong class="num" x-text="fmtMetric(monitorMetrics.up_ratio, 2, '%')"></strong>
-      </div>
-      <div class="monitor-metric">
-        <span>Bid</span>
-        <strong class="num" x-text="fmtPrice(monitorMetrics.bid)"></strong>
-      </div>
-      <div class="monitor-metric">
-        <span>Ask</span>
-        <strong class="num" x-text="fmtPrice(monitorMetrics.ask)"></strong>
-      </div>
-    </div>
-  </div>
-
-  {# ================================================================
-     POSITION OUVERTE
-     ================================================================ #}
-  <div x-show="!loading" x-cloak class="mb-4">
-
-    {# No position #}
-    <div x-show="!hasPosition"
-         class="card flex items-center gap-3 py-4 text-[#848E9C]">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 opacity-40 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
-      </svg>
-      <span class="text-sm">Aucune position ouverte — bot en attente</span>
-    </div>
-
-    {# Active position #}
-    <div id="position-live" x-show="hasPosition" class="position-banner" :class="{'negative': activePosition?.pnl_usdc < 0}">
-      <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
-        <div class="flex items-center gap-2">
-          <div class="w-2 h-2 rounded-full bg-[#0ECB81] animate-pulse"></div>
-          <h2 class="font-bold text-[#EAECEF]">Position Ouverte</h2>
-          <span class="badge badge-active text-xs">LONG</span>
-        </div>
-        <div class="text-xs text-[#848E9C]">
-          Ouvert <span class="font-mono" x-text="fmtAgo(activePosition?.ts || activePosition?.opened_at)"></span>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div class="live-position-values">
         <div>
-          <div class="text-xs text-[#848E9C] mb-0.5">Symbole</div>
-          <div class="font-bold font-mono text-lg text-[#EAECEF]"
-               x-text="fmtSymbol(activePosition?.symbol)"></div>
+          <span>Entrée</span>
+          <strong class="num" x-text="fmtPrice(activePosition?.entry_price || activePosition?.entry || activePosition?.price)"></strong>
         </div>
         <div>
-          <div class="text-xs text-[#848E9C] mb-0.5">Qté</div>
-          <div class="font-mono font-semibold num"
-               x-text="fmtQty(activePosition?.qty)"></div>
+          <span>Actuel</span>
+          <strong class="num" x-text="fmtPrice(activePosition?.current_price || monitorMetrics.bid)"></strong>
         </div>
         <div>
-          <div class="text-xs text-[#848E9C] mb-0.5">Prix d'entrée</div>
-          <div class="font-mono font-semibold num"
-               x-text="fmtPrice(activePosition?.entry_price || activePosition?.price)"></div>
+          <span>PnL</span>
+          <strong class="num" :class="pnlClass(activePosition?.pnl_usdc)"
+                  x-text="hasPosition ? fmtUsdc(activePosition?.pnl_usdc) : '—'"></strong>
         </div>
         <div>
-          <div class="text-xs text-[#848E9C] mb-0.5">Prix actuel</div>
-          <div class="font-mono font-semibold num"
-               x-text="fmtPrice(activePosition?.current_price)"></div>
-        </div>
-        <div>
-          <div class="text-xs text-[#848E9C] mb-0.5">PnL USDC</div>
-          <div class="font-mono font-bold text-lg num"
-               :class="pnlClass(activePosition?.pnl_usdc)"
-               x-text="fmtUsdc(activePosition?.pnl_usdc)"></div>
-        </div>
-        <div>
-          <div class="text-xs text-[#848E9C] mb-0.5">PnL %</div>
-          <div class="font-mono font-bold text-lg num"
-               :class="pnlClass(activePosition?.pnl_pct)"
-               x-text="fmtPct(activePosition?.pnl_pct)"></div>
+          <span>PnL %</span>
+          <strong class="num" :class="pnlClass(activePosition?.pnl_pct)"
+                  x-text="hasPosition ? fmtPct(activePosition?.pnl_pct) : '—'"></strong>
         </div>
       </div>
     </div>
-  </div>
 
-  {# ================================================================
-     EQUITY CURVE
-     ================================================================ #}
-  <div x-show="!loading" x-cloak class="card mb-4">
-    <div class="card-header">
-      <span class="card-title">Courbe Equity</span>
+    <div class="market-metrics">
+      <div><span>Bid</span><strong class="num" x-text="fmtPrice(monitorMetrics.bid)"></strong></div>
+      <div><span>Ask</span><strong class="num" x-text="fmtPrice(monitorMetrics.ask)"></strong></div>
+      <div><span>Spread</span><strong class="num" x-text="fmtMetric(monitorMetrics.spread_pct, 4, '%')"></strong></div>
+      <div><span>Momentum</span><strong class="num" :class="pnlClass(monitorMetrics.mom_pct)" x-text="fmtMetric(monitorMetrics.mom_pct, 2, '%')"></strong></div>
+      <div><span>Range</span><strong class="num" x-text="fmtMetric(monitorMetrics.mom_range_pct, 2, '%')"></strong></div>
+      <div><span>Up ratio</span><strong class="num" x-text="fmtMetric(monitorMetrics.up_ratio, 1, '%')"></strong></div>
+    </div>
+
+    <footer class="decision-line">
+      <div>
+        <span class="badge" :class="decisionBadgeClass" x-text="decisionLabel"></span>
+        <span class="decision-age" x-text="`Data ${fmtAgeSec(monitorMetrics.age_sec)}`"></span>
+      </div>
+      <p :title="monitorDecision.detail || ''"
+         x-text="monitorDecision.detail || 'En attente du prochain signal exploitable'"></p>
+    </footer>
+  </section>
+
+  <section x-show="!loading" x-cloak class="compact-section">
+    <header class="section-heading">
+      <span>Trades récents</span>
+      <a href="/stats">Historique</a>
+    </header>
+
+    <div x-show="tradesLoading" class="compact-loading">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+    <div x-show="!tradesLoading && trades.length === 0" class="compact-empty">
+      Aucun trade récent
+    </div>
+
+    <div x-show="!tradesLoading && trades.length > 0" class="trade-ledger">
+      <template x-for="(t, i) in trades.slice(0,6)" :key="t.trade_key || i">
+        <article class="trade-ledger-row">
+          <div class="trade-primary">
+            <div>
+              <a :href="binanceUrl(t.symbol)" target="_blank" rel="noopener"
+                 x-text="fmtSymbol(t.symbol)"></a>
+              <span x-text="fmtTsShort(t.ts_epoch)"></span>
+            </div>
+            <strong class="num" :class="pnlClass(t.pnl_usdc)"
+                    x-text="fmtUsdc(t.pnl_usdc)"></strong>
+          </div>
+          <div class="trade-secondary">
+            <span class="num" x-text="`${fmtPrice(t.entry_price)} → ${fmtPrice(t.exit_price)}`"></span>
+            <span class="num" :class="pnlClass(t.pnl_pct)" x-text="fmtPct(t.pnl_pct)"></span>
+          </div>
+          <details class="trade-reason">
+            <summary x-text="fmtReason(t.reason)"></summary>
+            <p x-text="t.reason || '—'"></p>
+          </details>
+        </article>
+      </template>
+    </div>
+  </section>
+
+  <section x-show="!loading && equityHasData" x-cloak class="compact-section equity-section">
+    <header class="section-heading">
+      <span>Equity</span>
       <div class="chart-tabs">
         <template x-for="r in ['1d','7d','30d','all']" :key="r">
-          <button class="chart-tab"
-                  :class="{ active: equityRange === r }"
-                  @click="loadEquity(r)"
-                  :disabled="equityLoading"
+          <button class="chart-tab" :class="{ active: equityRange === r }"
+                  @click="loadEquity(r)" :disabled="equityLoading"
                   x-text="r.toUpperCase()"></button>
         </template>
       </div>
-    </div>
-
+    </header>
     <div class="chart-wrapper">
-      <div class="absolute inset-0 flex items-center justify-center"
-           x-show="equityLoading" style="z-index:2">
-        <svg class="w-6 h-6 rotate-spin text-[#F0B90B]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-      </div>
       <div id="equity-chart-main" class="chart-container"></div>
     </div>
-  </div>
+  </section>
 
-  {# ================================================================
-     ACTIVITÉ RÉCENTE
-     ================================================================ #}
-  <div x-show="!loading" x-cloak class="card">
-    <div class="card-header">
-      <span class="card-title">Activité Récente</span>
-      <a href="/stats" class="btn btn-sm btn-ghost">Voir tout →</a>
-    </div>
-
-    {# Empty state #}
-    <div x-show="!tradesLoading && trades.length === 0" class="empty-state py-8">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
-      </svg>
-      <span class="empty-state-title">Aucun trade récent</span>
-    </div>
-
-    {# Loading #}
-    <div x-show="tradesLoading" class="space-y-2 p-2">
-      <template x-for="i in 5">
-        <div class="skeleton h-8 rounded"></div>
-      </template>
-    </div>
-
-    {# Table #}
-    <div x-show="!tradesLoading && trades.length > 0" class="table-scroll desktop-trades">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Symbole</th>
-            <th>Date (UTC)</th>
-            <th class="text-right">Entrée</th>
-            <th class="text-right">Sortie</th>
-            <th class="text-right">PnL USDC</th>
-            <th class="text-right">PnL %</th>
-            <th>Raison</th>
-          </tr>
-        </thead>
-        <tbody>
-          <template x-for="(t, i) in trades.slice(0,10)" :key="t.trade_key || i">
-            <tr>
-              <td class="font-mono font-semibold">
-                <a :href="binanceUrl(t.symbol)"
-                   target="_blank" rel="noopener"
-                   class="symbol-link"
-                   x-text="fmtSymbol(t.symbol)"></a>
-              </td>
-              <td class="num font-mono text-xs text-[#848E9C]" x-text="fmtTs(t.ts_epoch)"></td>
-              <td class="text-right num font-mono" x-text="fmtPrice(t.entry_price)"></td>
-              <td class="text-right num font-mono" x-text="fmtPrice(t.exit_price)"></td>
-              <td class="text-right num font-mono font-semibold"
-                  :class="pnlClass(t.pnl_usdc)"
-                  x-text="fmtUsdc(t.pnl_usdc)"></td>
-              <td class="text-right num font-mono"
-                  :class="pnlClass(t.pnl_pct)"
-                  x-text="fmtPct(t.pnl_pct)"></td>
-              <td class="text-xs text-[#848E9C] truncate max-w-[140px]"
-                  :title="t.reason || ''"
-                  x-text="fmtReason(t.reason)"></td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
-    </div>
-
-    <div x-show="!tradesLoading && trades.length > 0" class="mobile-trades">
-      <template x-for="(t, i) in trades.slice(0,6)" :key="t.trade_key || i">
-        <a :href="binanceUrl(t.symbol)" target="_blank" rel="noopener" class="mobile-trade-row">
-          <div>
-            <strong x-text="fmtSymbol(t.symbol)"></strong>
-            <span x-text="fmtReason(t.reason)"></span>
-          </div>
-          <div class="mobile-trade-pnl">
-            <strong :class="pnlClass(t.pnl_usdc)" x-text="fmtUsdc(t.pnl_usdc)"></strong>
-            <span x-text="fmtTs(t.ts_epoch)"></span>
-          </div>
-        </a>
-      </template>
-    </div>
-  </div>
-
+  <section x-show="!loading && !equityLoading && !equityHasData" x-cloak
+           class="compact-empty equity-empty">
+    Courbe equity indisponible pour cette période
+  </section>
 </div>
 {% endblock %}

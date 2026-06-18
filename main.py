@@ -179,6 +179,28 @@ def descending_tape_ok(ticks, confirm_ticks: int) -> bool:
     return True
 
 
+def strict_p_tape_exit_reason(p1, p2, p3, p4):
+    """Return an immediate exit reason when sampled prices fall continuously.
+
+    P1 is the newest sample and P4 the oldest, so a strict deterioration is
+    P1 < P2 < P3 < P4.
+    """
+    if any(value is None for value in (p1, p2, p3, p4)):
+        return None
+    try:
+        points = tuple(float(value) for value in (p1, p2, p3, p4))
+    except (TypeError, ValueError):
+        return None
+    if any(value <= 0 for value in points):
+        return None
+    if points[0] < points[1] < points[2] < points[3]:
+        return (
+            f"PSELL_DIRECT_TAPE P1={points[0]:.8f} P2={points[1]:.8f} "
+            f"P3={points[2]:.8f} P4={points[3]:.8f}"
+        )
+    return None
+
+
 def burst_entry_signal(ticks, spread: float, cfg):
     stats = {
         "return_pct": 0.0,
@@ -2614,7 +2636,14 @@ def main():
                 exitReason = "WALLET_UNTRACKED"
             else:
                 pos.update(bid, cfg, profile, tick=tick)
-                exitReason = pos.exit_reason(bid, cfg, profile)
+                exitReason = None
+                if (
+                    has_new_tick
+                    and bool(getattr(cfg, "psellStrictPTapeExitEnabled", False))
+                ):
+                    exitReason = strict_p_tape_exit_reason(P1, P2, P3, P4)
+                if exitReason is None:
+                    exitReason = pos.exit_reason(bid, cfg, profile)
 
             # Position dynamics: update per-tick, then check trailing/breakeven exits
             if exitReason is None and pos is not None and pos.entry > 0 and bool(getattr(cfg, "positionDynamics_enabled", True)):

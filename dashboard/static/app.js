@@ -22,6 +22,17 @@ const fmt = {
     const prefix = v >= 0 ? (sign ? '+' : '') : '-';
     return `${prefix}${abs} EUR`;
   },
+  tsShort(epoch) {
+    if (!epoch || isNaN(epoch)) return '—';
+    return new Date(epoch * 1000).toLocaleString('fr-FR', {
+      timeZone: 'UTC',
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  },
   pct(v, sign = false) {
     if (v == null || isNaN(v)) return '—';
     const abs = Math.abs(v).toFixed(2);
@@ -40,13 +51,19 @@ const fmt = {
     if (!epoch) return '—';
     return new Date(epoch * 1000).toLocaleString('fr-FR', { timeZone: 'UTC', hour12: false });
   },
-  ago(epoch) {
-    if (!epoch) return '—';
-    const diff = Math.floor(Date.now() / 1000 - epoch);
-    if (diff < 60) return `${diff}s ago`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return `${Math.floor(diff / 86400)}d ago`;
+  ago(value) {
+    if (value == null || value === '') return '—';
+    let epoch = Number(value);
+    if (!Number.isFinite(epoch)) {
+      const parsed = Date.parse(value);
+      if (!Number.isFinite(parsed)) return '—';
+      epoch = parsed / 1000;
+    }
+    const diff = Math.max(0, Math.floor(Date.now() / 1000 - epoch));
+    if (diff < 60) return `${diff}s`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}min`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}min`;
+    return `${Math.floor(diff / 86400)}j`;
   },
   duration(isoSince) {
     if (!isoSince) return '—';
@@ -72,8 +89,8 @@ function colorClass(value) {
 }
 
 function signedColor(value) {
-  if (value > 0) return '#0ECB81';
-  if (value < 0) return '#FF7183';
+  if (value > 0) return '#36C991';
+  if (value < 0) return '#EC6A7A';
   return '#848E9C';
 }
 
@@ -207,6 +224,8 @@ function createEquityChart(containerId, data = []) {
   if (!el) return null;
 
   const chart = LC.createChart(el, {
+    width: el.clientWidth,
+    height: el.clientHeight || 180,
     layout: {
       background: { color: 'transparent' },
       textColor: '#848E9C',
@@ -249,7 +268,10 @@ function createEquityChart(containerId, data = []) {
 
   // Responsive resize
   const ro = new ResizeObserver(() => {
-    chart.applyOptions({ width: el.clientWidth });
+    chart.applyOptions({
+      width: el.clientWidth,
+      height: el.clientHeight || 180,
+    });
   });
   ro.observe(el);
 
@@ -328,6 +350,7 @@ function botDashboard() {
     // Equity
     equityRange: '7d',
     equityLoading: false,
+    equityHasData: false,
     _chartObj: null,
 
     // SSE
@@ -416,9 +439,13 @@ function botDashboard() {
         const r = await fetch(`/api/equity?range=${range}`);
         if (!r.ok) throw new Error(await r.text());
         const d = await r.json();
-        if (this._chartObj) {
-          updateChartData(this._chartObj, d.points || []);
+        const points = d.points || [];
+        this.equityHasData = points.length >= 2;
+        await this.$nextTick();
+        if (this.equityHasData && !this._chartObj) {
+          this._chartObj = createEquityChart('equity-chart-main');
         }
+        if (this._chartObj) updateChartData(this._chartObj, points);
       } catch (e) {
         console.warn('loadEquity error:', e);
       } finally {
@@ -427,10 +454,7 @@ function botDashboard() {
     },
 
     _initEquityChart() {
-      this.$nextTick(async () => {
-        this._chartObj = createEquityChart('equity-chart-main');
-        await this.loadEquity(this.equityRange);
-      });
+      this.$nextTick(() => this.loadEquity(this.equityRange));
     },
 
     // Derived
@@ -545,6 +569,7 @@ function botDashboard() {
     fmtPrice(v) { return fmt.price(v); },
     fmtQty(v) { return fmt.qty(v); },
     fmtTs(v) { return fmt.ts(v); },
+    fmtTsShort(v) { return fmt.tsShort(v); },
     fmtAgo(v) { return fmt.ago(v); },
     fmtSymbol(v) { return fmt.symbol(v); },
     fmtDuration(v) { return fmt.duration(v); },
@@ -584,11 +609,8 @@ function botStats() {
     // Equity
     equityRange: '30d',
     equityLoading: false,
+    equityHasData: false,
     _chartObj: null,
-
-    // Contributions
-    contributions: { top: [], bottom: [] },
-    contributionsLoading: false,
 
     // Trades table
     trades: [],
@@ -602,7 +624,6 @@ function botStats() {
     async init() {
       await Promise.all([
         this.fetchSnapshot(),
-        this.fetchContributions(),
         this.fetchTrades(),
       ]);
       this._initEquityChart();
@@ -620,19 +641,6 @@ function botStats() {
       } catch (e) {
         this.error = e.message;
         this.loading = false;
-      }
-    },
-
-    async fetchContributions() {
-      this.contributionsLoading = true;
-      try {
-        const r = await fetch('/api/contributions');
-        if (!r.ok) throw new Error(await r.text());
-        this.contributions = await r.json();
-      } catch (e) {
-        console.warn('fetchContributions error:', e);
-      } finally {
-        this.contributionsLoading = false;
       }
     },
 
@@ -656,7 +664,13 @@ function botStats() {
         const r = await fetch(`/api/equity?range=${range}`);
         if (!r.ok) throw new Error(await r.text());
         const d = await r.json();
-        if (this._chartObj) updateChartData(this._chartObj, d.points || []);
+        const points = d.points || [];
+        this.equityHasData = points.length >= 2;
+        await this.$nextTick();
+        if (this.equityHasData && !this._chartObj) {
+          this._chartObj = createEquityChart('equity-chart-stats');
+        }
+        if (this._chartObj) updateChartData(this._chartObj, points);
       } catch (e) {
         console.warn('loadEquity error:', e);
       } finally {
@@ -665,10 +679,7 @@ function botStats() {
     },
 
     _initEquityChart() {
-      this.$nextTick(async () => {
-        this._chartObj = createEquityChart('equity-chart-stats');
-        await this.loadEquity(this.equityRange);
-      });
+      this.$nextTick(() => this.loadEquity(this.equityRange));
     },
 
     get filteredTrades() {
@@ -709,8 +720,10 @@ function botStats() {
 
     pnlClass(v) { return colorClass(v); },
     fmtUsdc(v) { return fmt.usdc(v, true); },
+    fmtEur(v) { return fmt.eur(v, true); },
     fmtPct(v) { return fmt.pct(v, true); },
     fmtTs(v) { return fmt.ts(v); },
+    fmtTsShort(v) { return fmt.tsShort(v); },
     fmtSymbol(v) { return fmt.symbol(v); },
     fmtPrice(v) { return fmt.price(v); },
     fmtReason(v) { return formatReason(v); },

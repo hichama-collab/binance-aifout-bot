@@ -1,321 +1,168 @@
-{# === FILE: dashboard/templates/statistics.html === #}
 {% extends 'base.html' %}
 {% block title %}Stats{% endblock %}
 
 {% block content %}
-<div x-data="botStats()" x-init="init()" class="page-content">
-
-  {# Error #}
-  <div x-show="error" x-cloak
-       class="mb-4 rounded-lg border border-[#F6465D]/30 bg-[rgba(246,70,93,0.07)] px-4 py-3 text-sm text-[#F6465D]"
+<div x-data="botStats()" x-init="init()" class="page-content stats-page">
+  <div x-show="error" x-cloak class="error-banner compact-banner"
        x-text="'Erreur: ' + error"></div>
 
-  {# ================================================================
-     KPI GRID — PnL Buckets
-     ================================================================ #}
-  <div class="mb-2 flex items-center justify-between">
-    <h1 class="text-base font-bold text-[#EAECEF]">Statistiques</h1>
-    <button @click="fetchSnapshot(); fetchContributions(); fetchTrades()"
-            class="btn btn-sm btn-ghost gap-1">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+  <header class="page-heading">
+    <div>
+      <h1>Statistiques</h1>
+      <span x-text="`${stats.trades_total ?? 0} trades clôturés`"></span>
+    </div>
+    <button @click="fetchSnapshot(); fetchTrades()" class="icon-command" title="Actualiser" aria-label="Actualiser">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6M20 9a8 8 0 00-14.8-3M4 15a8 8 0 0014.8 3"/>
       </svg>
-      Refresh
     </button>
-  </div>
+  </header>
 
-  <div class="grid-stats mb-4">
-    <template x-for="(label, key) in {today: 'Aujourd\'hui', session: 'Session', week: 'Semaine', month: 'Mois', year: 'Année'}" :key="key">
-      <div class="stat-card">
-        <div class="stat-label" x-text="label"></div>
-        <div class="stat-value num" :class="pnlClass(pnl[key]?.usdc)" x-text="fmtUsdc(pnl[key]?.usdc)">—</div>
-        <div class="stat-sub num" x-text="pnl[key]?.eur != null ? fmtUsdc(pnl[key].eur).replace('USDC','EUR') : '—'"></div>
+  <section class="stats-board">
+    <div class="stats-board-title">Performance</div>
+    <div class="stats-board-grid pnl-grid">
+      <template x-for="(label, key) in {today: 'Aujourd’hui', session: 'Session', week: 'Semaine', month: 'Mois', year: 'Année'}" :key="key">
+        <div class="stats-cell">
+          <span x-text="label"></span>
+          <strong class="num" :class="pnlClass(pnl[key]?.usdc)"
+                  x-text="fmtUsdc(pnl[key]?.usdc)"></strong>
+          <small class="num" x-text="pnl[key]?.eur != null ? fmtEur(pnl[key].eur) : '—'"></small>
+        </div>
+      </template>
+    </div>
+  </section>
+
+  <section class="stats-board">
+    <div class="stats-board-title">Risque et efficacité</div>
+    <div class="stats-board-grid">
+      <div class="stats-cell">
+        <span>Total trades</span>
+        <strong class="num" x-text="stats.trades_total ?? '—'"></strong>
       </div>
-    </template>
-  </div>
-
-  {# ================================================================
-     KPI 4x2 — Stats globales
-     ================================================================ #}
-  <div class="grid-4 mb-4">
-    <div class="stat-card">
-      <div class="stat-label">Total Trades</div>
-      <div class="stat-value" x-text="stats.trades_total ?? '—'">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Winrate</div>
-      <div class="stat-value"
-           :class="(stats.winrate ?? 0) >= 0.5 ? 'profit' : 'loss'"
-           x-text="stats.winrate != null ? (stats.winrate*100).toFixed(1)+'%' : '—'">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Profit Factor</div>
-      <div class="stat-value"
-           :class="(stats.profit_factor ?? 0) >= 1 ? 'profit' : 'loss'"
-           x-text="stats.profit_factor != null ? stats.profit_factor.toFixed(2) : '—'">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Max Drawdown</div>
-      <div class="stat-value loss num"
-           x-text="stats.drawdown_max != null ? fmtUsdc(stats.drawdown_max) : '—'">—</div>
-    </div>
-  </div>
-
-  {# ================================================================
-     EQUITY CURVE
-     ================================================================ #}
-  <div class="card mb-4">
-    <div class="card-header">
-      <span class="card-title">Courbe Equity (Cumulative PnL)</span>
-      <div class="chart-tabs">
-        <template x-for="r in ['1d','7d','30d','all']" :key="r">
-          <button class="chart-tab"
-                  :class="{ active: equityRange === r }"
-                  @click="loadEquity(r)"
-                  :disabled="equityLoading"
-                  x-text="r.toUpperCase()"></button>
-        </template>
+      <div class="stats-cell">
+        <span>Winrate</span>
+        <strong class="num" :class="(stats.winrate ?? 0) >= 0.5 ? 'profit' : 'loss'"
+                x-text="stats.winrate != null ? (stats.winrate * 100).toFixed(1) + '%' : '—'"></strong>
+      </div>
+      <div class="stats-cell">
+        <span>Profit factor</span>
+        <strong class="num" :class="(stats.profit_factor ?? 0) >= 1 ? 'profit' : 'loss'"
+                x-text="stats.profit_factor != null ? stats.profit_factor.toFixed(2) : '—'"></strong>
+      </div>
+      <div class="stats-cell">
+        <span>Max drawdown</span>
+        <strong class="num loss" x-text="fmtUsdc(stats.drawdown_max)"></strong>
       </div>
     </div>
-    <div class="chart-wrapper" style="position:relative;">
-      <div class="absolute inset-0 flex items-center justify-center" x-show="equityLoading" style="z-index:2;">
-        <svg class="w-6 h-6 rotate-spin text-[#F0B90B]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
+  </section>
+
+  <section class="stats-detail-strip">
+    <div><span>Gain moy.</span><strong class="num profit" x-text="fmtUsdc(stats.avg_win)"></strong></div>
+    <div><span>Perte moy.</span><strong class="num loss" x-text="fmtUsdc(stats.avg_loss)"></strong></div>
+    <div><span>Meilleur</span><strong class="num profit" x-text="fmtUsdc(stats.best_trade)"></strong></div>
+    <div><span>Pire</span><strong class="num loss" x-text="fmtUsdc(stats.worst_trade)"></strong></div>
+    <div><span>Série +</span><strong class="num" x-text="stats.win_streak_max ?? '—'"></strong></div>
+    <div><span>Série -</span><strong class="num" x-text="stats.loss_streak_max ?? '—'"></strong></div>
+  </section>
+
+  <section class="compact-section stats-history">
+    <header class="section-heading history-heading">
+      <span>Historique des trades</span>
+      <div>
+        <input type="search" class="compact-search" placeholder="Symbole ou raison"
+               x-model="tradesFilter" @input="tradesPage = 1" />
+        <small x-text="`${filteredTrades.length} lignes`"></small>
       </div>
-      <div id="equity-chart-stats" class="chart-container-lg"></div>
+    </header>
+
+    <div x-show="tradesLoading" class="compact-loading">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
     </div>
-  </div>
-
-  {# ================================================================
-     QUALITÉ D'EXÉCUTION + STREAKS
-     ================================================================ #}
-  <div class="grid-2 mb-4">
-
-    {# Avg win/loss + best/worst #}
-    <div class="card">
-      <div class="card-header"><span class="card-title">Qualité d'Exécution</span></div>
-      <div class="space-y-3">
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-[#848E9C]">Gain moyen</span>
-          <span class="num font-mono font-semibold profit" x-text="fmtUsdc(stats.avg_win)">—</span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-[#848E9C]">Perte moyenne</span>
-          <span class="num font-mono font-semibold loss" x-text="fmtUsdc(stats.avg_loss)">—</span>
-        </div>
-        <div class="divider"></div>
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-[#848E9C]">Meilleur trade</span>
-          <span class="num font-mono font-semibold profit" x-text="fmtUsdc(stats.best_trade)">—</span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-[#848E9C]">Pire trade</span>
-          <span class="num font-mono font-semibold loss" x-text="fmtUsdc(stats.worst_trade)">—</span>
-        </div>
-      </div>
+    <div x-show="!tradesLoading && filteredTrades.length === 0" class="compact-empty">
+      Aucun trade
     </div>
 
-    {# Streaks + drawdown #}
-    <div class="card">
-      <div class="card-header"><span class="card-title">Séries & Drawdown</span></div>
-      <div class="space-y-3">
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-[#848E9C]">Série gagnante max</span>
-          <span class="flex items-center gap-1">
-            <span class="text-[#0ECB81]">▲</span>
-            <span class="num font-mono font-bold text-[#EAECEF]" x-text="stats.win_streak_max ?? '—'">—</span>
-          </span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-[#848E9C]">Série perdante max</span>
-          <span class="flex items-center gap-1">
-            <span class="text-[#F6465D]">▼</span>
-            <span class="num font-mono font-bold text-[#EAECEF]" x-text="stats.loss_streak_max ?? '—'">—</span>
-          </span>
-        </div>
-        <div class="divider"></div>
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-[#848E9C]">Drawdown maximum</span>
-          <span class="num font-mono font-bold loss" x-text="fmtUsdc(stats.drawdown_max)">—</span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-[#848E9C]">Profit Factor</span>
-          <span class="num font-mono font-bold"
-                :class="(stats.profit_factor ?? 0) >= 1 ? 'profit' : 'loss'"
-                x-text="stats.profit_factor?.toFixed(2) ?? '—'">—</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  {# ================================================================
-     TOP / FLOP TOKENS
-     ================================================================ #}
-  <div class="grid-2 mb-4">
-    {# Top tokens #}
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">Top Tokens</span>
-        <span class="text-xs text-[#848E9C]">Par PnL cumulé</span>
-      </div>
-      <div x-show="contributionsLoading" class="space-y-2">
-        <template x-for="i in 5">
-          <div class="skeleton h-7 rounded"></div>
-        </template>
-      </div>
-      <div x-show="!contributionsLoading">
-        <div x-show="contributions.top?.length === 0" class="empty-state py-6">
-          <span class="empty-state-title">Aucune donnée</span>
-        </div>
-        <template x-for="(item, i) in contributions.top || []" :key="item.symbol">
-          <div class="flex items-center justify-between py-2 border-b border-[rgba(43,49,57,0.5)] last:border-0">
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-mono text-[#848E9C] w-4" x-text="i+1"></span>
-              <span class="font-mono font-semibold text-[#EAECEF]" x-text="item.symbol"></span>
+    <div x-show="!tradesLoading && filteredTrades.length > 0" class="stats-mobile-ledger">
+      <template x-for="(t, i) in pagedTrades" :key="t.trade_key || i">
+        <article class="trade-ledger-row">
+          <div class="trade-primary">
+            <div>
+              <a :href="binanceUrl(t.symbol)" target="_blank" rel="noopener"
+                 x-text="fmtSymbol(t.symbol)"></a>
+              <span x-text="fmtTsShort(t.ts_epoch)"></span>
             </div>
-            <div class="flex items-center gap-3">
-              <span class="num font-mono text-sm font-semibold profit" x-text="fmtUsdc(item.pnl_usdc)"></span>
-              <div class="w-16 h-2 rounded-full bg-[#2B3139] overflow-hidden">
-                <div class="h-full rounded-full bg-[#0ECB81]"
-                     :style="`width: ${Math.min(100, Math.abs(item.pnl_usdc) / Math.max(...(contributions.top||[]).map(t=>Math.abs(t.pnl_usdc)), 1) * 100)}%`"></div>
-              </div>
-            </div>
+            <strong class="num" :class="pnlClass(t.pnl_usdc)"
+                    x-text="fmtUsdc(t.pnl_usdc)"></strong>
           </div>
-        </template>
-      </div>
-    </div>
-
-    {# Flop tokens #}
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">Flop Tokens</span>
-        <span class="text-xs text-[#848E9C]">Pires performers</span>
-      </div>
-      <div x-show="contributionsLoading" class="space-y-2">
-        <template x-for="i in 5">
-          <div class="skeleton h-7 rounded"></div>
-        </template>
-      </div>
-      <div x-show="!contributionsLoading">
-        <div x-show="contributions.bottom?.length === 0" class="empty-state py-6">
-          <span class="empty-state-title">Aucune donnée</span>
-        </div>
-        <template x-for="(item, i) in contributions.bottom || []" :key="item.symbol">
-          <div class="flex items-center justify-between py-2 border-b border-[rgba(43,49,57,0.5)] last:border-0">
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-mono text-[#848E9C] w-4" x-text="i+1"></span>
-              <span class="font-mono font-semibold text-[#EAECEF]" x-text="item.symbol"></span>
-            </div>
-            <div class="flex items-center gap-3">
-              <span class="num font-mono text-sm font-semibold loss" x-text="fmtUsdc(item.pnl_usdc)"></span>
-              <div class="w-16 h-2 rounded-full bg-[#2B3139] overflow-hidden">
-                <div class="h-full rounded-full bg-[#F6465D]"
-                     :style="`width: ${Math.min(100, Math.abs(item.pnl_usdc) / Math.max(...(contributions.bottom||[]).map(t=>Math.abs(t.pnl_usdc)), 1) * 100)}%`"></div>
-              </div>
-            </div>
+          <div class="trade-secondary">
+            <span class="num" x-text="`${fmtPrice(t.entry_price)} → ${fmtPrice(t.exit_price)}`"></span>
+            <span class="num" :class="pnlClass(t.pnl_pct)" x-text="fmtPct(t.pnl_pct)"></span>
           </div>
-        </template>
-      </div>
-    </div>
-  </div>
-
-  {# ================================================================
-     TRADES TABLE (paginée, filtrable)
-     ================================================================ #}
-  <div class="card">
-    <div class="card-header flex-wrap gap-2">
-      <span class="card-title">Historique des Trades</span>
-      <div class="flex items-center gap-2 flex-wrap">
-        <input type="search"
-               class="input w-48 text-sm"
-               placeholder="Filtrer symbole / raison…"
-               x-model="tradesFilter"
-               @input="tradesPage = 1" />
-        <span class="text-xs text-[#848E9C]"
-              x-text="`${filteredTrades.length} trades`"></span>
-      </div>
-    </div>
-
-    <div x-show="tradesLoading" class="space-y-2 p-2">
-      <template x-for="i in 10">
-        <div class="skeleton h-8 rounded"></div>
+          <details class="trade-reason">
+            <summary x-text="fmtReason(t.reason)"></summary>
+            <p x-text="t.reason || '—'"></p>
+          </details>
+        </article>
       </template>
     </div>
 
-    <div x-show="!tradesLoading && filteredTrades.length === 0"
-         class="empty-state py-8">
-      <span class="empty-state-title">Aucun trade</span>
-      <span class="empty-state-desc">Ajustez le filtre ou attendez les premiers trades.</span>
-    </div>
-
-    <div x-show="!tradesLoading && filteredTrades.length > 0" class="table-scroll">
-      <table class="data-table">
+    <div x-show="!tradesLoading && filteredTrades.length > 0" class="table-scroll stats-desktop-table">
+      <table class="data-table compact-table">
         <thead>
           <tr>
-            <th @click="sortBy('symbol')" class="cursor-pointer hover:text-[#EAECEF]">
-              Symbole <span x-show="tradesSortKey==='symbol'" x-text="tradesSortDir>0?'▲':'▼'"></span>
-            </th>
-            <th @click="sortBy('ts_epoch')" class="cursor-pointer hover:text-[#EAECEF]">
-              Date <span x-show="tradesSortKey==='ts_epoch'" x-text="tradesSortDir>0?'▲':'▼'"></span>
-            </th>
+            <th @click="sortBy('ts_epoch')">Date UTC</th>
+            <th>Symbole</th>
             <th class="text-right">Entrée</th>
             <th class="text-right">Sortie</th>
-            <th @click="sortBy('pnl_usdc')" class="text-right cursor-pointer hover:text-[#EAECEF]">
-              PnL USDC <span x-show="tradesSortKey==='pnl_usdc'" x-text="tradesSortDir>0?'▲':'▼'"></span>
-            </th>
-            <th @click="sortBy('pnl_pct')" class="text-right cursor-pointer hover:text-[#EAECEF]">
-              PnL % <span x-show="tradesSortKey==='pnl_pct'" x-text="tradesSortDir>0?'▲':'▼'"></span>
-            </th>
+            <th class="text-right">PnL USDC</th>
+            <th class="text-right">PnL %</th>
             <th>Raison</th>
           </tr>
         </thead>
         <tbody>
           <template x-for="(t, i) in pagedTrades" :key="t.trade_key || i">
             <tr>
-              <td class="font-mono font-semibold">
-                <a :href="binanceUrl(t.symbol)"
-                   target="_blank" rel="noopener"
-                   class="symbol-link"
-                   x-text="fmtSymbol(t.symbol)"></a>
-              </td>
-              <td class="num font-mono text-xs text-[#848E9C]" x-text="fmtTs(t.ts_epoch)"></td>
-              <td class="text-right num font-mono text-sm" x-text="fmtPrice(t.entry_price)"></td>
-              <td class="text-right num font-mono text-sm" x-text="fmtPrice(t.exit_price)"></td>
-              <td class="text-right num font-mono font-semibold"
-                  :class="pnlClass(t.pnl_usdc)"
-                  x-text="fmtUsdc(t.pnl_usdc)"></td>
-              <td class="text-right num font-mono"
-                  :class="pnlClass(t.pnl_pct)"
-                  x-text="fmtPct(t.pnl_pct)"></td>
-              <td class="text-xs text-[#848E9C] max-w-[160px] truncate"
-                  :title="t.reason || ''"
-                  x-text="fmtReason(t.reason)"></td>
+              <td class="num" x-text="fmtTs(t.ts_epoch)"></td>
+              <td><a :href="binanceUrl(t.symbol)" target="_blank" rel="noopener"
+                     class="symbol-link" x-text="fmtSymbol(t.symbol)"></a></td>
+              <td class="text-right num" x-text="fmtPrice(t.entry_price)"></td>
+              <td class="text-right num" x-text="fmtPrice(t.exit_price)"></td>
+              <td class="text-right num" :class="pnlClass(t.pnl_usdc)" x-text="fmtUsdc(t.pnl_usdc)"></td>
+              <td class="text-right num" :class="pnlClass(t.pnl_pct)" x-text="fmtPct(t.pnl_pct)"></td>
+              <td class="reason-cell" :title="t.reason || ''" x-text="fmtReason(t.reason)"></td>
             </tr>
           </template>
         </tbody>
       </table>
     </div>
 
-    {# Pagination #}
-    <div x-show="!tradesLoading && totalPages > 1"
-         class="flex items-center justify-between px-4 py-3 border-t border-[#2B3139] mt-1">
-      <div class="text-xs text-[#848E9C]">
-        Page <span x-text="tradesPage"></span> / <span x-text="totalPages"></span>
-      </div>
-      <div class="flex gap-1">
-        <button class="btn btn-xs btn-ghost" :disabled="tradesPage <= 1" @click="tradesPage--">←</button>
-        <template x-for="p in Array.from({length: Math.min(7, totalPages)}, (_,i) => i+1)" :key="p">
-          <button class="btn btn-xs"
-                  :class="tradesPage === p ? 'btn-primary' : 'btn-ghost'"
-                  @click="tradesPage = p"
-                  x-text="p"></button>
-        </template>
-        <button class="btn btn-xs btn-ghost" :disabled="tradesPage >= totalPages" @click="tradesPage++">→</button>
-      </div>
-    </div>
-  </div>
+    <footer x-show="!tradesLoading && totalPages > 1" class="compact-pagination">
+      <button class="icon-command" :disabled="tradesPage <= 1" @click="tradesPage--" aria-label="Page précédente">‹</button>
+      <span><b x-text="tradesPage"></b> / <span x-text="totalPages"></span></span>
+      <button class="icon-command" :disabled="tradesPage >= totalPages" @click="tradesPage++" aria-label="Page suivante">›</button>
+    </footer>
+  </section>
 
+  <section x-show="equityHasData" x-cloak class="compact-section equity-section">
+    <header class="section-heading">
+      <span>Equity cumulée</span>
+      <div class="chart-tabs">
+        <template x-for="r in ['1d','7d','30d','all']" :key="r">
+          <button class="chart-tab" :class="{ active: equityRange === r }"
+                  @click="loadEquity(r)" :disabled="equityLoading"
+                  x-text="r.toUpperCase()"></button>
+        </template>
+      </div>
+    </header>
+    <div class="chart-wrapper">
+      <div id="equity-chart-stats" class="chart-container-lg"></div>
+    </div>
+  </section>
+
+  <section x-show="!equityLoading && !equityHasData" x-cloak
+           class="compact-empty equity-empty">
+    Courbe equity indisponible pour cette période
+  </section>
 </div>
 {% endblock %}

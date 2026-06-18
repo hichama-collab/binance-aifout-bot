@@ -31,7 +31,7 @@
 
   {# Error #}
   <div x-show="error" x-cloak
-       class="mb-4 rounded-lg border border-[#F6465D]/30 bg-[rgba(246,70,93,0.07)] px-4 py-3 text-sm text-[#F6465D]"
+       class="mb-4 rounded-lg border border-[#EC6A7A]/30 bg-[rgba(236, 106, 122,0.07)] px-4 py-3 text-sm text-[#EC6A7A]"
        x-text="'Erreur: ' + error"></div>
 
   {# ================================================================
@@ -56,7 +56,7 @@
         </div>
         <div class="control-kv">
           <span>Selector</span>
-          <strong :class="control.auto_selector ? 'text-[#0ECB81]' : 'text-[#F0B90B]'"
+          <strong :class="control.auto_selector ? 'text-[#36C991]' : 'text-[#F0B90B]'"
                   x-text="control.auto_selector ? 'actif' : 'arrêté'"></strong>
         </div>
         <div class="control-kv">
@@ -184,7 +184,7 @@
      ================================================================ #}
   <div class="killswitch-zone mb-6">
     <div class="flex items-center gap-2 mb-3">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#F6465D]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#EC6A7A]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
       </svg>
       <h2 class="font-bold text-[#EAECEF]">Kill Switch</h2>
@@ -225,7 +225,7 @@
     <div x-show="actionLog.length > 0" class="space-y-1.5 max-h-64 overflow-y-auto">
       <template x-for="(entry, i) in actionLog" :key="i">
         <div class="flex items-start gap-2 px-2 py-1.5 rounded text-xs font-mono bg-[#0d1117] border border-[#2B3139]">
-          <span :class="entry.ok ? 'text-[#0ECB81]' : 'text-[#F6465D]'" class="flex-shrink-0 mt-0.5">
+          <span :class="entry.ok ? 'text-[#36C991]' : 'text-[#EC6A7A]'" class="flex-shrink-0 mt-0.5">
             <span x-text="entry.ok ? '✓' : '✗'"></span>
           </span>
           <span class="text-[#848E9C] flex-shrink-0" x-text="entry.ts.slice(11,19)"></span>

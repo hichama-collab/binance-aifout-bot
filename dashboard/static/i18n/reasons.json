@@ -3,6 +3,7 @@
   "TIME_HARD":              { "fr": "Expiration forcée",       "desc": "Limite de temps absolue dépassée" },
   "PROTECT":                { "fr": "Protection bénéfice",     "desc": "Stop profit déclenché pour sécuriser les gains" },
   "TRAIL":                  { "fr": "Trailing stop",           "desc": "Stop suiveur déclenché après retracement" },
+  "PSELL_DIRECT_TAPE":      { "fr": "Baisse continue P1-P4",   "desc": "Quatre points successifs strictement décroissants" },
   "PSELL FAST":             { "fr": "Vente rapide",            "desc": "Signal de momentum descendant rapide" },
   "PSELL STALE":            { "fr": "Signal obsolète",         "desc": "Signal de vente confirmé après stagnation" },
   "PSELL FAIL":             { "fr": "Vente échouée",           "desc": "Tentative de vente échouée, sortie forcée" },
