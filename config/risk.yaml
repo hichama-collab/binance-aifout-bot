@@ -24,6 +24,7 @@ profiles:
     qty_mismatch_step_fraction: 0.5
     wallet_max_retries: 2
     wallet_retry_backoff_sec: 0.4
+    wallet_flat_cooldown_sec: 120
     order_rest_max_retries: 3
     order_rest_backoff_sec: 0.2
     allow_warmup_entry: true
@@ -54,6 +55,7 @@ profiles:
     reentry_loss_cooldown_sec: 180   # was 90 — s'applique maintenant aux bursts aussi
     reentry_trail_cooldown_sec: 60
     reentry_recovery_pct: 0.0015
+    reentry_recovery_max_age_sec: 1800
     p_entry_enabled: true
     entry_hard_min_up_ratio: 0.38 # was 0.45
     entry_min_strict_ups: 2
@@ -129,6 +131,7 @@ profiles:
     qty_mismatch_step_fraction: 0.5
     wallet_max_retries: 2
     wallet_retry_backoff_sec: 0.4
+    wallet_flat_cooldown_sec: 600
     order_rest_max_retries: 3
     order_rest_backoff_sec: 0.2
     allow_warmup_entry: false
@@ -161,6 +164,7 @@ profiles:
     reentry_loss_cooldown_sec: 240
     reentry_trail_cooldown_sec: 120
     reentry_recovery_pct: 0.0008
+    reentry_recovery_max_age_sec: 1800
     p_entry_enabled: true
     p_sample_interval_sec: 20
     entry_hard_min_up_ratio: 0.45
@@ -211,8 +215,8 @@ profiles:
     max_consecutive_losses: 3
     cooldown_after_break_sec: 7200
     token_quality_override_manual_symbol: true
-    entry_ema_filter_enabled: false
-    burst_ema_filter_enabled: false
+    entry_ema_filter_enabled: true
+    burst_ema_filter_enabled: true
     position_dynamics_enabled: true
     trailing_stop_enabled: true
     trailing_stop_drawdown_pct: 0.006

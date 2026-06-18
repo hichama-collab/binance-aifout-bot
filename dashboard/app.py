@@ -436,6 +436,27 @@ def _get_position() -> Optional[dict]:
     return pos
 
 
+def _get_wallet_summary(symbol: str) -> dict:
+    wallet = safe_read_json(RUNTIME_DIR / "wallet.json")
+    balances = wallet.get("balances") if isinstance(wallet, dict) else []
+    base_asset = str(symbol or "").upper().removesuffix("USDC")
+    summary = {
+        "ts": wallet.get("ts") if isinstance(wallet, dict) else None,
+        "usdc_free": 0.0,
+        "base_asset": base_asset,
+        "base_free": 0.0,
+        "base_locked": 0.0,
+    }
+    for balance in balances or []:
+        asset = str(balance.get("asset", "")).upper()
+        if asset == "USDC":
+            summary["usdc_free"] = float(balance.get("free", 0.0) or 0.0)
+        elif asset == base_asset:
+            summary["base_free"] = float(balance.get("free", 0.0) or 0.0)
+            summary["base_locked"] = float(balance.get("locked", 0.0) or 0.0)
+    return summary
+
+
 def _parse_float(raw: str) -> Optional[float]:
     try:
         return float(raw)
@@ -778,6 +799,7 @@ def api_snapshot():
         unit_state = read_unit_state("binance-aifout-bot.service")
         pos = _get_position()
         portfolio = safe_read_json(RUNTIME_DIR / "portfolio.json")
+        wallet_summary = _get_wallet_summary(symbol)
         monitor = _get_live_monitor(symbol)
         pnl_rows = extract_closed_pnl_rows(trades)
         stats_data = compute_stats(trades)
@@ -798,6 +820,7 @@ def api_snapshot():
             },
             "position": pos,
             "portfolio": portfolio,
+            "wallet": wallet_summary,
             "monitor": monitor,
             "pnl": _build_pnl_buckets(trades, fx),
             "stats": {

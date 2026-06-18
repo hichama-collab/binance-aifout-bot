@@ -7,7 +7,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0B0E11" />
+  <meta name="theme-color" content="#101419" />
   <meta name="description" content="Binance AiFout Bot Dashboard" />
   <title>{% block title %}BotDash{% endblock %} — AiFout</title>
 
@@ -24,16 +24,16 @@
       theme: {
         extend: {
           colors: {
-            'bg-primary':   '#0B0E11',
-            'bg-card':      '#1E2329',
-            'bg-tertiary':  '#2B3139',
-            'border-color': '#2B3139',
+            'bg-primary':   '#101419',
+            'bg-card':      '#1A2028',
+            'bg-tertiary':  '#252D37',
+            'border-color': '#303946',
             'text-primary':   '#EAECEF',
             'text-secondary': '#B7BDC6',
             'text-muted':     '#848E9C',
             'accent':  '#F0B90B',
-            'profit':  '#0ECB81',
-            'loss':    '#F6465D',
+            'profit':  '#28D99A',
+            'loss':    '#FF7183',
           },
           fontFamily: {
             sans: ['Inter', 'system-ui', 'sans-serif'],
@@ -55,7 +55,7 @@
 
   {% block head_extra %}{% endblock %}
 </head>
-<body class="bg-[#0B0E11] text-[#EAECEF] font-sans antialiased">
+<body class="bg-[#101419] text-[#EAECEF] font-sans antialiased">
 
 {# ===== Toast container (global) ===== #}
 <div x-data="toastManager()" class="toast-container" id="toast-root">

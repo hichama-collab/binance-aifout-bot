@@ -419,7 +419,7 @@ from exchange.binance import Binance
 from exchange.stream import Stream
 
 from execution.orders import placeLimit, waitFillOrCancel
-from state.wallet_sync import walletSyncEvery
+from state.wallet_sync import loadWalletFlatGuard, walletSyncEvery
 from state.position import Position
 
 from indicators.basic import fmt, computeSignals, computeMarketContext
@@ -888,6 +888,17 @@ def main():
 
     # NEW: Runtime dir for status JSON
     runtime_dir = Path(getattr(cfg, "dataDir", "data")) / "runtime"
+    wallet_flat_guard = loadWalletFlatGuard(symbol)
+    if wallet_flat_guard:
+        cooldownUntil = max(
+            cooldownUntil,
+            float(wallet_flat_guard.get("until", 0.0) or 0.0),
+        )
+        logTrade(
+            f"WALLET_FLAT_GUARD_RESTORED symbol={symbol} "
+            f"reason={wallet_flat_guard.get('reason','')} "
+            f"until={cooldownUntil:.3f}"
+        )
 
     def clear_runtime_position_state(reason: str, detail: str = ""):
         nonlocal _dyn
@@ -1042,7 +1053,7 @@ def main():
             pass
 
     def handle_wallet_sync_info(syncInfo: dict, current_bid: float):
-        nonlocal pos, _dyn, pendingSwitchSymbol, pendingSwitchLogged, last_env_mtime
+        nonlocal pos, _dyn, pendingSwitchSymbol, pendingSwitchLogged, last_env_mtime, cooldownUntil
         if not isinstance(syncInfo, dict):
             return
         sync_reason = str(syncInfo.get("reason", ""))
@@ -1062,7 +1073,17 @@ def main():
                 _reexec_to_symbol(symbol, external_symbol, source="wallet_external_position", log_fn=logTrade)
 
         if sync_reason in ("wallet_cleared", "wallet_dust") and bool(syncInfo.get("changed")):
-            clear_runtime_position_state(sync_reason, f"wallet_qty={syncInfo.get('wallet_qty','')}")
+            entry_block_until = float(syncInfo.get("entry_block_until", 0.0) or 0.0)
+            if entry_block_until > 0:
+                cooldownUntil = max(cooldownUntil, entry_block_until)
+            clear_runtime_position_state(
+                sync_reason,
+                (
+                    f"wallet_qty={syncInfo.get('wallet_qty','')} "
+                    f"wallet_notional={syncInfo.get('wallet_notional','')} "
+                    f"entry_block_until={entry_block_until:.3f}"
+                ),
+            )
             pos = None
             _dyn = None
             return
@@ -1941,7 +1962,11 @@ def main():
                         )
                         reclaim_pct = float(getattr(cfg, "reentryRecoveryPct", 0.0) or 0.0)
                         reclaim_need = reclaim_ref * (1.0 + reclaim_pct) if reclaim_ref > 0 else 0.0
-                        if reclaim_need > 0 and mid < reclaim_need:
+                        reclaim_max_age = float(
+                            getattr(cfg, "reentryRecoveryMaxAgeSec", 0.0) or 0.0
+                        )
+                        reclaim_active = reclaim_max_age <= 0 or age_since_exit <= reclaim_max_age
+                        if reclaim_active and reclaim_need > 0 and mid < reclaim_need:
                             maybe_hold(
                                 now,
                                 'HOLD_RECLAIM',

@@ -6,19 +6,19 @@
 
 :root {
   /* Colors */
-  --color-bg-primary:   #0B0E11;
-  --color-bg-card:      #1E2329;
-  --color-bg-tertiary:  #2B3139;
-  --color-border:       #2B3139;
-  --color-border-light: #363c45;
+  --color-bg-primary:   #101419;
+  --color-bg-card:      #1A2028;
+  --color-bg-tertiary:  #252D37;
+  --color-border:       #303946;
+  --color-border-light: #46515F;
 
   --color-text-primary:   #EAECEF;
   --color-text-secondary: #B7BDC6;
   --color-text-muted:     #848E9C;
 
   --color-accent:  #F0B90B;
-  --color-profit:  #0ECB81;
-  --color-loss:    #F6465D;
+  --color-profit:  #28D99A;
+  --color-loss:    #FF7183;
   --color-neutral: #848E9C;
 
   --color-blue:    #1890FF;
@@ -31,8 +31,8 @@
   /* Spacing */
   --radius-sm:  4px;
   --radius-md:  8px;
-  --radius-lg:  12px;
-  --radius-xl:  16px;
+  --radius-lg:  8px;
+  --radius-xl:  8px;
 
   /* Transitions */
   --transition-fast:   150ms ease;
@@ -124,8 +124,17 @@ td.num, th.num {
 }
 
 .loss-bg {
-  background-color: rgba(246, 70, 93, 0.12);
+  background-color: rgba(255, 113, 131, 0.14);
   color: var(--color-loss);
+}
+
+.error-banner {
+  border: 1px solid rgba(255, 113, 131, 0.38);
+  border-radius: var(--radius-md);
+  background-color: rgba(255, 113, 131, 0.1);
+  color: #ff9aa7;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.8rem;
 }
 
 /* =========================================================
@@ -211,6 +220,84 @@ td.num, th.num {
   font-size: 0.75rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/* =========================================================
+   6a. Operational health
+   ========================================================= */
+
+.health-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-card);
+}
+
+.health-indicator {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background-color: var(--color-profit);
+  box-shadow: 0 0 0 4px rgba(40, 217, 154, 0.12);
+}
+
+.health-copy {
+  min-width: 0;
+}
+
+.health-copy strong,
+.health-copy span {
+  display: block;
+}
+
+.health-copy strong {
+  color: var(--color-text-primary);
+  font-size: 0.84rem;
+  line-height: 1.25;
+}
+
+.health-copy span {
+  margin-top: 0.12rem;
+  color: var(--color-text-muted);
+  font-size: 0.73rem;
+  overflow-wrap: anywhere;
+}
+
+.health-action {
+  color: var(--color-accent);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.health-warning {
+  border-color: rgba(240, 185, 11, 0.38);
+  background-color: rgba(240, 185, 11, 0.07);
+}
+
+.health-warning .health-indicator {
+  background-color: var(--color-accent);
+  box-shadow: 0 0 0 4px rgba(240, 185, 11, 0.12);
+}
+
+.health-critical {
+  border-color: rgba(255, 113, 131, 0.42);
+  background-color: rgba(255, 113, 131, 0.09);
+}
+
+.health-critical .health-indicator {
+  background-color: var(--color-loss);
+  box-shadow: 0 0 0 4px rgba(255, 113, 131, 0.13);
+}
+
+.health-positive .health-indicator {
+  animation: sse-pulse 2s ease-in-out infinite;
 }
 
 /* =========================================================
@@ -953,7 +1040,7 @@ td.num, th.num {
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--color-border);
   display: flex;
-  height: 56px;
+  height: 52px;
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
@@ -973,8 +1060,8 @@ td.num, th.num {
 }
 
 .bottom-nav-item svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 .bottom-nav-item.active {
@@ -1019,8 +1106,8 @@ td.num, th.num {
 }
 
 .position-banner.negative {
-  background: linear-gradient(135deg, rgba(246, 70, 93, 0.08) 0%, rgba(246, 70, 93, 0.03) 100%);
-  border-color: rgba(246, 70, 93, 0.25);
+  background: rgba(255, 113, 131, 0.08);
+  border-color: rgba(255, 113, 131, 0.32);
 }
 
 /* =========================================================
@@ -1139,6 +1226,177 @@ td.num, th.num {
   padding-bottom: 5rem;  /* bottom nav */
   max-width: 1400px;
   margin: 0 auto;
+}
+
+.mobile-trades {
+  display: none;
+}
+
+.mobile-trade-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.mobile-trade-row:last-child {
+  border-bottom: 0;
+}
+
+.mobile-trade-row div,
+.mobile-trade-pnl {
+  min-width: 0;
+}
+
+.mobile-trade-row strong,
+.mobile-trade-row span {
+  display: block;
+}
+
+.mobile-trade-row strong {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.mobile-trade-row span {
+  margin-top: 0.12rem;
+  color: var(--color-text-muted);
+  font-size: 0.67rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-trade-pnl {
+  text-align: right;
+}
+
+@media (max-width: 639px) {
+  html {
+    font-size: 15px;
+  }
+
+  body {
+    line-height: 1.4;
+  }
+
+  .topbar {
+    height: 48px;
+    padding: 0 0.7rem;
+    gap: 0.5rem;
+  }
+
+  .topbar-logo {
+    font-size: 0.95rem;
+  }
+
+  .page-content {
+    padding: 0.65rem;
+    padding-bottom: 4.4rem;
+  }
+
+  .card,
+  .stat-card,
+  .monitor-panel,
+  .position-banner {
+    padding: 0.75rem;
+  }
+
+  .card-header {
+    margin-bottom: 0.65rem;
+    padding-bottom: 0.55rem;
+  }
+
+  .grid-stats {
+    gap: 0.5rem;
+  }
+
+  .stat-card {
+    min-height: 6.4rem;
+  }
+
+  .stat-label,
+  .card-title {
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+  }
+
+  .stat-value {
+    font-size: 1.08rem;
+  }
+
+  .stat-sub,
+  .stat-trend {
+    font-size: 0.67rem;
+  }
+
+  .health-strip {
+    gap: 0.6rem;
+    min-height: 3.25rem;
+    padding: 0.58rem 0.68rem;
+  }
+
+  .health-copy span {
+    max-width: 16rem;
+  }
+
+  .health-action {
+    font-size: 0.68rem;
+  }
+
+  .monitor-main {
+    gap: 0.4rem;
+    padding-bottom: 0.6rem;
+  }
+
+  .monitor-detail {
+    margin-top: 0.35rem;
+    max-height: 2.2rem;
+    overflow: hidden;
+    font-size: 0.68rem;
+  }
+
+  .monitor-state {
+    font-size: 0.68rem;
+  }
+
+  .monitor-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+    padding-top: 0.65rem;
+  }
+
+  .monitor-metric span {
+    font-size: 0.58rem;
+    letter-spacing: 0.04em;
+  }
+
+  .monitor-metric strong {
+    font-size: 0.78rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chart-container {
+    height: 180px;
+  }
+
+  .chart-tab {
+    padding: 0.22rem 0.5rem;
+    font-size: 0.66rem;
+  }
+
+  .desktop-trades {
+    display: none !important;
+  }
+
+  .mobile-trades {
+    display: block;
+  }
 }
 
 @media (min-width: 768px) {

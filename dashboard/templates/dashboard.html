@@ -28,8 +28,17 @@
 
   {# ── Error banner ── #}
   <div x-show="error" x-cloak
-       class="mb-4 rounded-lg border border-[#F6465D]/30 bg-[rgba(246,70,93,0.07)] px-4 py-3 text-sm text-[#F6465D]"
+       class="error-banner mb-3"
        x-text="'Erreur: ' + error"></div>
+
+  <section x-show="!loading" x-cloak class="health-strip mb-3" :class="healthClass">
+    <div class="health-indicator" aria-hidden="true"></div>
+    <div class="health-copy">
+      <strong x-text="healthState.title"></strong>
+      <span x-text="healthState.detail"></span>
+    </div>
+    <a class="health-action" :href="healthHref" x-text="healthState.action"></a>
+  </section>
 
   {# ================================================================
      HERO SECTION — 3 cards
@@ -62,7 +71,9 @@
         <span class="text-xs text-[#848E9C]" x-text="fmtDuration(botSince)"></span>
       </div>
       <div class="stat-sub mt-1">
-        Profile: <span class="text-[#F0B90B] font-semibold" x-text="profile"></span>
+        <span class="text-[#F0B90B] font-semibold" x-text="profile"></span>
+        <span class="mx-1">·</span>
+        <span x-text="control.mode === 'auto' ? 'Auto' : 'Manuel'"></span>
       </div>
     </div>
 
@@ -146,7 +157,7 @@
     </div>
 
     {# Active position #}
-    <div x-show="hasPosition" class="position-banner" :class="{'negative': activePosition?.pnl_usdc < 0}">
+    <div id="position-live" x-show="hasPosition" class="position-banner" :class="{'negative': activePosition?.pnl_usdc < 0}">
       <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
         <div class="flex items-center gap-2">
           <div class="w-2 h-2 rounded-full bg-[#0ECB81] animate-pulse"></div>
@@ -249,7 +260,7 @@
     </div>
 
     {# Table #}
-    <div x-show="!tradesLoading && trades.length > 0" class="table-scroll">
+    <div x-show="!tradesLoading && trades.length > 0" class="table-scroll desktop-trades">
       <table class="data-table">
         <thead>
           <tr>
@@ -287,6 +298,21 @@
           </template>
         </tbody>
       </table>
+    </div>
+
+    <div x-show="!tradesLoading && trades.length > 0" class="mobile-trades">
+      <template x-for="(t, i) in trades.slice(0,6)" :key="t.trade_key || i">
+        <a :href="binanceUrl(t.symbol)" target="_blank" rel="noopener" class="mobile-trade-row">
+          <div>
+            <strong x-text="fmtSymbol(t.symbol)"></strong>
+            <span x-text="fmtReason(t.reason)"></span>
+          </div>
+          <div class="mobile-trade-pnl">
+            <strong :class="pnlClass(t.pnl_usdc)" x-text="fmtUsdc(t.pnl_usdc)"></strong>
+            <span x-text="fmtTs(t.ts_epoch)"></span>
+          </div>
+        </a>
+      </template>
     </div>
   </div>
 

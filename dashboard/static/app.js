@@ -73,7 +73,7 @@ function colorClass(value) {
 
 function signedColor(value) {
   if (value > 0) return '#0ECB81';
-  if (value < 0) return '#F6465D';
+  if (value < 0) return '#FF7183';
   return '#848E9C';
 }
 
@@ -313,7 +313,10 @@ function botDashboard() {
     // Position
     position: null,
     positionLive: null,
+    positionLiveReady: false,
     monitor: null,
+    wallet: {},
+    control: {},
 
     // Services
     services: [],
@@ -356,6 +359,7 @@ function botDashboard() {
     _handleSSEEvent(evt, data) {
       if (evt === 'position') {
         this.positionLive = data;
+        this.positionLiveReady = true;
       } else if (evt === 'services') {
         this.services = data || [];
       } else if (evt === '_poll') {
@@ -377,6 +381,8 @@ function botDashboard() {
         this.dryRun = !!d.bot?.dry_run;
         this.position = d.position;
         this.monitor = d.monitor || null;
+        this.wallet = d.wallet || {};
+        this.control = d.control || {};
         this.pnlToday = d.pnl?.today;
         this.pnlSession = d.pnl?.session;
         this.pnlWeek = d.pnl?.week;
@@ -429,7 +435,7 @@ function botDashboard() {
 
     // Derived
     get activePosition() {
-      return this.positionLive || this.position;
+      return this.positionLiveReady ? this.positionLive : this.position;
     },
 
     get hasPosition() {
@@ -447,6 +453,67 @@ function botDashboard() {
       if (this.botStatus === 'active') return 'badge-active';
       if (this.botStatus === 'failed') return 'badge-error';
       return 'badge-inactive';
+    },
+
+    get healthState() {
+      const age = Number(this.monitorMetrics.age_sec);
+      const reason = this.monitorDecision.reason || '';
+      if (this.botStatus !== 'active') {
+        return {
+          level: 'critical',
+          title: 'Bot arrêté',
+          detail: 'Le marché est visible, mais aucun ordre ne peut être envoyé.',
+          action: 'Ouvrir les contrôles',
+        };
+      }
+      if (Number.isFinite(age) && age > 15) {
+        return {
+          level: 'critical',
+          title: 'Données en retard',
+          detail: `Dernière donnée reçue il y a ${this.fmtAgeSec(age)}.`,
+          action: 'Vérifier le service',
+        };
+      }
+      if (reason.includes('CIRCUIT_BREAKER')) {
+        return {
+          level: 'warning',
+          title: 'Trading suspendu',
+          detail: this.monitorDecision.detail || 'Le coupe-circuit bloque les nouvelles entrées.',
+          action: 'Voir les logs',
+          href: '/logs',
+        };
+      }
+      if (reason.includes('MIN_NOTIONAL') || (!this.hasPosition && Number(this.wallet.usdc_free) < 5)) {
+        return {
+          level: 'warning',
+          title: 'Solde USDC insuffisant',
+          detail: `${Number(this.wallet.usdc_free || 0).toFixed(2)} USDC disponibles.`,
+          action: 'Voir les services',
+        };
+      }
+      if (this.hasPosition) {
+        return {
+          level: Number(this.activePosition?.pnl_usdc) < 0 ? 'warning' : 'positive',
+          title: `${this.fmtSymbol(this.activePosition?.symbol)} en position`,
+          detail: `${this.fmtUsdc(this.activePosition?.pnl_usdc)} · entrée ${this.fmtPrice(this.activePosition?.entry_price || this.activePosition?.entry)}`,
+          action: 'Voir la position',
+          href: '#position-live',
+        };
+      }
+      return {
+        level: 'normal',
+        title: `Surveillance ${this.fmtSymbol(this.activeToken)}`,
+        detail: `${this.profile} · mode ${this.control.mode === 'auto' ? 'automatique' : 'manuel'} · ${Number(this.wallet.usdc_free || 0).toFixed(2)} USDC`,
+        action: 'Gérer',
+      };
+    },
+
+    get healthClass() {
+      return `health-${this.healthState.level}`;
+    },
+
+    get healthHref() {
+      return this.healthState.href || '/services';
     },
 
     get monitorMetrics() {

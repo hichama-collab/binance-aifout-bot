@@ -163,6 +163,7 @@ class Config:
     # wallet/account resilience
     walletMaxRetries: int = 2
     walletRetryBackoffSec: float = 0.4
+    walletFlatCooldownSec: float = 300.0
 
     # order REST resilience
     orderRestMaxRetries: int = 3
@@ -187,6 +188,7 @@ class Config:
     reentryLossCooldownSec: float = 90.0
     reentryTrailCooldownSec: float = 60.0
     reentryRecoveryPct: float = 0.0015
+    reentryRecoveryMaxAgeSec: float = 3600.0
 
     # entry quality guards
     pEntryEnabled: bool = True
@@ -373,6 +375,7 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("dust_step_fraction", "dustStepFraction"),
         ("wallet_max_retries", "walletMaxRetries"),
         ("wallet_retry_backoff_sec", "walletRetryBackoffSec"),
+        ("wallet_flat_cooldown_sec", "walletFlatCooldownSec"),
         ("order_rest_max_retries", "orderRestMaxRetries"),
         ("order_rest_backoff_sec", "orderRestBackoffSec"),
         ("entry_fill_ttl_sec", "entryFillTtlSec"),
@@ -410,6 +413,7 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("reentry_loss_cooldown_sec", "reentryLossCooldownSec"),
         ("reentry_trail_cooldown_sec", "reentryTrailCooldownSec"),
         ("reentry_recovery_pct", "reentryRecoveryPct"),
+        ("reentry_recovery_max_age_sec", "reentryRecoveryMaxAgeSec"),
         ("p_entry_enabled", "pEntryEnabled"),
         ("p_sample_interval_sec", "pSampleIntervalSec"),
         ("entry_hard_min_up_ratio", "entryHardMinUpRatio"),

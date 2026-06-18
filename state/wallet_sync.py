@@ -94,6 +94,46 @@ def _safe_write_json(path: Path, data: object) -> None:
         return
 
 
+def _record_flat_guard(
+    now: float,
+    symbol: str,
+    cfg,
+    reason: str,
+    qty: float,
+    notional: float,
+) -> float:
+    duration = max(
+        float(getattr(cfg, "walletFlatCooldownSec", 0.0) or 0.0),
+        float(getattr(cfg, "dustCooldownSec", 0.0) or 0.0),
+    )
+    if duration <= 0:
+        return 0.0
+    guard_until = now + duration
+    _safe_write_json(_runtime_dir() / "wallet_flat_guard.json", {
+        "ts": now,
+        "until": guard_until,
+        "symbol": symbol,
+        "reason": reason,
+        "qty": qty,
+        "notional": notional,
+    })
+    return guard_until
+
+
+def loadWalletFlatGuard(symbol: str, now: Optional[float] = None) -> dict:
+    path = _runtime_dir() / "wallet_flat_guard.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    current = time.time() if now is None else float(now)
+    if str(payload.get("symbol", "")).upper() != str(symbol or "").upper():
+        return {}
+    if float(payload.get("until", 0.0) or 0.0) <= current:
+        return {}
+    return payload
+
+
 def _estimate_entry_from_recent_trades(bx, symbol: str, qty_now: float, step: float) -> tuple[float, str]:
     """
     Estimate the entry of the currently held quantity from recent Binance fills.
@@ -260,11 +300,19 @@ def walletSyncEvery(
                 "wallet_notional": external_holding["notional"],
                 "holdings": holdings,
             }
+        guard_until = (
+            _record_flat_guard(now, symbol, cfg, reason, qty_now, notional)
+            if pos is not None
+            else 0.0
+        )
         _write_runtime_snapshot(now, symbol, acc, balances, None, reason, holdings)
         return None, syncState, {
             "changed": pos is not None,
             "usdc": free_usdc,
             "reason": reason,
+            "wallet_qty": qty_now,
+            "wallet_notional": notional,
+            "entry_block_until": guard_until,
             "holdings": holdings,
         }
 
@@ -272,7 +320,18 @@ def walletSyncEvery(
     if is_dust:
         _write_runtime_snapshot(now, symbol, acc, balances, None, "wallet_dust", holdings)
         if pos is not None:
-            return None, syncState, {"changed": True, "usdc": free_usdc, "reason": "wallet_dust", "holdings": holdings}
+            guard_until = _record_flat_guard(
+                now, symbol, cfg, "wallet_dust", qty_now, notional
+            )
+            return None, syncState, {
+                "changed": True,
+                "usdc": free_usdc,
+                "reason": "wallet_dust",
+                "wallet_qty": qty_now,
+                "wallet_notional": notional,
+                "entry_block_until": guard_until,
+                "holdings": holdings,
+            }
         if external_holding is not None:
             return None, syncState, {
                 "changed": True,
@@ -284,7 +343,13 @@ def walletSyncEvery(
                 "wallet_notional": external_holding["notional"],
                 "holdings": holdings,
             }
-        return None, syncState, {"usdc": free_usdc, "reason": "wallet_dust", "holdings": holdings}
+        return None, syncState, {
+            "usdc": free_usdc,
+            "reason": "wallet_dust",
+            "wallet_qty": qty_now,
+            "wallet_notional": notional,
+            "holdings": holdings,
+        }
 
     # Wallet has base asset but no local pos => adopt it immediately.
     # Prefer Binance fills for entry; fallback to current bid so the bot does not stay blind.
