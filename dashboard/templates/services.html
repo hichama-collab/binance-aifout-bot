@@ -3,12 +3,12 @@
 {% block title %}Services{% endblock %}
 
 {% block content %}
-<div x-data="botServices()" x-init="init()" class="page-content">
+<div x-data="botServices()" x-init="init()" class="page-content services-page">
 
   {# ================================================================
      HEADER
      ================================================================ #}
-  <div class="flex items-center justify-between mb-4">
+  <div class="services-heading flex items-center justify-between mb-4">
     <h1 class="text-base font-bold text-[#EAECEF]">Services Systemd</h1>
     <div class="flex items-center gap-2">
       <div x-show="loading" class="text-xs text-[#848E9C]">
@@ -37,7 +37,7 @@
   {# ================================================================
      BOT CONTROL
      ================================================================ #}
-  <div class="card mb-6">
+  <div class="card service-control-card mb-6">
     <div class="card-header">
       <span class="card-title">Pilotage Bot</span>
       <span class="badge" :class="control.mode === 'auto' ? 'badge-active' : 'badge-warning'"
@@ -84,7 +84,7 @@
         <div class="control-help">
           Le mode manuel stoppe le timer de sélection, écrit le token dans <span class="font-mono">.service.env</span>, puis redémarre le bot.
         </div>
-        <div class="flex flex-wrap gap-2 mt-3">
+        <div class="control-command-row flex flex-wrap gap-2 mt-3">
           <button class="btn btn-sm btn-ghost"
                   :disabled="controlBusy || !control.auto_selector"
                   @click="stopSelector()">
@@ -108,11 +108,11 @@
   {# ================================================================
      SERVICE CARDS — 4 services
      ================================================================ #}
-  <div class="grid-4 mb-6">
+  <div class="grid-4 services-grid mb-6">
     <template x-for="svc in services" :key="svc.unit">
       <div :class="serviceCardClass(svc.state)">
         {# Header #}
-        <div class="flex items-start justify-between gap-3 mb-3">
+        <div class="service-card-header flex items-start justify-between gap-3 mb-3">
           <div class="flex items-center gap-2 min-w-0">
             <div class="service-dot" :class="dotClass(svc.state)"></div>
             <div class="min-w-0">
@@ -127,7 +127,7 @@
         </div>
 
         {# Uptime info #}
-        <div class="text-xs text-[#848E9C] mb-3 space-y-0.5">
+        <div class="service-card-meta text-xs text-[#848E9C] mb-3 space-y-0.5">
           <div x-show="svc.since">
             <span class="text-[#B7BDC6]">Uptime:</span>
             <span class="font-mono ml-1" x-text="fmtDuration(svc.since)"></span>
@@ -139,7 +139,7 @@
         </div>
 
         {# Actions #}
-        <div class="flex gap-1.5 flex-wrap">
+        <div class="service-card-actions flex gap-1.5 flex-wrap">
           <button class="btn btn-xs btn-ghost"
                   :disabled="actionInProgress[svc.unit+'-start'] || isRunning(svc)"
                   @click="requestAction(svc.unit, 'start')">
@@ -182,7 +182,7 @@
   {# ================================================================
      KILL SWITCH ZONE
      ================================================================ #}
-  <div class="killswitch-zone mb-6">
+  <div class="killswitch-zone service-killswitch mb-6">
     <div class="flex items-center gap-2 mb-3">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#EC6A7A]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
@@ -209,7 +209,7 @@
   {# ================================================================
      ACTION LOG (20 dernières actions)
      ================================================================ #}
-  <div class="card">
+  <div class="card service-action-console">
     <div class="card-header">
       <span class="card-title">Console d'Actions</span>
       <span class="text-xs text-[#848E9C]" x-text="`${actionLog.length} actions`"></span>
@@ -224,7 +224,7 @@
 
     <div x-show="actionLog.length > 0" class="space-y-1.5 max-h-64 overflow-y-auto">
       <template x-for="(entry, i) in actionLog" :key="i">
-        <div class="flex items-start gap-2 px-2 py-1.5 rounded text-xs font-mono bg-[#0d1117] border border-[#2B3139]">
+        <div class="service-action-row flex items-start gap-2 px-2 py-1.5 rounded text-xs font-mono bg-[#0d1117] border border-[#2B3139]">
           <span :class="entry.ok ? 'text-[#36C991]' : 'text-[#EC6A7A]'" class="flex-shrink-0 mt-0.5">
             <span x-text="entry.ok ? '✓' : '✗'"></span>
           </span>

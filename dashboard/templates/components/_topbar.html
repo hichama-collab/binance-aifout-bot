@@ -7,7 +7,7 @@
   </a>
 
   {# Desktop nav #}
-  <nav class="hidden md:flex items-center gap-1 ml-4">
+  <nav class="topbar-nav hidden md:flex items-center gap-1 ml-4">
     <a href="/live"
        class="nav-link {% if request.path == '/live' %}active{% endif %}">
       Live
@@ -30,19 +30,19 @@
   <div class="flex-1"></div>
 
   {# UTC clock #}
-  <div x-data="utcClock()" class="hidden sm:block">
+  <div x-data="utcClock()" class="topbar-clock hidden sm:block">
     <span class="utc-clock" x-text="time">—</span>
   </div>
 
   {# SSE status dot #}
-  <div class="flex items-center gap-1.5 ml-2" title="Connexion temps-réel">
+  <div class="topbar-connection flex items-center gap-1.5 ml-2" title="Connexion temps-réel">
     <div class="sse-dot" id="sse-global-dot"></div>
     <span class="hidden sm:inline text-xs text-[#848E9C]" id="sse-global-label">—</span>
   </div>
 
   {# Theme toggle #}
   <button @click="toggle()"
-          class="btn btn-icon btn-ghost ml-1"
+          class="topbar-theme btn btn-icon btn-ghost ml-1"
           :title="dark ? 'Basculer en mode clair' : 'Basculer en mode sombre'"
           aria-label="Toggle theme">
     <svg x-show="dark" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
