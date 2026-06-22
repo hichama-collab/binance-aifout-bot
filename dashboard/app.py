@@ -164,6 +164,19 @@ def systemctl(action: str, unit: str) -> tuple:
         return False, str(e)
 
 
+def systemctl_now(action: str, unit: str) -> tuple:
+    try:
+        result = subprocess.run(
+            ["systemctl", action, "--now", unit],
+            capture_output=True, text=True, timeout=15,
+        )
+        ok = result.returncode == 0
+        output = result.stdout + result.stderr
+        return ok, output
+    except Exception as e:
+        return False, str(e)
+
+
 def read_service_env() -> dict:
     data = {}
     try:
@@ -233,9 +246,12 @@ def get_control_state() -> dict:
 
 def stop_selector() -> list:
     results = []
-    for unit in ("token-profile-selector.timer", "token-profile-selector.service"):
-        ok, output = systemctl("stop", unit)
-        results.append({"unit": unit, "action": "stop", "ok": ok, "output": output})
+    timer = "token-profile-selector.timer"
+    ok, output = systemctl_now("disable", timer)
+    results.append({"unit": timer, "action": "disable --now", "ok": ok, "output": output})
+    service = "token-profile-selector.service"
+    ok, output = systemctl("stop", service)
+    results.append({"unit": service, "action": "stop", "ok": ok, "output": output})
     return results
 
 
@@ -1034,9 +1050,9 @@ def api_bot_selector_action(action: str):
     if action == "stop":
         results = stop_selector()
     else:
-        timer_action = "restart" if action == "restart" else "start"
-        ok, output = systemctl(timer_action, "token-profile-selector.timer")
-        results.append({"unit": "token-profile-selector.timer", "action": timer_action, "ok": ok, "output": output})
+        timer = "token-profile-selector.timer"
+        ok, output = systemctl_now("enable", timer)
+        results.append({"unit": timer, "action": "enable --now", "ok": ok, "output": output})
         if action == "restart":
             ok, output = systemctl("restart", "token-profile-selector.service")
             results.append({"unit": "token-profile-selector.service", "action": "restart", "ok": ok, "output": output})

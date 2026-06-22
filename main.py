@@ -453,7 +453,7 @@ try:
 except ModuleNotFoundError:
     _RANGE_V1_AVAILABLE = False
     build_range_snapshot = range_market_ok = entry_signal = update_position = RangeSnapshot = None
-from strategy.pic_filter import check_near_peak
+from strategy.pic_filter import check_near_peak, should_block_near_peak
 from strategy.position_dynamics import (
     PositionDynamics, init_dynamics, update_dynamics,
     check_trailing_stop, check_breakeven_escape,
@@ -1489,7 +1489,7 @@ def main():
                         lookback_seconds=int(getattr(cfg, "picFilter_lookbackSec", 180)),
                         peak_threshold_pct=float(getattr(cfg, "picFilter_thresholdPct", 0.001)),
                     )
-                    if _pic.is_near_peak:
+                    if should_block_near_peak(entryMode, _pic):
                         maybe_hold(
                             now,
                             f"NEAR_PEAK dist={_pic.distance_from_peak_pct*100:.3f}%"
@@ -1498,6 +1498,13 @@ def main():
                             bid, ask, mid, P1, P2, P3, P4,
                         )
                         continue
+                    if _pic.is_near_peak and burstOverride:
+                        burst_peak_msg = (
+                            f"BURST_PEAK_ALLOWED dist={_pic.distance_from_peak_pct*100:.3f}% "
+                            f"peak={_pic.peak_price} lookback={_pic.peak_lookback_s}s"
+                        )
+                        print(burst_peak_msg)
+                        logTrade(burst_peak_msg)
 
                 if symbol in blockedSymbols:
                     maybe_hold(

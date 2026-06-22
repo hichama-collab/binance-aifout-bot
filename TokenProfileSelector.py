@@ -22,9 +22,11 @@ RUNTIME_POSITION_PATH = ROOT_PATH / "data" / "runtime" / "position.json"
 RUNTIME_PORTFOLIO_PATH = ROOT_PATH / "data" / "runtime" / "portfolio.json"
 # Durée minimale sur un token avant de switcher (en minutes)
 SELECTOR_MIN_HOLD_MINUTES = float(os.getenv("SELECTOR_MIN_HOLD_MINUTES", "10"))
+# Garde absolue : aucun switch avant ce délai, même avec un meilleur score.
+SELECTOR_FLAT_MIN_HOLD_MINUTES = float(os.getenv("SELECTOR_FLAT_MIN_HOLD_MINUTES", "5"))
 # Amélioration minimale du score pour justifier un switch pendant la période de garde
 SELECTOR_HYSTERESIS_PCT = float(os.getenv("SELECTOR_HYSTERESIS_PCT", "0.25"))
-# Variation minimale du token actuel pour activer la garde (si plus flat que ça, on switche tout de suite)
+# Variation minimale sous laquelle le token actuel est considéré comme plat.
 SELECTOR_MIN_ACTIVE_VAR_PCT = float(os.getenv("SELECTOR_MIN_ACTIVE_VAR_PCT", "0.15"))
 # Direction 1-2min minimum pour valider le candidat choisi (évite d'entrer après le move)
 SELECTOR_MIN_DIRECTION_PCT = float(os.getenv("SELECTOR_MIN_DIRECTION_PCT", "-0.15"))
@@ -35,9 +37,10 @@ SELECTOR_MAX_SPREAD_PCT = float(os.getenv("SELECTOR_MAX_SPREAD_PCT", "0.0025"))
 SELECTOR_MIN_PRICE_USDC = float(os.getenv("SELECTOR_MIN_PRICE_USDC", "0.05"))
 SELECTOR_MIN_QUOTE_VOLUME_USDC_24H = float(os.getenv("SELECTOR_MIN_QUOTE_VOLUME_USDC_24H", "1000000"))
 SELECTOR_MIN_TRADE_COUNT_24H = int(os.getenv("SELECTOR_MIN_TRADE_COUNT_24H", "5000"))
-SELECTOR_MIN_WINDOW_PCT = float(os.getenv("SELECTOR_MIN_WINDOW_PCT", "0.08"))
+SELECTOR_MIN_WINDOW_PCT = float(os.getenv("SELECTOR_MIN_WINDOW_PCT", "0.15"))
 SELECTOR_MAX_WINDOW_PCT = float(os.getenv("SELECTOR_MAX_WINDOW_PCT", "1.80"))
 SELECTOR_MAX_WINDOW_PCT_UNKNOWN = float(os.getenv("SELECTOR_MAX_WINDOW_PCT_UNKNOWN", "1.20"))
+SELECTOR_MIN_MOVE_TO_SPREAD = float(os.getenv("SELECTOR_MIN_MOVE_TO_SPREAD", "2.0"))
 SELECTOR_MIN_24H_CHANGE_PCT = float(os.getenv("SELECTOR_MIN_24H_CHANGE_PCT", "-8.0"))
 SELECTOR_MAX_24H_CHANGE_PCT = float(os.getenv("SELECTOR_MAX_24H_CHANGE_PCT", "12.0"))
 SELECTOR_UNKNOWN_SCORE_PENALTY = float(os.getenv("SELECTOR_UNKNOWN_SCORE_PENALTY", "0.05"))
@@ -61,6 +64,18 @@ def _save_selector_state(state: dict) -> None:
         SELECTOR_STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
     except Exception:
         pass
+
+
+def _minimum_hold_remaining_minutes(hold_age_min: float) -> float:
+    return max(0.0, SELECTOR_FLAT_MIN_HOLD_MINUTES - max(0.0, hold_age_min))
+
+
+def _candidate_window_is_eligible(pct: float, spread_pct: float) -> bool:
+    move_pct = abs(float(pct))
+    if move_pct < SELECTOR_MIN_WINDOW_PCT or move_pct > SELECTOR_MAX_WINDOW_PCT:
+        return False
+    required_vs_spread = max(0.0, float(spread_pct)) * max(0.0, SELECTOR_MIN_MOVE_TO_SPREAD)
+    return move_pct >= required_vs_spread
 
 # Universe
 QUOTE_ASSET = "USDC"
@@ -332,16 +347,15 @@ def collect_candidates(excluded_symbols: set[str] | None = None, positive_only: 
                 continue
             if positive_only and pct <= 0:
                 continue
-            if abs(pct) < SELECTOR_MIN_WINDOW_PCT:
-                continue
-            if abs(pct) > SELECTOR_MAX_WINDOW_PCT:
-                continue
             sym = future_to_symbol[future]
+            spread_pct = float(spread_map.get(sym, 0.0)) * 100.0
+            if not _candidate_window_is_eligible(pct, spread_pct):
+                continue
             market = market_map.get(sym) or {}
             candidates.append({
                 "symbol": sym,
                 "pct": pct,
-                "spread_pct": float(spread_map.get(sym, 0.0)) * 100.0,
+                "spread_pct": spread_pct,
                 "last_price": float(market.get("last_price") or 0.0),
                 "quote_volume_24h": float(market.get("quote_volume_24h") or 0.0),
                 "trade_count_24h": int(market.get("trade_count_24h") or 0),
@@ -609,13 +623,32 @@ def main():
     hold_age_min = (time.time() - last_switch_ts) / 60.0
 
     is_new_token = chosen["symbol"] != current_symbol
-    # Check if current token is basically flat (dead) — bypass hold time if so
+    # Un token plat peut sortir plus tôt que la garde standard, mais pas avant
+    # d'avoir laissé au bot le temps de construire une fenêtre d'entrée exploitable.
     current_in_ranked = next((c for c in ranked if c["symbol"] == current_symbol), None)
     current_var_pct = abs(float(current_in_ranked["pct"])) if current_in_ranked else 0.0
     current_is_flat = current_var_pct < SELECTOR_MIN_ACTIVE_VAR_PCT
+    minimum_hold_remaining = _minimum_hold_remaining_minutes(hold_age_min)
+    if (
+        is_new_token
+        and not current_symbol_blocked
+        and current_symbol
+        and minimum_hold_remaining > 0
+    ):
+        print(
+            f"TOKEN_SELECTOR: keeping {current_symbol} absolute hold "
+            f"hold_age={hold_age_min:.1f}min < {SELECTOR_FLAT_MIN_HOLD_MINUTES}min "
+            f"remaining={minimum_hold_remaining:.1f}min "
+            f"flat={int(current_is_flat)} — no switch"
+        )
+        current_score = current_in_ranked["final_score"] if current_in_ranked else 0.0
+        write_service_env(current_symbol, current_score, DEFAULT_PROFILE)
+        return 0
     if current_is_flat and is_new_token:
         print(
-            f"TOKEN_SELECTOR: current {current_symbol} is flat (var={current_var_pct:.2f}% < {SELECTOR_MIN_ACTIVE_VAR_PCT}%) — switching immediately"
+            f"TOKEN_SELECTOR: current {current_symbol} is flat "
+            f"(var={current_var_pct:.2f}% < {SELECTOR_MIN_ACTIVE_VAR_PCT}%) "
+            f"and flat hold elapsed ({hold_age_min:.1f}min >= {SELECTOR_FLAT_MIN_HOLD_MINUTES}min) — switching"
         )
     elif (
         is_new_token
