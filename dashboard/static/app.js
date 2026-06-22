@@ -604,6 +604,7 @@ function botStats() {
     // PnL buckets
     pnl: {},
     stats: {},
+    tokenRankings: { top: [], bottom: [] },
     fx: null,
 
     // Equity
@@ -636,6 +637,7 @@ function botStats() {
         const d = await r.json();
         this.pnl = d.pnl || {};
         this.stats = d.stats || {};
+        this.tokenRankings = d.token_rankings || { top: [], bottom: [] };
         this.fx = d.fx;
         this.loading = false;
       } catch (e) {

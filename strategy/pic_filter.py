@@ -18,8 +18,8 @@ class PicCheck:
 
 
 def should_block_near_peak(entry_mode: str, check: PicCheck) -> bool:
-    """A confirmed burst is a breakout signal; regular P entries stay protected."""
-    return bool(check.is_near_peak) and str(entry_mode or "").upper() != "BURST"
+    """Block every entry mode near a recent peak, including short tick bursts."""
+    return bool(check.is_near_peak)
 
 
 def check_near_peak(

@@ -1498,14 +1498,6 @@ def main():
                             bid, ask, mid, P1, P2, P3, P4,
                         )
                         continue
-                    if _pic.is_near_peak and burstOverride:
-                        burst_peak_msg = (
-                            f"BURST_PEAK_ALLOWED dist={_pic.distance_from_peak_pct*100:.3f}% "
-                            f"peak={_pic.peak_price} lookback={_pic.peak_lookback_s}s"
-                        )
-                        print(burst_peak_msg)
-                        logTrade(burst_peak_msg)
-
                 if symbol in blockedSymbols:
                     maybe_hold(
                         now,

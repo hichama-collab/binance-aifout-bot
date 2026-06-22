@@ -65,6 +65,41 @@
     <div><span>Série -</span><strong class="num" x-text="stats.loss_streak_max ?? '—'"></strong></div>
   </section>
 
+  <section class="token-rankings">
+    <div class="token-ranking-panel">
+      <header>
+        <span class="ranking-mark best"></span>
+        <strong>Meilleurs tokens</strong>
+      </header>
+      <div x-show="tokenRankings.top.length === 0" class="ranking-empty">Aucune donnée</div>
+      <template x-for="row in tokenRankings.top" :key="'top-' + row.symbol">
+        <a class="token-ranking-row" :href="binanceUrl(row.symbol)" target="_blank" rel="noopener">
+          <div>
+            <strong x-text="fmtSymbol(row.symbol)"></strong>
+            <span x-text="`${row.trades} trade${row.trades > 1 ? 's' : ''} · ${(row.winrate * 100).toFixed(0)}% win`"></span>
+          </div>
+          <b class="num" :class="pnlClass(row.pnl_usdc)" x-text="fmtUsdc(row.pnl_usdc)"></b>
+        </a>
+      </template>
+    </div>
+    <div class="token-ranking-panel">
+      <header>
+        <span class="ranking-mark worst"></span>
+        <strong>Plus mauvais</strong>
+      </header>
+      <div x-show="tokenRankings.bottom.length === 0" class="ranking-empty">Aucune donnée</div>
+      <template x-for="row in tokenRankings.bottom" :key="'bottom-' + row.symbol">
+        <a class="token-ranking-row" :href="binanceUrl(row.symbol)" target="_blank" rel="noopener">
+          <div>
+            <strong x-text="fmtSymbol(row.symbol)"></strong>
+            <span x-text="`${row.trades} trade${row.trades > 1 ? 's' : ''} · ${(row.winrate * 100).toFixed(0)}% win`"></span>
+          </div>
+          <b class="num" :class="pnlClass(row.pnl_usdc)" x-text="fmtUsdc(row.pnl_usdc)"></b>
+        </a>
+      </template>
+    </div>
+  </section>
+
   <section class="compact-section stats-history">
     <header class="section-heading history-heading">
       <span>Historique des trades</span>

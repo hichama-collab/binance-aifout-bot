@@ -76,6 +76,8 @@ except ImportError:
     def load_dashboard_cache(key):
         return None
 
+from dashboard.rankings import build_token_rankings
+
 
 # ---------------------------------------------------------------------------
 # Helper utilities (self-contained so the file works standalone)
@@ -352,17 +354,7 @@ def compute_max_drawdown(pnl_rows: list) -> float:
 
 
 def summarize_tokens(pnl_rows: list, fx: Optional[float], limit: int = 5) -> dict:
-    token_pnl: dict = {}
-    for row in pnl_rows:
-        sym = row["symbol"]
-        token_pnl[sym] = token_pnl.get(sym, 0.0) + row["pnl"]
-    ranked = sorted(token_pnl.items(), key=lambda x: x[1], reverse=True)
-    def fmt(items):
-        return [
-            {"symbol": sym, "pnl_usdc": round(pnl, 4), "pnl_eur": usdc_to_eur(pnl, fx)}
-            for sym, pnl in items
-        ]
-    return {"top": fmt(ranked[:limit]), "bottom": fmt(list(reversed(ranked[-limit:])))}
+    return build_token_rankings(pnl_rows, fx=fx, limit=limit)
 
 
 # ---------------------------------------------------------------------------
@@ -845,6 +837,7 @@ def api_snapshot():
                 "loss_streak_max": streaks["loss_streak_max"],
                 "drawdown_max": drawdown,
             },
+            "token_rankings": summarize_tokens(pnl_rows, fx, limit=5),
             "services": services_list,
             "control": get_control_state(),
             "fx": fx,

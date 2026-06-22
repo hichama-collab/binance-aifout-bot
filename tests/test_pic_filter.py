@@ -17,8 +17,8 @@ class PicFilterEntryModeTests(unittest.TestCase):
     def test_regular_p_entry_stays_blocked_near_peak(self):
         self.assertTrue(should_block_near_peak("P", _near_peak()))
 
-    def test_confirmed_burst_can_break_recent_peak(self):
-        self.assertFalse(should_block_near_peak("BURST", _near_peak()))
+    def test_short_burst_stays_blocked_near_peak(self):
+        self.assertTrue(should_block_near_peak("BURST", _near_peak()))
 
 
 if __name__ == "__main__":
