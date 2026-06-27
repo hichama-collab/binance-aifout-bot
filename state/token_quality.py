@@ -21,7 +21,10 @@ def compute_quality_score(stats: dict, min_trades: int = 3) -> float:
     - n_trades >= min_trades ET winrate < blockWinrateThreshold
     """
     n = stats.get("n_trades", 0)
+    min_trades_block = stats.get("min_trades_for_block", 5)
     if n < min_trades:
+        return 0.5
+    if n < min_trades_block:
         return 0.5
 
     pnl_total = stats.get("pnl_net_total", 0.0)
@@ -29,7 +32,6 @@ def compute_quality_score(stats: dict, min_trades: int = 3) -> float:
     avg = stats.get("avg_pnl_net", 0.0)
     block_pnl = stats.get("block_pnl_threshold", -0.10)
     block_wr = stats.get("block_winrate_threshold", 0.20)
-    min_trades_block = stats.get("min_trades_for_block", 5)
 
     if n >= min_trades_block and pnl_total < block_pnl:
         return 0.0

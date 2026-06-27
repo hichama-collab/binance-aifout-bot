@@ -38,9 +38,17 @@ LOG_DIR = Path(os.environ.get("BOT_LOG_DIR", BASE_DIR / "data/logs"))
 RUNTIME_DIR = Path(os.environ.get("BOT_RUNTIME_DIR", BASE_DIR / "data/runtime"))
 SERVICE_ENV = Path(os.environ.get("BOT_SERVICE_ENV", BASE_DIR / ".service.env"))
 DASH_PORT = int(os.environ.get("DASH_PORT", 8099))
+DASH_HOST = os.environ.get("DASH_HOST", "127.0.0.1")
 DASH_USER = os.environ.get("DASH_USER", "admin")
 DASH_PASS = os.environ.get("DASH_PASS", "changeme")
 BOT_DASHBOARD_TOKEN = os.environ.get("BOT_DASHBOARD_TOKEN", "")
+DASH_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY") or os.environ.get("SECRET_KEY", "")
+
+if DASH_PASS in ("", "changeme"):
+    raise RuntimeError("DASH_PASS must be changed")
+
+if DASH_SECRET_KEY in ("", "dev-secret-please-change"):
+    raise RuntimeError("FLASK_SECRET_KEY must be changed")
 
 DASH_LOG = LOG_DIR / "dashboard.log"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -362,7 +370,7 @@ def summarize_tokens(pnl_rows: list, fx: Optional[float], limit: int = 5) -> dic
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-please-change")
+app.secret_key = DASH_SECRET_KEY
 
 
 def _bg_sync_loop():
@@ -386,6 +394,10 @@ SERVICES = [
     "token-profile-selector.service",
     "token-profile-selector.timer",
 ]
+ALLOWED_CONTROL_UNITS = {
+    "binance-aifout-bot.service",
+    "botdash.service",
+}
 
 # ---------------------------------------------------------------------------
 # Auth helpers
@@ -731,6 +743,8 @@ def api_control():
     unit = data.get("unit", "binance-aifout-bot.service")
     if action not in ("start", "stop", "restart"):
         abort(400, "Invalid action")
+    if unit not in ALLOWED_CONTROL_UNITS:
+        return jsonify({"ok": False, "error": "unit_not_allowed"}), 400
     ok, output = systemctl(action, unit)
     log.info(f"control: {action} {unit} → ok={ok}")
     return jsonify({"ok": ok, "output": output})
@@ -880,9 +894,8 @@ def api_contributions():
 
 
 @app.route("/api/stream")
+@require_basic_auth
 def api_stream():
-    # EventSource cannot send Basic Auth headers — allow if page auth already done
-    # (dashboard pages all require auth; SSE is only opened from authenticated pages)
     """Server-Sent Events endpoint."""
 
     @stream_with_context
@@ -1105,5 +1118,5 @@ def internal_error(e):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    log.info(f"BotDash starting on port {DASH_PORT}")
-    app.run(host="0.0.0.0", port=DASH_PORT, debug=False)
+    log.info(f"BotDash starting on {DASH_HOST}:{DASH_PORT}")
+    app.run(host=DASH_HOST, port=DASH_PORT, debug=False)

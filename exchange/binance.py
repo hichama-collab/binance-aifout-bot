@@ -6,6 +6,14 @@ from urllib.parse import urlencode
 import requests
 from requests.exceptions import ReadTimeout, ConnectionError, HTTPError
 
+
+class BinanceApiError(RuntimeError):
+    def __init__(self, code, msg):
+        self.code = code
+        self.msg = msg
+        super().__init__(f"BinanceApiError code={code} msg={msg}")
+
+
 class Binance:
     def __init__(self, apiKey: str, apiSecret: str, baseUrl: str, httpTimeout: int, httpRetries: int, httpBackoff: float):
         self.baseUrl = baseUrl
@@ -44,6 +52,25 @@ class Binance:
                 body = ""
         return f"{method} {path} HTTP {code} body={body}"
 
+    def _raise_api_error(self, e: HTTPError, method: str, path: str):
+        response = getattr(e, "response", None)
+        if response is None:
+            raise RuntimeError(self._http_error_message(e, method, path)) from e
+        try:
+            data = response.json()
+        except Exception:
+            data = {}
+        if isinstance(data, dict) and "code" in data:
+            raise BinanceApiError(data.get("code"), data.get("msg", "")) from e
+        raise RuntimeError(self._http_error_message(e, method, path)) from e
+
+    @staticmethod
+    def _retryable_api_code(code) -> bool:
+        try:
+            return int(code) in {-1003, -1021}
+        except Exception:
+            return False
+
     def get(self, path: str, params=None, signed: bool=False):
         if params is None:
             params = {}
@@ -64,7 +91,12 @@ class Binance:
 
             except HTTPError as e:
                 code = e.response.status_code if e.response is not None else 0
-                if code == 401:
+                api_code = None
+                try:
+                    api_code = e.response.json().get("code") if e.response is not None else None
+                except Exception:
+                    api_code = None
+                if code == 401 or api_code == -1021:
                     try:
                         self.syncTime()
                     except Exception:
@@ -72,12 +104,12 @@ class Binance:
                     if attempt < self.httpRetries:
                         self.backoff(attempt)
                         continue
-                    raise
+                    self._raise_api_error(e, "GET", path)
 
-                if code in (429, 500, 502, 503, 504) and attempt < self.httpRetries:
+                if (code in (429, 500, 502, 503, 504) or self._retryable_api_code(api_code)) and attempt < self.httpRetries:
                     self.backoff(attempt)
                     continue
-                raise RuntimeError(self._http_error_message(e, "GET", path)) from e
+                self._raise_api_error(e, "GET", path)
 
             except (ReadTimeout, ConnectionError):
                 if attempt == self.httpRetries:
@@ -96,7 +128,12 @@ class Binance:
 
             except HTTPError as e:
                 code = e.response.status_code if e.response is not None else 0
-                if code == 401:
+                api_code = None
+                try:
+                    api_code = e.response.json().get("code") if e.response is not None else None
+                except Exception:
+                    api_code = None
+                if code == 401 or api_code == -1021:
                     try:
                         self.syncTime()
                     except Exception:
@@ -104,12 +141,12 @@ class Binance:
                     if attempt < self.httpRetries:
                         self.backoff(attempt)
                         continue
-                    raise
+                    self._raise_api_error(e, "POST", path)
 
-                if code in (429, 500, 502, 503, 504) and attempt < self.httpRetries:
+                if (code in (429, 500, 502, 503, 504) or self._retryable_api_code(api_code)) and attempt < self.httpRetries:
                     self.backoff(attempt)
                     continue
-                raise RuntimeError(self._http_error_message(e, "POST", path)) from e
+                self._raise_api_error(e, "POST", path)
 
             except (ReadTimeout, ConnectionError):
                 if attempt == self.httpRetries:
@@ -128,7 +165,12 @@ class Binance:
 
             except HTTPError as e:
                 code = e.response.status_code if e.response is not None else 0
-                if code == 401:
+                api_code = None
+                try:
+                    api_code = e.response.json().get("code") if e.response is not None else None
+                except Exception:
+                    api_code = None
+                if code == 401 or api_code == -1021:
                     try:
                         self.syncTime()
                     except Exception:
@@ -136,12 +178,12 @@ class Binance:
                     if attempt < self.httpRetries:
                         self.backoff(attempt)
                         continue
-                    raise
+                    self._raise_api_error(e, "DELETE", path)
 
-                if code in (429, 500, 502, 503, 504) and attempt < self.httpRetries:
+                if (code in (429, 500, 502, 503, 504) or self._retryable_api_code(api_code)) and attempt < self.httpRetries:
                     self.backoff(attempt)
                     continue
-                raise RuntimeError(self._http_error_message(e, "DELETE", path)) from e
+                self._raise_api_error(e, "DELETE", path)
 
             except (ReadTimeout, ConnectionError):
                 if attempt == self.httpRetries:

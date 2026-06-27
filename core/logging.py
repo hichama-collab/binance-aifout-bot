@@ -13,6 +13,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+TRADE_CSV_FIELDNAMES = [
+    "ts_utc", "symbol", "event", "side", "qty", "price", "reason", "pnl", "pnl_net",
+    "profile", "dry_run", "spread_pct", "mom_pct", "mom_range_pct", "up_ratio",
+    "rsi", "ema1_ok", "ema5_ok", "vol_ok", "bid", "ask", "mid",
+    "entry_price", "p1", "p2", "p3", "p4", "entry_vs_mid_pct", "mid_vs_entry_pct",
+    "notional", "min_notional", "step_size", "tick_size", "ws_age_ms",
+    "roundtrip_cost_pct", "signal_edge_pct", "required_edge_pct", "expected_net_edge_pct",
+    "entry_cross_spread", "entry_mode", "exit_reason", "exit_reason_raw",
+    "order_id", "client_order_id", "exchange_status", "fill_latency_ms", "cancel_status",
+    "fee_source", "fee_buy", "fee_sell", "commission_asset",
+    "executed_qty", "quote_qty", "pnl_gross", "pnl_net_pct",
+    "wallet_sync_status", "error_code", "error_msg",
+]
+
+
 def _resolve_log_base_dir(cfg) -> Path:
     """Resolve base log directory with mode and bot type subdirectories."""
     base = Path(getattr(cfg, "logDir", "data/logs"))
@@ -90,16 +105,10 @@ def tradeCsvLogger(cfg, symbol: str, ctx: LogDayContext):
     path = base / f"{symbol}_{day}_trades.csv"
 
     def _log(row: dict):
-        fieldnames = [
-            "ts_utc", "symbol", "event", "side", "qty", "price", "reason", "pnl", "pnl_net",
-            "profile", "dry_run", "spread_pct", "mom_pct", "mom_range_pct", "up_ratio",
-            "rsi", "ema1_ok", "ema5_ok", "vol_ok", "bid", "ask", "mid",
-            "entry_price", "p1", "p2", "p3", "p4", "entry_vs_mid_pct", "mid_vs_entry_pct",
-        ]
         try:
             exists = path.exists()
             with path.open("a", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer = csv.DictWriter(f, fieldnames=TRADE_CSV_FIELDNAMES, extrasaction="ignore")
                 if not exists:
                     writer.writeheader()
                 writer.writerow(row)
@@ -132,17 +141,10 @@ def ensureCsvHeader(cfg, symbol: str, ctx: LogDayContext):
     day = ctx.day if ctx else _today()
     path = base / f"{symbol}_{day}_trades.csv"
 
-    fieldnames = [
-        "ts_utc", "symbol", "event", "side", "qty", "price", "reason", "pnl", "pnl_net",
-        "profile", "dry_run", "spread_pct", "mom_pct", "mom_range_pct", "up_ratio",
-        "rsi", "ema1_ok", "ema5_ok", "vol_ok", "bid", "ask", "mid",
-        "entry_price", "p1", "p2", "p3", "p4", "entry_vs_mid_pct", "mid_vs_entry_pct",
-    ]
-
     try:
         if not path.exists():
             with path.open("w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer = csv.DictWriter(f, fieldnames=TRADE_CSV_FIELDNAMES)
                 writer.writeheader()
     except Exception:
         pass

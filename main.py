@@ -210,6 +210,8 @@ def burst_entry_signal(ticks, spread: float, cfg):
         "pressure_ratio": 0.0,
         "max_single_drop_pct": 0.0,
         "required_return_pct": 0.0,
+        "roundtrip_cost_pct": 0.0,
+        "required_edge_pct": 0.0,
         "start_px": 0.0,
         "end_px": 0.0,
     }
@@ -267,7 +269,13 @@ def burst_entry_signal(ticks, spread: float, cfg):
     min_return_vs_fee_buf = float(getattr(cfg, "burstMinReturnVsFeeBuf", 0.0) or 0.0)
     min_move_vs_spread = float(getattr(cfg, "burstMinMoveVsSpread", 0.0) or 0.0)
     fee_buf_floor = float(getattr(cfg, "feeBufPct", 0.0) or 0.0) * min_return_vs_fee_buf
-    required_return = max(min_return, float(spread) * min_move_vs_spread, fee_buf_floor)
+    roundtrip_cost = compute_roundtrip_cost_pct(
+        spread,
+        float(getattr(cfg, "defaultFeeRate", 0.001) or 0.001),
+        float(getattr(cfg, "minProfitBufferPct", 0.0) or 0.0),
+    )
+    required_edge = roundtrip_cost * float(getattr(cfg, "burstMinNetEdgeMult", 1.25) or 1.25)
+    required_return = max(min_return, float(spread) * min_move_vs_spread, fee_buf_floor, required_edge)
 
     stats["return_pct"] = net_ret
     stats["velocity_pct_per_sec"] = velocity
@@ -275,6 +283,8 @@ def burst_entry_signal(ticks, spread: float, cfg):
     stats["pressure_ratio"] = pressure_ratio
     stats["max_single_drop_pct"] = max_single_drop
     stats["required_return_pct"] = required_return
+    stats["roundtrip_cost_pct"] = roundtrip_cost
+    stats["required_edge_pct"] = required_edge
 
     ok = (
         net_ret >= required_return
@@ -432,7 +442,7 @@ def ticks_fresh(ticks, max_age_sec: float) -> bool:
     return age <= float(max_age_sec)
 
 
-from core.config import loadConfig, pickProfile, applyRiskConfig, resolveServiceEnvPath
+from core.config import loadConfig, pickProfile, applyRiskConfig, resolveServiceEnvPath, validateRuntimeSafety
 from core.logging import LogDayContext, tradeLogger, tradeCsvLogger, errorLogger, ensureCsvHeader, local_timestamp
 from core.trade_memory import load_token_scores, sync_trade_memory
 from services.ipguard import vpnCheckOrDie
@@ -440,7 +450,7 @@ from services.ipguard import vpnCheckOrDie
 from exchange.binance import Binance
 from exchange.stream import Stream
 
-from execution.orders import placeLimit, waitFillOrCancel
+from execution.orders import OrderStateUnknown, order_fee_summary, placeLimit, waitFillOrCancel
 from state.wallet_sync import loadWalletFlatGuard, walletSyncEvery
 from state.position import Position
 
@@ -500,6 +510,74 @@ def compute_buy_price(best_bid: float, best_ask: float, cross_spread: bool, tick
     if cross_spread:
         return round_tick_up(best_ask, tick)
     return round_tick_down(best_bid, tick)
+
+
+LOSS_ALLOWED_REASONS = (
+    "STOP",
+    "TRAIL",
+    "TIME_HARD",
+    "PROTECT",
+    "BURST_REVERSAL",
+    "BURST_FAIL",
+    "ENTRY_GUARD_PROTECT",
+    "ENTRY_GUARD_LOSS_CUT",
+    "PSELL FAIL",
+    "PSELL FAST",
+)
+
+
+def loss_exit_allowed(exit_reason: str) -> bool:
+    reason = str(exit_reason or "")
+    return any(reason.startswith(prefix) for prefix in LOSS_ALLOWED_REASONS)
+
+
+def buy_below_sellable_notional(exec_qty: float, avg_buy: float, min_notional: float) -> bool:
+    try:
+        return float(exec_qty) > 0 and (float(exec_qty) * float(avg_buy)) < float(min_notional)
+    except Exception:
+        return True
+
+
+def burst_runtime_allowed(cfg) -> bool:
+    """Keep BURST diagnostic-only for strict live until CSV proves positive edge."""
+    if bool(getattr(cfg, "dryRun", False)):
+        return True
+    return str(getattr(cfg, "profileName", "") or "").strip().lower() != "strict"
+
+
+def compute_roundtrip_cost_pct(spread: float, fee_rate: float, min_profit_buffer: float) -> float:
+    return max(0.0, (2.0 * float(fee_rate)) + float(spread) + float(min_profit_buffer))
+
+
+def compute_entry_net_edge(entry_mode: str, signal_edge_pct: float, spread: float, cfg, fee_rate: float | None = None) -> dict:
+    fee = float(fee_rate if fee_rate is not None else getattr(cfg, "defaultFeeRate", 0.001) or 0.001)
+    buffer = float(getattr(cfg, "minProfitBufferPct", 0.0) or 0.0)
+    multiplier_attr = "burstMinNetEdgeMult" if str(entry_mode or "").upper() == "BURST" else "entryMinNetEdgeMult"
+    multiplier = float(getattr(cfg, multiplier_attr, 1.20) or 1.20)
+    roundtrip_cost = compute_roundtrip_cost_pct(spread, fee, buffer)
+    signal_edge = float(signal_edge_pct or 0.0)
+    required_edge = roundtrip_cost * multiplier
+    return {
+        "roundtrip_cost_pct": roundtrip_cost,
+        "signal_edge_pct": signal_edge,
+        "required_edge_pct": required_edge,
+        "expected_net_edge_pct": signal_edge - roundtrip_cost,
+        "multiplier": multiplier,
+    }
+
+
+def entry_edge_csv_fields(edge: dict | None) -> dict:
+    if not edge:
+        return {}
+    out = {}
+    for key in ("roundtrip_cost_pct", "signal_edge_pct", "required_edge_pct", "expected_net_edge_pct"):
+        value = edge.get(key)
+        out[key] = "" if value is None or value == "" else float(value) * 100.0
+    if "entry_cross_spread" in edge:
+        out["entry_cross_spread"] = int(bool(edge.get("entry_cross_spread")))
+    if "entry_mode" in edge:
+        out["entry_mode"] = edge.get("entry_mode") or ""
+    return out
 
 
 def load_blocked_symbols(path: Path) -> set[str]:
@@ -750,6 +828,7 @@ def main():
     cfg = loadConfig()
     poll = float(getattr(cfg, 'idleSleep', getattr(cfg, 'poll', 0.2)))  # legacy alias
     cfg = applyRiskConfig(cfg)
+    cfg = validateRuntimeSafety(cfg)
     profile = pickProfile()
     vpnCheckOrDie(cfg.ipFile, cfg.ipCheckTimeout)
 
@@ -1020,6 +1099,7 @@ def main():
         p4,
         detail="",
         signal=None,
+        entry_edge=None,
     ):
         nonlocal lastHoldCsv
         signal = signal or {}
@@ -1027,7 +1107,7 @@ def main():
             return
         lastHoldCsv = now
         try:
-            logCsv({
+            row = {
                 'ts_utc': int(now),
                 'symbol': symbol,
                 'event': 'DECIDE_HOLD',
@@ -1056,7 +1136,9 @@ def main():
                 'p4': '' if p4 is None else float(p4),
                 'entry_vs_mid_pct': '',
                 'mid_vs_entry_pct': '',
-            })
+            }
+            row.update(entry_edge_csv_fields(entry_edge))
+            logCsv(row)
         except Exception:
             pass
         try:
@@ -1079,6 +1161,24 @@ def main():
         if not isinstance(syncInfo, dict):
             return
         sync_reason = str(syncInfo.get("reason", ""))
+        sync_status = str(syncInfo.get("status") or syncState.get("status") or "")
+
+        if sync_status == "ENTRY_UNKNOWN":
+            cooldownUntil = max(
+                cooldownUntil,
+                float(syncState.get("next", 0.0) or 0.0),
+            )
+            pos = None
+            _dyn = None
+            try:
+                logTrade(
+                    f"ENTRY_UNKNOWN_BLOCK symbol={syncInfo.get('symbol', symbol)} "
+                    f"qty={syncInfo.get('wallet_qty', syncInfo.get('qty', ''))} "
+                    f"reason={sync_reason or syncState.get('reason', '')}"
+                )
+            except Exception:
+                pass
+            return
 
         if sync_reason == "external_symbol_found" and pos is None:
             external_symbol = str(syncInfo.get("external_symbol") or "").upper()
@@ -1114,7 +1214,7 @@ def main():
         # first-class bot position so dashboard/exits/restarts stay aligned.
         if pos is None or not bool(syncInfo.get("changed")):
             return
-        if sync_reason not in ("wallet_found", "wallet_found_market_entry", "qty_mismatch"):
+        if sync_reason not in ("wallet_found", "qty_mismatch"):
             return
         try:
             if float(getattr(pos, "entry", 0.0) or 0.0) > 0 and float(getattr(pos, "stop", 0.0) or 0.0) <= 0:
@@ -1168,8 +1268,77 @@ def main():
                 f"cost_basis={syncInfo.get('cost_basis','')} notional={syncInfo.get('wallet_notional','')} "
                 f"qty_delta={syncInfo.get('qty_delta','')}"
             )
+            logCsv({
+                "ts_utc": local_timestamp(),
+                "symbol": symbol,
+                "event": "POSITION_SYNC",
+                "side": "",
+                "qty": float(getattr(pos, "qty", 0.0) or 0.0),
+                "price": float(getattr(pos, "entry", 0.0) or 0.0),
+                "reason": sync_reason,
+                "wallet_sync_status": sync_reason,
+                "notional": syncInfo.get("wallet_notional", ""),
+            })
         except Exception:
             pass
+
+    def mark_order_state_unknown(side: str, order: dict, exc: Exception):
+        nonlocal cooldownUntil
+        order_id = order.get("orderId", "") if isinstance(order, dict) else ""
+        client_order_id = order.get("clientOrderId", "") if isinstance(order, dict) else ""
+        syncState["order_status"] = "ORDER_STATE_UNKNOWN"
+        syncState["order_side"] = side
+        syncState["order_id"] = order_id
+        syncState["client_order_id"] = client_order_id
+        syncState["next"] = 0.0
+        cooldownUntil = time.time() + max(float(getattr(cfg, "entryCooldownSec", 30.0)), 60.0)
+        msg = f"ORDER_STATE_UNKNOWN symbol={symbol} side={side} order_id={order_id} client_order_id={client_order_id} err={exc}"
+        print(msg)
+        try:
+            logTrade(msg)
+            logCsv({
+                "ts_utc": local_timestamp(),
+                "symbol": symbol,
+                "event": "ORDER_STATE_UNKNOWN",
+                "side": side,
+                "order_id": order_id,
+                "client_order_id": client_order_id,
+                "exchange_status": "UNKNOWN",
+                "error_msg": str(exc),
+            })
+        except Exception:
+            pass
+
+    def order_unknown_blocks_entry() -> bool:
+        if syncState.get("order_status") != "ORDER_STATE_UNKNOWN":
+            return False
+        try:
+            open_orders = bx.get("/api/v3/openOrders", {"symbol": symbol}, signed=True)
+        except Exception as exc:
+            try:
+                logTrade(f"ORDER_UNKNOWN_OPEN_ORDERS_CHECK_FAIL symbol={symbol} err={type(exc).__name__}:{exc}")
+            except Exception:
+                pass
+            return True
+        if isinstance(open_orders, list) and len(open_orders) == 0:
+            try:
+                logTrade(
+                    f"ORDER_UNKNOWN_CLEARED symbol={symbol} side={syncState.get('order_side','')} "
+                    f"order_id={syncState.get('order_id','')} open_orders=0"
+                )
+            except Exception:
+                pass
+            for key in ("order_status", "order_side", "order_id", "client_order_id"):
+                syncState.pop(key, None)
+            return False
+        try:
+            logTrade(
+                f"ORDER_UNKNOWN_BLOCK_ENTRY symbol={symbol} "
+                f"open_orders={len(open_orders) if isinstance(open_orders, list) else 'unknown'}"
+            )
+        except Exception:
+            pass
+        return True
 
     while True:
         free_usdc = 0.0
@@ -1201,7 +1370,8 @@ def main():
                 step=step,
                 minNotional=minNotional,
                 syncState=syncState,
-                intervalSec=float(getattr(cfg, 'walletSyncSec', 5))
+                intervalSec=float(getattr(cfg, 'walletSyncSec', 5)),
+                logTrade=logTrade,
             )
             handle_wallet_sync_info(syncInfo, bid)
             
@@ -1292,6 +1462,9 @@ def main():
                 )
 
             burstOk, burstStats = burst_entry_signal(bidTicks, spread, cfg)
+            if not burst_runtime_allowed(cfg):
+                burstOk = False
+                burstStats["disabled_reason"] = "live_strict"
             market_ctx = signalCache.get("market")
             rsi_now = None
             ema1_ok = None
@@ -1333,6 +1506,12 @@ def main():
                 4,
                 float(getattr(cfg, "pSampleIntervalSec", 0.0) or 0.0),
             )
+            B1, B2, B3, B4 = _get_p_points(
+                bidTicks,
+                4,
+                float(getattr(cfg, "pSampleIntervalSec", 0.0) or 0.0),
+            )
+            S1, S2, S3, S4 = (B1, B2, B3, B4) if all(v is not None for v in (B1, B2, B3, B4)) else (P1, P2, P3, P4)
 
             # NEW: Range analysis for BTC Range V1
             range_snapshot = None
@@ -1451,6 +1630,26 @@ def main():
                     spread, momPct, momRangePct, upRatio,
                     bid, ask, mid, P1, P2, P3, P4,
                     detail=_cb_reason,
+                )
+                time.sleep(cfg.idleSleep)
+                continue
+
+            if pos is None and order_unknown_blocks_entry():
+                maybe_hold(
+                    now,
+                    "HOLD_ORDER_STATE_UNKNOWN",
+                    spread,
+                    momPct,
+                    momRangePct,
+                    upRatio,
+                    bid,
+                    ask,
+                    mid,
+                    P1,
+                    P2,
+                    P3,
+                    P4,
+                    detail=f"order_id={syncState.get('order_id','')} side={syncState.get('order_side','')}",
                 )
                 time.sleep(cfg.idleSleep)
                 continue
@@ -2280,6 +2479,48 @@ def main():
                 if (not cross_spread) and auto_cross_spread_pct > 0 and float(spread) <= auto_cross_spread_pct:
                     cross_spread = True
 
+                if burstOverride:
+                    entry_signal_edge_pct = float(burstStats.get("return_pct", 0.0) or 0.0)
+                elif rangeOverride:
+                    entry_signal_edge_pct = max(float(range_rebound or 0.0), float(tape_progress_pct or 0.0))
+                else:
+                    entry_signal_edge_pct = float(tape_progress_pct or 0.0)
+                entry_edge = compute_entry_net_edge(
+                    entryMode,
+                    entry_signal_edge_pct,
+                    float(spread),
+                    cfg,
+                    fee_rate=float(_fee_model.fee_rate),
+                )
+                entry_edge["entry_mode"] = entryMode
+                entry_edge["entry_cross_spread"] = int(bool(cross_spread))
+                if entry_edge["signal_edge_pct"] < entry_edge["required_edge_pct"]:
+                    maybe_hold(
+                        now,
+                        "HOLD_NET_EDGE",
+                        spread,
+                        momPct,
+                        momRangePct,
+                        upRatio,
+                        bid,
+                        ask,
+                        mid,
+                        P1,
+                        P2,
+                        P3,
+                        P4,
+                        detail=(
+                            f"mode={entryMode} signal_edge={entry_edge['signal_edge_pct']*100:.4f}% "
+                            f"required={entry_edge['required_edge_pct']*100:.4f}% "
+                            f"roundtrip_cost={entry_edge['roundtrip_cost_pct']*100:.4f}% "
+                            f"expected_net={entry_edge['expected_net_edge_pct']*100:.4f}% "
+                            f"cross={int(bool(cross_spread))}"
+                        ),
+                        entry_edge=entry_edge,
+                    )
+                    time.sleep(cfg.idleSleep)
+                    continue
+
                 buyPx = compute_buy_price(
                     float(bid),
                     float(ask),
@@ -2347,16 +2588,43 @@ def main():
                         continue
                     raise
 
-                filled, info = waitFillOrCancel(
-                    bx, symbol, order["orderId"],
-                    float(getattr(cfg, 'entryFillTtlSec', cfg.orderTtl)), cfg.orderPoll,
-                    dryRun=getattr(cfg, "dryRun", False),
-                    side="BUY",
-                    qty=qty,
-                    price=buyPx,
-                    maxRestRetries=int(getattr(cfg, "orderRestMaxRetries", 3)),
-                    restBackoffSec=float(getattr(cfg, "orderRestBackoffSec", 0.2)),
-                )
+                _order_t0 = time.time()
+                try:
+                    filled, info = waitFillOrCancel(
+                        bx, symbol, order["orderId"],
+                        float(getattr(cfg, 'entryFillTtlSec', cfg.orderTtl)), cfg.orderPoll,
+                        dryRun=getattr(cfg, "dryRun", False),
+                        side="BUY",
+                        qty=qty,
+                        price=buyPx,
+                        maxRestRetries=int(getattr(cfg, "orderRestMaxRetries", 3)),
+                        restBackoffSec=float(getattr(cfg, "orderRestBackoffSec", 0.2)),
+                    )
+                except OrderStateUnknown as e:
+                    mark_order_state_unknown("BUY", order, e)
+                    time.sleep(cfg.idleSleep)
+                    continue
+                _fill_latency_ms = int((time.time() - _order_t0) * 1000)
+                _buy_fee = order_fee_summary(info, fallback_qty=qty, fallback_quote=qty * buyPx)
+                logCsv({
+                    "ts_utc": local_timestamp(),
+                    "symbol": symbol,
+                    "event": "ORDER_FINAL",
+                    "side": "BUY",
+                    "qty": _buy_fee["executed_qty"],
+                    "price": buyPx,
+                    "notional": _buy_fee["quote_qty"],
+                    "order_id": info.get("orderId", order.get("orderId", "")),
+                    "client_order_id": info.get("clientOrderId", order.get("clientOrderId", "")),
+                    "exchange_status": info.get("status", ""),
+                    "fill_latency_ms": _fill_latency_ms,
+                    "fee_source": _buy_fee["fee_source"],
+                    "fee_buy": _buy_fee["fee"],
+                    "commission_asset": _buy_fee["commission_asset"],
+                    "executed_qty": _buy_fee["executed_qty"],
+                    "quote_qty": _buy_fee["quote_qty"],
+                    **entry_edge_csv_fields(entry_edge),
+                })
                 if not filled:
                     print('BUY_NOFILL')
                     logTrade('ENTRY_TIMEOUT_CANCEL')
@@ -2378,6 +2646,7 @@ def main():
                     and quoteQty < min_filled_notional
                     and not bool(getattr(cfg, "dryRun", False))
                 ):
+                    topup_order_unknown = False
                     topup_attempts = max(1, int(getattr(cfg, "topupMaxAttempts", 2) or 1))
                     for topupAttempt in range(1, topup_attempts + 1):
                         if quoteQty >= min_filled_notional:
@@ -2410,16 +2679,44 @@ def main():
                                 stepQ=step, tickQ=tick,
                                 dryRun=getattr(cfg, "dryRun", False),
                             )
-                            topupFilled, topupInfo = waitFillOrCancel(
-                                bx, symbol, topupOrder["orderId"],
-                                float(getattr(cfg, "entryFillTtlSec", cfg.orderTtl)), cfg.orderPoll,
-                                dryRun=getattr(cfg, "dryRun", False),
-                                side="BUY",
-                                qty=topupQty,
-                                price=topupPx,
-                                maxRestRetries=int(getattr(cfg, "orderRestMaxRetries", 3)),
-                                restBackoffSec=float(getattr(cfg, "orderRestBackoffSec", 0.2)),
-                            )
+                            _topup_t0 = time.time()
+                            try:
+                                topupFilled, topupInfo = waitFillOrCancel(
+                                    bx, symbol, topupOrder["orderId"],
+                                    float(getattr(cfg, "entryFillTtlSec", cfg.orderTtl)), cfg.orderPoll,
+                                    dryRun=getattr(cfg, "dryRun", False),
+                                    side="BUY",
+                                    qty=topupQty,
+                                    price=topupPx,
+                                    maxRestRetries=int(getattr(cfg, "orderRestMaxRetries", 3)),
+                                    restBackoffSec=float(getattr(cfg, "orderRestBackoffSec", 0.2)),
+                                )
+                            except OrderStateUnknown as e:
+                                mark_order_state_unknown("BUY", topupOrder, e)
+                                topup_order_unknown = True
+                                topupFilled = False
+                                topupInfo = {}
+                                break
+                            _topup_fee = order_fee_summary(topupInfo, fallback_qty=topupQty, fallback_quote=topupQty * topupPx)
+                            logCsv({
+                                "ts_utc": local_timestamp(),
+                                "symbol": symbol,
+                                "event": "ORDER_FINAL",
+                                "side": "BUY",
+                                "qty": _topup_fee["executed_qty"],
+                                "price": topupPx,
+                                "notional": _topup_fee["quote_qty"],
+                                "order_id": topupInfo.get("orderId", topupOrder.get("orderId", "")),
+                                "client_order_id": topupInfo.get("clientOrderId", topupOrder.get("clientOrderId", "")),
+                                "exchange_status": topupInfo.get("status", ""),
+                                "fill_latency_ms": int((time.time() - _topup_t0) * 1000),
+                                "fee_source": _topup_fee["fee_source"],
+                                "fee_buy": _topup_fee["fee"],
+                                "commission_asset": _topup_fee["commission_asset"],
+                                "executed_qty": _topup_fee["executed_qty"],
+                                "quote_qty": _topup_fee["quote_qty"],
+                                **entry_edge_csv_fields(entry_edge),
+                            })
                             if topupFilled:
                                 topupExecQty = float(topupInfo.get("executedQty", topupQty))
                                 topupQuoteQty = float(topupInfo.get("cummulativeQuoteQty", topupExecQty * topupPx))
@@ -2444,11 +2741,43 @@ def main():
                                 f"target={min_filled_notional:.8f} err={type(e).__name__}:{e}"
                             )
                             break
+                    if topup_order_unknown:
+                        time.sleep(cfg.idleSleep)
+                        continue
                     if quoteQty < float(minNotional):
                         logTrade(
                             f"BUY_BELOW_SELLABLE_NOTIONAL total_notional={quoteQty:.8f} "
                             f"minNotional={float(minNotional):.8f} target={min_filled_notional:.8f}"
                         )
+
+                if buy_below_sellable_notional(execQty, entryPx, float(minNotional)):
+                    logTrade(
+                        f"BUY_BELOW_SELLABLE_NOTIONAL symbol={symbol} side=BUY qty={execQty:.8f} "
+                        f"price={entryPx:.8f} notional={quoteQty:.8f} "
+                        f"min_notional={float(minNotional):.8f} reason=partial_buy_below_min_notional_after_topup"
+                    )
+                    logCsv({
+                        "ts_utc": local_timestamp(),
+                        "symbol": symbol,
+                        "event": "BUY_BELOW_SELLABLE_NOTIONAL",
+                        "side": "BUY",
+                        "qty": execQty,
+                        "price": entryPx,
+                        "notional": quoteQty,
+                        "min_notional": float(minNotional),
+                        "reason": "partial_buy_below_min_notional_after_topup",
+                        "order_id": info.get("orderId", order.get("orderId", "")),
+                        "client_order_id": info.get("clientOrderId", order.get("clientOrderId", "")),
+                        "exchange_status": info.get("status", ""),
+                        "executed_qty": execQty,
+                        "quote_qty": quoteQty,
+                        **entry_edge_csv_fields(entry_edge),
+                    })
+                    syncState["next"] = 0.0
+                    cooldownUntil = time.time() + float(getattr(cfg, "dustCooldownSec", 60))
+                    pos = None
+                    time.sleep(float(getattr(cfg, "idleSleep", 2)))
+                    continue
 
                 if pos is None:
                     pos = Position(qty=execQty, entry=entryPx, high=entryPx, stop=0.0, ts_entry=time.time())
@@ -2544,6 +2873,20 @@ def main():
                     "p4": "" if P4 is None else float(P4),
                     "entry_vs_mid_pct": entry_vs_mid_pct,
                     "mid_vs_entry_pct": "",
+                    "notional": quoteQty,
+                    "min_notional": float(minNotional),
+                    "step_size": float(step),
+                    "tick_size": float(tick),
+                    "entry_mode": entryMode,
+                    "order_id": info.get("orderId", order.get("orderId", "")),
+                    "client_order_id": info.get("clientOrderId", order.get("clientOrderId", "")),
+                    "exchange_status": info.get("status", ""),
+                    "fee_source": _buy_fee["fee_source"],
+                    "fee_buy": _buy_fee["fee"],
+                    "commission_asset": _buy_fee["commission_asset"],
+                    "executed_qty": execQty,
+                    "quote_qty": quoteQty,
+                    **entry_edge_csv_fields(entry_edge),
                 })
                 # Persister la position sur disque (survit aux restarts)
                 _pp = PersistedPosition(
@@ -2640,7 +2983,7 @@ def main():
                     has_new_tick
                     and bool(getattr(cfg, "psellStrictPTapeExitEnabled", False))
                 ):
-                    exitReason = strict_p_tape_exit_reason(P1, P2, P3, P4)
+                    exitReason = strict_p_tape_exit_reason(S1, S2, S3, S4)
                 if exitReason is None:
                     exitReason = pos.exit_reason(bid, cfg, profile)
 
@@ -2711,12 +3054,12 @@ def main():
                 if entryGuardExit:
                     exitReason = entryGuardExit
 
-            # Additional SELL rules (P algo, MID-based)
+            # Additional SELL rules (P algo): use BID points when available.
             # Exit weak losers earlier when the tape is rolling over or stalling too long.
             if exitReason is None and (pos is not None) and (pos.entry > 0):
                 sellSignal = False
                 sellSignalMode = ""
-                if has_new_tick and (P1 is not None) and (P2 is not None) and (P3 is not None):
+                if has_new_tick and (S1 is not None) and (S2 is not None) and (S3 is not None):
                     age_sec = max(0.0, time.time() - float(getattr(pos, "ts_entry", time.time())))
                     min_signal_exit_sec = max(
                         float(getattr(cfg, "psellMinAgeSec", 25.0) or 25.0),
@@ -2768,10 +3111,10 @@ def main():
                     stale_guard = float(pos.entry) * (1.0 - stale_loss_pct)
                     fail_guard = float(pos.entry) * (1.0 - fail_loss_pct)
                     confirm_ticks = max(3, int(getattr(cfg, "psellConfirmTicks", 4) or 4))
-                    descending_tape = (P1 < P2) and (P2 < P3)
-                    if confirm_ticks >= 4 and (P4 is not None):
-                        descending_tape = descending_tape and (P3 < P4)
-                    latest_ref = min(float(bid), float(P1))
+                    descending_tape = (S1 < S2) and (S2 < S3)
+                    if confirm_ticks >= 4 and (S4 is not None):
+                        descending_tape = descending_tape and (S3 < S4)
+                    latest_ref = min(float(bid), float(S1))
                     peak_progress_pct = max(
                         0.0,
                         (float(getattr(pos, "high", float(pos.entry))) - float(pos.entry)) / float(pos.entry),
@@ -2847,7 +3190,7 @@ def main():
                 if sellSignal:
                     exitReason = (
                         f"PSELL {sellSignalMode} "
-                        f"P1={P1} P2={P2} P3={P3} P4={P4} entry={pos.entry}"
+                        f"B1={S1} B2={S2} B3={S3} B4={S4} entry={pos.entry}"
                     )
             
             if exitReason is None:
@@ -2877,7 +3220,12 @@ def main():
                 _exp_pnl_net = _exp_sell_rev - _exp_buy_cost - _exp_fees
                 _hard_stop_pct = float(getattr(cfg, 'psellMinLossPct', 0.005) or 0.005)
                 _is_hard_stop = float(bid) < float(pos.entry) * (1.0 - _hard_stop_pct * 2)
-                if _exp_pnl_net < 0 and not _is_hard_stop and not _psell_negative_allowed:
+                if (
+                    _exp_pnl_net < 0
+                    and not _is_hard_stop
+                    and not _psell_negative_allowed
+                    and not loss_exit_allowed(exitReason)
+                ):
                     maybe_hold(
                         now,
                         "HOLD_NEGATIVE_EXIT",
@@ -2971,16 +3319,41 @@ def main():
                     continue
                 raise
 
-            filled, info = waitFillOrCancel(
-                bx, symbol, order["orderId"],
-                cfg.orderTtl, cfg.orderPoll,
-                dryRun=getattr(cfg, "dryRun", False),
-                side="SELL",
-                qty=sellQty,
-                price=sellPx,
-                maxRestRetries=int(getattr(cfg, "orderRestMaxRetries", 3)),
-                restBackoffSec=float(getattr(cfg, "orderRestBackoffSec", 0.2)),
-            )
+            _sell_order_t0 = time.time()
+            try:
+                filled, info = waitFillOrCancel(
+                    bx, symbol, order["orderId"],
+                    cfg.orderTtl, cfg.orderPoll,
+                    dryRun=getattr(cfg, "dryRun", False),
+                    side="SELL",
+                    qty=sellQty,
+                    price=sellPx,
+                    maxRestRetries=int(getattr(cfg, "orderRestMaxRetries", 3)),
+                    restBackoffSec=float(getattr(cfg, "orderRestBackoffSec", 0.2)),
+                )
+            except OrderStateUnknown as e:
+                mark_order_state_unknown("SELL", order, e)
+                time.sleep(cfg.idleSleep)
+                continue
+            _sell_fee = order_fee_summary(info, fallback_qty=sellQty, fallback_quote=sellQty * sellPx)
+            logCsv({
+                "ts_utc": local_timestamp(),
+                "symbol": symbol,
+                "event": "ORDER_FINAL",
+                "side": "SELL",
+                "qty": _sell_fee["executed_qty"],
+                "price": sellPx,
+                "notional": _sell_fee["quote_qty"],
+                "order_id": info.get("orderId", order.get("orderId", "")),
+                "client_order_id": info.get("clientOrderId", order.get("clientOrderId", "")),
+                "exchange_status": info.get("status", ""),
+                "fill_latency_ms": int((time.time() - _sell_order_t0) * 1000),
+                "fee_source": _sell_fee["fee_source"],
+                "fee_sell": _sell_fee["fee"],
+                "commission_asset": _sell_fee["commission_asset"],
+                "executed_qty": _sell_fee["executed_qty"],
+                "quote_qty": _sell_fee["quote_qty"],
+            })
             
             if not filled:
                 print("SELL_NOFILL", exitReason)
@@ -3053,6 +3426,23 @@ def main():
                 "p4": "" if P4 is None else float(P4),
                 "entry_vs_mid_pct": "",
                 "mid_vs_entry_pct": mid_vs_entry_pct,
+                "notional": quoteQty,
+                "min_notional": float(minNotional),
+                "step_size": float(step),
+                "tick_size": float(tick),
+                "exit_reason": exitReason,
+                "exit_reason_raw": exitReason,
+                "order_id": info.get("orderId", order.get("orderId", "")),
+                "client_order_id": info.get("clientOrderId", order.get("clientOrderId", "")),
+                "exchange_status": info.get("status", ""),
+                "fee_source": _sell_fee["fee_source"],
+                "fee_buy": _pnl_detail["fees_buy"],
+                "fee_sell": _sell_fee["fee"] if _sell_fee["fee_source"] == "exchange" else _pnl_detail["fees_sell"],
+                "commission_asset": _sell_fee["commission_asset"],
+                "executed_qty": filledQty,
+                "quote_qty": quoteQty,
+                "pnl_gross": pnl_gross,
+                "pnl_net_pct": _pnl_detail.get("net_pnl_pct", ""),
             })
 
             lastExitInfo = {

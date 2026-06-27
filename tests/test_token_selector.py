@@ -46,5 +46,40 @@ class CandidateWindowTests(unittest.TestCase):
             self.assertTrue(selector._candidate_window_is_eligible(0.30, 0.05))
 
 
+class RecentHighFilterTests(unittest.TestCase):
+    def test_distance_from_recent_high_pct(self):
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return [
+                    [0, "100", "101", "99", "100", "0"],
+                    [0, "100", "102", "99", "101", "0"],
+                    [0, "101", "103", "100", "102", "0"],
+                    [0, "102", "104", "101", "103", "0"],
+                    [0, "103", "105", "102", "104", "0"],
+                ]
+
+        with patch.object(selector._SESSION, "get", return_value=Response()):
+            self.assertAlmostEqual(
+                selector.distance_from_recent_high_pct("BTCUSDC", minutes=5),
+                (105.0 - 104.0) / 105.0,
+            )
+
+    def test_pick_best_rejects_candidate_too_close_to_high(self):
+        ranked = [{"symbol": "BTCUSDC", "pct": 0.30, "spread_pct": 0.02, "is_toxic": False}]
+        with (
+            patch.object(selector, "collect_candidates", return_value=ranked),
+            patch.object(selector, "rank_candidates", return_value=ranked),
+            patch.object(selector, "current_direction_pct", return_value=0.10),
+            patch.object(selector, "distance_from_recent_high_pct", return_value=0.0001),
+            patch.object(selector, "SELECTOR_MAX_DISTANCE_FROM_5M_HIGH_PCT", 0.0020),
+        ):
+            chosen, _ = selector.pick_best_candidate({})
+
+        self.assertIsNone(chosen)
+
+
 if __name__ == "__main__":
     unittest.main()

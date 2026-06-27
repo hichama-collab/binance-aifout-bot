@@ -77,6 +77,17 @@ PROFILES = {
 }
 
 
+ALLOWED_LIVE_PROFILES = {"strict", "aggressive"}
+ALLOWED_LIVE_STRATEGIES = {"momentum"}
+
+
+def _resolve_profile_yaml_key(data: dict, name: str) -> str:
+    aliases = data.get("profile_aliases") or {}
+    if isinstance(aliases, dict):
+        return str(aliases.get(name, name)).strip().lower() or name
+    return name
+
+
 @dataclass(frozen=True)
 class Config:
     apiKey: str
@@ -120,7 +131,7 @@ class Config:
 
     dryRun: bool = False
     strategyName: str = 'momentum'
-    profileName: str = 'major'
+    profileName: str = 'strict'
 
     # sizing / risk (tunable via config/risk.yaml)
     maxUsdcPerTrade: float = 50.0
@@ -129,6 +140,7 @@ class Config:
     riskPct: float = 0.008
     tpPct: float = 0.0
     tpMinPct: float = 0.0
+    tpNetMarginPct: float = 0.003
     armPct: float = 0.0
     trailPct: float = 0.004
     feeBufPct: float = 0.0025
@@ -199,6 +211,7 @@ class Config:
     entryMinTapeProgressPct: float = 0.0
     entryMinTapeProgressVsSpread: float = 0.0
     entryFeeEdgeMult: float = 1.0
+    entryMinNetEdgeMult: float = 1.20
 
     # 5m rollover exit guard
     psell5mAgeSec: float = 0.0
@@ -220,6 +233,7 @@ class Config:
     burstMinReturnPct: float = 0.00020
     burstMinReturnVsFeeBuf: float = 0.0
     burstMinMoveVsSpread: float = 4.0
+    burstMinNetEdgeMult: float = 1.25
     burstMinVelocityPctPerSec: float = 0.00005
     burstMinEfficiency: float = 0.55
     burstMinPressureRatio: float = 1.8
@@ -320,7 +334,7 @@ def loadConfig() -> Config:
     dry = os.getenv("DRY_RUN", "").strip().lower() in ("1", "true", "yes", "on")
     trades_csv = os.getenv("TRADES_CSV", "").strip()
     strat = os.getenv('STRATEGY', 'momentum').strip().lower() or 'momentum'
-    prof = (os.getenv('PROFILE') or 'major').strip().lower() or 'major'
+    prof = (os.getenv('PROFILE') or 'strict').strip().lower() or 'strict'
 
     cfg = Config(apiKey=apiKey, apiSecret=apiSecret, dryRun=dry, strategyName=strat, profileName=prof)
     if trades_csv:
@@ -342,8 +356,9 @@ def applyRiskConfig(cfg: Config) -> Config:
     data = _loadRiskYaml(cfg.riskYaml)
     prof = (getattr(cfg, "profileName", None) or "major").lower()
     strat = (getattr(cfg, "strategyName", None) or "momentum").lower()
+    prof_yaml = _resolve_profile_yaml_key(data, prof)
 
-    p = (data.get("profiles") or {}).get(prof) or {}
+    p = (data.get("profiles") or {}).get(prof_yaml) or {}
     s = (data.get("strategies") or {}).get(strat) or {}
 
     fields = getattr(cfg, "__dataclass_fields__", {}) or {}
@@ -354,6 +369,7 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("riskPct", "riskPct"),
         ("tpPct", "tpPct"),
         ("tp_min_pct", "tpMinPct"),
+        ("tp_net_margin_pct", "tpNetMarginPct"),
         ("armPct", "armPct"),
         ("trailPct", "trailPct"),
         ("feeBufPct", "feeBufPct"),
@@ -423,6 +439,9 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("entry_min_tape_progress_pct", "entryMinTapeProgressPct"),
         ("entry_min_tape_progress_vs_spread", "entryMinTapeProgressVsSpread"),
         ("entry_fee_edge_mult", "entryFeeEdgeMult"),
+        ("entry_min_net_edge_mult", "entryMinNetEdgeMult"),
+        ("min_profit_buffer_pct", "minProfitBufferPct"),
+        ("minProfitBufferPct", "minProfitBufferPct"),
         ("psell_5m_age_sec", "psell5mAgeSec"),
         ("psell_5m_loss_pct", "psell5mLossPct"),
         ("psell_5m_drop_pct", "psell5mDropPct"),
@@ -438,6 +457,7 @@ def applyRiskConfig(cfg: Config) -> Config:
         ("burst_min_return_pct", "burstMinReturnPct"),
         ("burst_min_return_vs_fee_buf", "burstMinReturnVsFeeBuf"),
         ("burst_min_move_vs_spread", "burstMinMoveVsSpread"),
+        ("burst_min_net_edge_mult", "burstMinNetEdgeMult"),
         ("burst_min_velocity_pct_per_sec", "burstMinVelocityPctPerSec"),
         ("burst_min_efficiency", "burstMinEfficiency"),
         ("burst_min_pressure_ratio", "burstMinPressureRatio"),
@@ -565,17 +585,32 @@ def applyRiskConfig(cfg: Config) -> Config:
     return cfg
 
 
+def validateRuntimeSafety(cfg: Config) -> Config:
+    """Fail closed for live runtime modes that are not actually wired."""
+    if bool(getattr(cfg, "dryRun", False)):
+        return cfg
+
+    profile = str(getattr(cfg, "profileName", "") or "").strip().lower()
+    if profile not in ALLOWED_LIVE_PROFILES:
+        raise RuntimeError(f"PROFILE not allowed in live: {profile}")
+
+    strategy = str(getattr(cfg, "strategyName", "") or "momentum").strip().lower()
+    if strategy not in ALLOWED_LIVE_STRATEGIES:
+        raise RuntimeError("Only STRATEGY=momentum is currently wired for live runtime")
+
+    return cfg
+
 
 
 def pickProfile() -> StrategyProfile:
     _load_service_env()
-    name = (os.getenv("PROFILE") or "major").strip().lower()
+    name = (os.getenv("PROFILE") or "strict").strip().lower()
     base = PROFILES.get(name, PROFILES["strict"])
 
     # allow tuning via config/risk.yaml (no hardcoded thresholds required)
     try:
         data = _loadRiskYaml(Path("config/risk.yaml"))
-        p = (data.get("profiles") or {}).get(name) or {}
+        p = (data.get("profiles") or {}).get(_resolve_profile_yaml_key(data, name)) or {}
     except Exception:
         p = {}
 

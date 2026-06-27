@@ -39,6 +39,10 @@ class Position:
         tp_min_pct = float(getattr(cfg, "tpMinPct", 0.0) or 0.0)
         if tp_min_pct > 0:
             tp_pct = max(tp_pct, tp_min_pct)
+        fee_rate = float(getattr(cfg, "defaultFeeRate", 0.001) or 0.001)
+        min_profit_buffer = float(getattr(cfg, "minProfitBufferPct", 0.0) or 0.0)
+        tp_net_margin = float(getattr(cfg, "tpNetMarginPct", 0.003) or 0.003)
+        tp_pct = max(tp_pct, (2.0 * fee_rate) + min_profit_buffer + tp_net_margin)
         arm_pct = float(getattr(cfg, "armPct", max(0.0045, sl_pct * 1.5)))
         fee_buf = float(getattr(cfg, "feeBufPct", 0.0025))
         trail_pct = float(getattr(cfg, "trailPct", 0.004))

@@ -1,3 +1,4 @@
+# Legacy/reference copy only. Live runtime tuning source is config/risk.yaml.
 profiles:
   major:
     mom_min_up_ratio: 0.38     # was 0.45

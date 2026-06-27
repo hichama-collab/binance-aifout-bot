@@ -8,6 +8,7 @@
 .pytest_cache/
 .ruff_cache/
 .venv/
+venv/
 .vscode/
 __pycache__/
 *.egg-info/
@@ -29,6 +30,7 @@ htmlcov/
 .service.env
 config/.service.env
 dashboard/botdash.env
+venv.txt
 
 # Generated bot runtime data
 data/logs/

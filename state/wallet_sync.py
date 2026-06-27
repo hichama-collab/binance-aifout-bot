@@ -94,6 +94,29 @@ def _safe_write_json(path: Path, data: object) -> None:
         return
 
 
+def _clear_entry_unknown(sync_state: dict) -> None:
+    if sync_state.get("status") != "ENTRY_UNKNOWN":
+        return
+    for key in ("status", "reason", "symbol", "qty"):
+        sync_state.pop(key, None)
+
+
+def _log_wallet_event(log_trade, event: str, **fields) -> None:
+    if log_trade is None:
+        return
+    try:
+        payload = {"event": event, **fields}
+        log_trade(payload)
+        return
+    except Exception:
+        pass
+    try:
+        detail = " ".join(f"{k}={v}" for k, v in fields.items())
+        log_trade(f"{event} {detail}".strip())
+    except Exception:
+        pass
+
+
 def _record_flat_guard(
     now: float,
     symbol: str,
@@ -228,6 +251,7 @@ def walletSyncEvery(
     minNotional,
     syncState,
     intervalSec=60,
+    logTrade=None,
 ):
     free_usdc = float(syncState.get('usdc', 0.0))
     # compat: anciens états pos en dict
@@ -287,6 +311,7 @@ def walletSyncEvery(
     external_holding = next((h for h in holdings if h.get("symbol") != symbol), None)
 
     if qty_now <= qty_floor:
+        _clear_entry_unknown(syncState)
         reason = "wallet_cleared" if pos is not None else "wallet_empty"
         if external_holding is not None and pos is None:
             _write_runtime_snapshot(now, symbol, acc, balances, None, "external_symbol_found", holdings)
@@ -318,6 +343,7 @@ def walletSyncEvery(
 
     is_dust = notional > 0 and notional < float(minNotional)
     if is_dust:
+        _clear_entry_unknown(syncState)
         _write_runtime_snapshot(now, symbol, acc, balances, None, "wallet_dust", holdings)
         if pos is not None:
             guard_until = _record_flat_guard(
@@ -351,34 +377,37 @@ def walletSyncEvery(
             "holdings": holdings,
         }
 
-    # Wallet has base asset but no local pos => adopt it immediately.
-    # Prefer Binance fills for entry; fallback to current bid so the bot does not stay blind.
+    # Wallet has base asset but no local pos => adopt only if entry is known.
+    # Never fabricate entry from current bid: exits and PnL would become unsafe.
     if pos is None:
         entry, entry_source = _estimate_entry_from_recent_trades(bx, symbol, qty_now, float(step))
         estimated_entry = entry
         reason = "wallet_found"
-        if entry > 0 and bid > 0:
-            sl_pct = float(getattr(cfg, "riskPct", 0.008) or 0.008)
-            if sl_pct <= 0:
-                sl_pct = 0.008
-            already_below_stop = bid <= (entry * (1.0 - sl_pct))
-            if already_below_stop:
-                entry = bid
-                entry_source = f"{entry_source or 'unknown'}_market_reset"
-                reason = "wallet_found_market_entry"
-        if entry <= 0 and bid > 0:
-            entry = bid
-            estimated_entry = entry
-            entry_source = "market_bid"
-            reason = "wallet_found_market_entry"
         if entry <= 0:
-            _write_runtime_snapshot(now, symbol, acc, balances, None, "wallet_found_entry_unknown")
+            syncState["status"] = "ENTRY_UNKNOWN"
+            syncState["reason"] = "wallet_position_without_known_entry"
+            syncState["symbol"] = symbol
+            syncState["qty"] = qty_now
+            syncState["next"] = now + float(getattr(cfg, "walletSyncCooldownSec", 60))
+            _log_wallet_event(
+                logTrade,
+                "ENTRY_UNKNOWN",
+                symbol=symbol,
+                qty=qty_now,
+                reason="wallet_position_without_known_entry",
+            )
+            _write_runtime_snapshot(now, symbol, acc, balances, None, "wallet_position_without_known_entry", holdings)
             return None, syncState, {
                 "changed": True,
+                "status": "ENTRY_UNKNOWN",
                 "usdc": free_usdc,
-                "reason": "wallet_found_entry_unknown",
+                "reason": "wallet_position_without_known_entry",
+                "symbol": symbol,
                 "wallet_qty": qty_now,
+                "wallet_notional": notional,
+                "holdings": holdings,
             }
+        _clear_entry_unknown(syncState)
         p = Position(qty=qty_now, entry=entry, high=max(entry, bid), stop=0.0, ts_entry=time.time())
         setattr(p, "cost_basis", estimated_entry if estimated_entry > 0 else entry)
         setattr(p, "entry_source", entry_source)
@@ -405,6 +434,7 @@ def walletSyncEvery(
         qty_pos = 0.0
 
     if abs(qty_now - qty_pos) > (float(step) * 0.5):
+        _clear_entry_unknown(syncState)
         delta = qty_now - qty_pos
         pos.qty = qty_now
         if delta > 0:
@@ -423,5 +453,6 @@ def walletSyncEvery(
             "holdings": holdings,
         }
 
+    _clear_entry_unknown(syncState)
     _write_runtime_snapshot(now, symbol, acc, balances, pos, "wallet_sync", holdings)
     return pos, syncState, {"usdc": free_usdc, "reason": "wallet_sync", "holdings": holdings}

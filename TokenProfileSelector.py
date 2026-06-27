@@ -46,7 +46,8 @@ SELECTOR_MAX_24H_CHANGE_PCT = float(os.getenv("SELECTOR_MAX_24H_CHANGE_PCT", "12
 SELECTOR_UNKNOWN_SCORE_PENALTY = float(os.getenv("SELECTOR_UNKNOWN_SCORE_PENALTY", "0.05"))
 SELECTOR_RESPECT_WALLET_POSITION = os.getenv("SELECTOR_RESPECT_WALLET_POSITION", "1") != "0"
 SELECTOR_RUNTIME_LOCK_MAX_AGE_SEC = float(os.getenv("SELECTOR_RUNTIME_LOCK_MAX_AGE_SEC", "300"))
-DEFAULT_PROFILE = (os.getenv("SELECTOR_PROFILE", "major") or "major").strip()
+SELECTOR_MAX_DISTANCE_FROM_5M_HIGH_PCT = float(os.getenv("SELECTOR_MAX_DISTANCE_FROM_5M_HIGH_PCT", "0.0020"))
+DEFAULT_PROFILE = (os.getenv("SELECTOR_PROFILE", "strict") or "strict").strip()
 
 
 def _load_selector_state() -> dict:
@@ -272,6 +273,28 @@ def current_direction_pct(symbol: str) -> float | None:
     except Exception:
         return None
 
+
+def distance_from_recent_high_pct(symbol: str, minutes: int = 5) -> float | None:
+    try:
+        limit = max(2, int(minutes))
+        r = _SESSION.get(
+            f"{BASE_URL}/api/v3/klines",
+            params={"symbol": symbol, "interval": "1m", "limit": limit},
+            timeout=HTTP_TIMEOUT,
+        )
+        r.raise_for_status()
+        k = r.json()
+        if not isinstance(k, list) or len(k) < 2:
+            return None
+        highs = [float(row[2]) for row in k]
+        last = float(k[-1][4])
+        high = max(highs)
+        if high <= 0:
+            return None
+        return (high - last) / high
+    except Exception:
+        return None
+
 def collect_candidates(excluded_symbols: set[str] | None = None, positive_only: bool = True):
     symbols = get_symbols_usdc_trading()
     spread_map = get_spread_map()
@@ -427,6 +450,7 @@ def pick_best_candidate(score_map, excluded_symbols: set[str] | None = None, qua
     ranked = rank_candidates(candidates, score_map, quality_map=quality_map)
     # Choose best candidate whose current 2-min direction is acceptable (not in free fall)
     chosen = None
+    near_high_rejected: set[str] = set()
     for item in ranked:
         if item.get("is_toxic"):
             continue
@@ -436,11 +460,19 @@ def pick_best_candidate(score_map, excluded_symbols: set[str] | None = None, qua
                 f"TOKEN_SELECTOR: skip {item['symbol']} direction_2m={dir_pct:.3f}% < {SELECTOR_MIN_DIRECTION_PCT}% — move exhausted"
             )
             continue
+        dist = distance_from_recent_high_pct(item["symbol"], minutes=5)
+        if dist is not None and dist < SELECTOR_MAX_DISTANCE_FROM_5M_HIGH_PCT:
+            near_high_rejected.add(item["symbol"])
+            print(
+                f"TOKEN_SELECTOR: skip {item['symbol']} near_5m_high "
+                f"dist={dist*100:.3f}% < {SELECTOR_MAX_DISTANCE_FROM_5M_HIGH_PCT*100:.3f}%"
+            )
+            continue
         chosen = item
         break
     if chosen is None:
-        # Fallback: pick top non-toxic without direction filter
-        chosen = next((item for item in ranked if not item["is_toxic"]), None)
+        # Fallback may bypass a noisy direction check, but never the high-chase filter.
+        chosen = next((item for item in ranked if not item["is_toxic"] and item["symbol"] not in near_high_rejected), None)
     return chosen, ranked
 
 
