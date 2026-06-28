@@ -16,7 +16,10 @@ SNAPSHOT_COLUMNS = [
     "change_2h_pct", "change_4h_pct", "change_24h_pct", "change_3d_pct", "change_7d_pct",
     "high_24h", "low_24h", "distance_high_24h_pct", "distance_low_24h_pct",
     "momentum_score", "liquidity_score", "spread_score", "trend_quality_score",
-    "risk_score", "score", "global_score", "signal", "reason",
+    "risk_score", "score", "global_score",
+    "volatility_pct", "consistency_score", "movement_risk_score",
+    "risk_level", "risk_label", "risk_reason",
+    "signal", "reason",
 ]
 
 PERIOD_COLUMNS = {
@@ -86,6 +89,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             risk_score REAL,
             score REAL,
             global_score REAL,
+            volatility_pct REAL,
+            consistency_score REAL,
+            movement_risk_score REAL,
+            risk_level TEXT,
+            risk_label TEXT,
+            risk_reason TEXT,
             signal TEXT,
             reason TEXT
         );
@@ -122,13 +131,29 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         """
     )
     columns = {row[1] for row in conn.execute("PRAGMA table_info(token_snapshots)").fetchall()}
-    if "score" not in columns:
-        conn.execute("ALTER TABLE token_snapshots ADD COLUMN score REAL")
+    migrations = {
+        "score": "REAL",
+        "volatility_pct": "REAL",
+        "consistency_score": "REAL",
+        "movement_risk_score": "REAL",
+        "risk_level": "TEXT",
+        "risk_label": "TEXT",
+        "risk_reason": "TEXT",
+    }
+    for column, column_type in migrations.items():
+        if column not in columns:
+            conn.execute(f"ALTER TABLE token_snapshots ADD COLUMN {column} {column_type}")
     conn.execute("UPDATE token_snapshots SET score = global_score WHERE score IS NULL AND global_score IS NOT NULL")
     conn.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_token_snapshots_created_score_simple
         ON token_snapshots(created_at, score)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_token_snapshots_created_risk
+        ON token_snapshots(created_at, movement_risk_score)
         """
     )
     conn.commit()

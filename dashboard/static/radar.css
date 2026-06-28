@@ -12,6 +12,69 @@
   border-radius: 8px;
 }
 
+.radar-picks {
+  padding: 0.75rem;
+}
+
+.pick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.pick-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.3rem 0.45rem;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.018);
+  color: var(--color-text-primary);
+  padding: 0.6rem;
+  text-align: left;
+}
+
+.pick-card:hover {
+  border-color: rgba(240, 185, 11, 0.35);
+  background: rgba(240, 185, 11, 0.045);
+}
+
+.pick-symbol,
+.pick-score {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.pick-score {
+  color: var(--color-accent);
+}
+
+.pick-line {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.55rem;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+}
+
+.pick-line em,
+.pick-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: normal;
+}
+
+.pick-card small {
+  grid-column: 1 / -1;
+  color: var(--color-text-muted);
+  font-size: 0.66rem;
+}
+
 .radar-head {
   display: flex;
   align-items: center;
@@ -135,7 +198,7 @@
 
 .radar-table {
   width: 100%;
-  min-width: 1180px;
+  min-width: 1480px;
   border-collapse: collapse;
 }
 
@@ -157,11 +220,31 @@
   letter-spacing: 0.05em;
 }
 
+.radar-table th button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.18rem;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+
 .radar-table th:nth-child(2),
 .radar-table td:nth-child(2),
-.radar-table th:nth-child(15),
-.radar-table td:nth-child(15) {
+.radar-table th:nth-child(18),
+.radar-table td:nth-child(18),
+.radar-table th:nth-child(19),
+.radar-table td:nth-child(19) {
   text-align: left;
+}
+
+.radar-table th:nth-child(2) button,
+.radar-table th:nth-child(18) button,
+.radar-table th:nth-child(19) button {
+  justify-content: flex-start;
 }
 
 .radar-table tbody tr {
@@ -173,7 +256,8 @@
 }
 
 .score-pill,
-.signal {
+.signal,
+.risk-badge {
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
@@ -182,6 +266,36 @@
   color: var(--color-text-secondary);
   font-size: 0.68rem;
   font-weight: 700;
+}
+
+.risk-badge.low {
+  background: rgba(54, 201, 145, 0.13);
+  color: var(--color-profit);
+}
+
+.risk-badge.medium {
+  background: rgba(240, 185, 11, 0.13);
+  color: var(--color-accent);
+}
+
+.risk-badge.high {
+  background: rgba(236, 106, 122, 0.12);
+  color: #d98995;
+}
+
+.risk-badge.extreme {
+  background: rgba(236, 106, 122, 0.2);
+  color: #ff7a8b;
+}
+
+.reason-cell {
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.warn {
+  color: var(--color-accent);
 }
 
 .score-pill.strong {
@@ -282,6 +396,10 @@
     grid-template-columns: 1fr;
   }
 
+  .pick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .radar-filters {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -307,7 +425,7 @@
   }
 
   .radar-table {
-    min-width: 980px;
+    min-width: 1320px;
   }
 
   .radar-table th,

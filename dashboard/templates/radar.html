@@ -16,6 +16,28 @@
     </button>
   </section>
 
+  <section class="radar-panel radar-picks">
+    <div class="radar-panel-title">
+      <h2>Selection rapide</h2>
+      <span>3-4 tokens propres</span>
+    </div>
+    <div class="pick-grid">
+      <template x-for="row in picks" :key="row.symbol">
+        <button class="pick-card" @click="select(row.symbol)">
+          <span class="pick-symbol" x-text="row.symbol"></span>
+          <span class="pick-score" x-text="fmt(scoreValue(row), 1)"></span>
+          <span :class="'risk-badge ' + riskClass(row.risk_level)" x-text="riskText(row)"></span>
+          <span class="pick-line">
+            <em x-text="'1h ' + pct(row.change_1h_pct)"></em>
+            <em x-text="'Vol ' + compact(row.quote_volume_24h)"></em>
+          </span>
+          <small x-text="row.reason || row.risk_reason"></small>
+        </button>
+      </template>
+      <div x-show="!picks.length" class="empty">Aucune selection stable pour le moment</div>
+    </div>
+  </section>
+
   <section class="radar-filters">
     <label>
       <span>Period</span>
@@ -63,31 +85,38 @@
         <table class="radar-table">
           <thead>
             <tr>
-              <th>Rank</th>
-              <th>Symbol</th>
-              <th>Price</th>
-              <th>Score</th>
-              <th>5m</th>
-              <th>15m</th>
-              <th>1h</th>
-              <th>4h</th>
-              <th>24h</th>
-              <th>3d</th>
-              <th>7d</th>
-              <th>Vol 24h</th>
-              <th>Spread</th>
-              <th>Dist high</th>
-              <th>Signal</th>
+              <th><button @click="sortBy('rank')">Rank <span x-text="sortMark('rank')"></span></button></th>
+              <th><button @click="sortBy('symbol')">Symbol <span x-text="sortMark('symbol')"></span></button></th>
+              <th><button @click="sortBy('price')">Price <span x-text="sortMark('price')"></span></button></th>
+              <th><button @click="sortBy('score')">Score <span x-text="sortMark('score')"></span></button></th>
+              <th><button @click="sortBy('risk')">Risque <span x-text="sortMark('risk')"></span></button></th>
+              <th><button @click="sortBy('consistency')">Stable <span x-text="sortMark('consistency')"></span></button></th>
+              <th><button @click="sortBy('volatility')">Volatilite <span x-text="sortMark('volatility')"></span></button></th>
+              <th><button @click="sortBy('5m')">5m <span x-text="sortMark('5m')"></span></button></th>
+              <th><button @click="sortBy('15m')">15m <span x-text="sortMark('15m')"></span></button></th>
+              <th><button @click="sortBy('1h')">1h <span x-text="sortMark('1h')"></span></button></th>
+              <th><button @click="sortBy('4h')">4h <span x-text="sortMark('4h')"></span></button></th>
+              <th><button @click="sortBy('24h')">24h <span x-text="sortMark('24h')"></span></button></th>
+              <th><button @click="sortBy('3d')">3d <span x-text="sortMark('3d')"></span></button></th>
+              <th><button @click="sortBy('7d')">7d <span x-text="sortMark('7d')"></span></button></th>
+              <th><button @click="sortBy('volume')">Vol 24h <span x-text="sortMark('volume')"></span></button></th>
+              <th><button @click="sortBy('spread')">Spread <span x-text="sortMark('spread')"></span></button></th>
+              <th><button @click="sortBy('distance_high')">Dist high <span x-text="sortMark('distance_high')"></span></button></th>
+              <th><button @click="sortBy('signal')">Signal <span x-text="sortMark('signal')"></span></button></th>
+              <th><button @click="sortBy('reason')">Raison <span x-text="sortMark('reason')"></span></button></th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            <template x-for="(row, idx) in top" :key="row.symbol">
+            <template x-for="(row, idx) in sortedTop" :key="row.symbol">
               <tr @click="select(row.symbol)">
-                <td class="muted" x-text="idx + 1"></td>
+                <td class="muted" x-text="row._rank || idx + 1"></td>
                 <td><strong x-text="row.symbol"></strong></td>
                 <td class="num" x-text="price(row.price)"></td>
                 <td><span class="score-pill" :class="scoreClass(scoreValue(row))" x-text="fmt(scoreValue(row), 1)"></span></td>
+                <td><span :class="'risk-badge ' + riskClass(row.risk_level)" x-text="riskText(row)"></span></td>
+                <td class="num" x-text="fmt(row.consistency_score, 0)"></td>
+                <td :class="riskVolClass(row.volatility_pct)" x-text="pct(row.volatility_pct)"></td>
                 <td :class="pctClass(row.change_5m_pct)" x-text="pct(row.change_5m_pct)"></td>
                 <td :class="pctClass(row.change_15m_pct)" x-text="pct(row.change_15m_pct)"></td>
                 <td :class="pctClass(row.change_1h_pct)" x-text="pct(row.change_1h_pct)"></td>
@@ -99,13 +128,14 @@
                 <td class="num" x-text="pct(row.spread_pct)"></td>
                 <td :class="pctClass(row.distance_high_24h_pct)" x-text="pct(row.distance_high_24h_pct)"></td>
                 <td><span class="signal" x-text="row.signal"></span></td>
+                <td class="reason-cell" :title="reasonText(row)" x-text="reasonText(row)"></td>
                 <td>
                   <button class="radar-icon-btn" @click.stop="addFav(row.symbol)">＋</button>
                 </td>
               </tr>
             </template>
             <tr x-show="!top.length">
-              <td colspan="16" class="empty">Aucune donnée radar disponible</td>
+              <td colspan="20" class="empty">Aucune donnée radar disponible</td>
             </tr>
           </tbody>
         </table>
@@ -146,6 +176,10 @@
           <div><span>Liquidity</span><strong x-text="fmt(detail.latest?.liquidity_score, 1)"></strong></div>
           <div><span>Spread</span><strong x-text="pct(detail.latest?.spread_pct)"></strong></div>
           <div><span>High dist</span><strong x-text="pct(detail.latest?.distance_high_24h_pct)"></strong></div>
+          <div><span>Risque</span><strong x-text="riskText(detail.latest)"></strong></div>
+          <div><span>Stabilite</span><strong x-text="fmt(detail.latest?.consistency_score, 0)"></strong></div>
+          <div><span>Volatilite</span><strong x-text="pct(detail.latest?.volatility_pct)"></strong></div>
+          <div><span>Raison risque</span><strong x-text="detail.latest?.risk_reason || '—'"></strong></div>
         </div>
         <p class="reason" x-text="detail.latest ? detail.latest.reason : ''"></p>
         <div class="history-list">
@@ -180,7 +214,46 @@ function tokenRadar() {
       favorites_only: false,
       limit: 50,
     },
+    sort: {key: 'score', dir: 'desc'},
+    sortMap: {
+      rank: '_rank',
+      symbol: 'symbol',
+      price: 'price',
+      score: 'score',
+      risk: 'movement_risk_score',
+      consistency: 'consistency_score',
+      volatility: 'volatility_pct',
+      '5m': 'change_5m_pct',
+      '15m': 'change_15m_pct',
+      '1h': 'change_1h_pct',
+      '4h': 'change_4h_pct',
+      '24h': 'change_24h_pct',
+      '3d': 'change_3d_pct',
+      '7d': 'change_7d_pct',
+      volume: 'quote_volume_24h',
+      spread: 'spread_pct',
+      distance_high: 'distance_high_24h_pct',
+      signal: 'signal',
+      reason: 'reason',
+    },
     async init() { await this.loadAll(); },
+    get sortedTop() {
+      const key = this.sort.key;
+      const dir = this.sort.dir === 'asc' ? 1 : -1;
+      return [...this.top].sort((a, b) => this.compareRows(a, b, key) * dir);
+    },
+    get picks() {
+      return [...this.top]
+        .filter(row => ['LOW', 'MEDIUM'].includes(row.risk_level || 'MEDIUM'))
+        .filter(row => Number(row.change_1h_pct || 0) > 0)
+        .filter(row => Number(row.spread_pct || 0) <= Number(this.filters.max_spread || 0.002))
+        .sort((a, b) => {
+          const left = this.scoreValue(b) - this.scoreValue(a);
+          if (left) return left;
+          return Number(b.consistency_score || 0) - Number(a.consistency_score || 0);
+        })
+        .slice(0, 4);
+    },
     query() {
       const p = new URLSearchParams();
       Object.entries(this.filters).forEach(([k, v]) => p.set(k, v));
@@ -202,7 +275,7 @@ function tokenRadar() {
     },
     async loadTop() {
       const data = await this.fetchJson('/api/radar/top?' + this.query());
-      this.top = data.items || [];
+      this.top = (data.items || []).map((row, idx) => ({...row, _rank: idx + 1}));
       if (!this.detail.latest && this.top.length) this.select(this.top[0].symbol);
     },
     async loadFavorites() {
@@ -254,6 +327,13 @@ function tokenRadar() {
       if (!Number.isFinite(n) || Math.abs(n) < 0.00001) return 'neutral';
       return n > 0 ? 'profit' : 'loss';
     },
+    riskVolClass(v) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return 'neutral';
+      if (n >= 0.08) return 'loss';
+      if (n >= 0.04) return 'warn';
+      return 'profit';
+    },
     scoreClass(v) {
       const n = Number(v);
       if (n >= 75) return 'strong';
@@ -263,6 +343,43 @@ function tokenRadar() {
     scoreValue(row) {
       if (!row) return null;
       return row.score ?? row.global_score;
+    },
+    riskText(row) {
+      if (!row) return '—';
+      return row.risk_label || row.risk_level || '—';
+    },
+    riskClass(level) {
+      const value = String(level || '').toLowerCase();
+      if (value === 'low') return 'low';
+      if (value === 'medium') return 'medium';
+      if (value === 'high') return 'high';
+      if (value === 'extreme') return 'extreme';
+      return 'medium';
+    },
+    reasonText(row) {
+      if (!row) return '—';
+      return row.reason || row.risk_reason || '—';
+    },
+    sortBy(key) {
+      if (this.sort.key === key) {
+        this.sort.dir = this.sort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        this.sort.key = key;
+        this.sort.dir = ['rank', 'symbol', 'risk', 'spread', 'volatility'].includes(key) ? 'asc' : 'desc';
+      }
+    },
+    sortMark(key) {
+      if (this.sort.key !== key) return '';
+      return this.sort.dir === 'asc' ? '↑' : '↓';
+    },
+    compareRows(a, b, key) {
+      const field = this.sortMap[key] || key;
+      const av = key === 'score' ? this.scoreValue(a) : a[field];
+      const bv = key === 'score' ? this.scoreValue(b) : b[field];
+      const an = Number(av);
+      const bn = Number(bv);
+      if (Number.isFinite(an) && Number.isFinite(bn)) return an === bn ? 0 : an > bn ? 1 : -1;
+      return String(av ?? '').localeCompare(String(bv ?? ''), 'fr', {numeric: true, sensitivity: 'base'});
     },
     perfSinceAdd(fav) {
       const added = Number(fav.added_price);

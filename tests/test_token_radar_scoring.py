@@ -24,6 +24,8 @@ def test_clean_momentum_scores_high():
     assert score["global_score"] >= 70
     assert score["score"] == score["global_score"]
     assert score["signal"] in {"WATCH", "STRONG_MOMENTUM"}
+    assert score["risk_level"] in {"LOW", "MEDIUM"}
+    assert score["consistency_score"] >= 60
 
 
 def test_near_high_and_excessive_pump_penalizes_risk():
@@ -53,3 +55,20 @@ def test_global_score_is_bounded():
 
     assert 0 <= low["global_score"] <= 100
     assert 0 <= high["global_score"] <= 100
+
+
+def test_choppy_movement_is_marked_risky():
+    score = score_token(
+        _base(
+            change_5m_pct=0.026,
+            change_15m_pct=-0.014,
+            change_30m_pct=0.018,
+            change_1h_pct=-0.012,
+            change_2h_pct=0.031,
+            change_4h_pct=-0.020,
+        )
+    )
+
+    assert score["risk_level"] in {"HIGH", "EXTREME"}
+    assert score["movement_risk_score"] >= 55
+    assert "directions" in score["risk_reason"]

@@ -39,6 +39,12 @@ def _snapshot(symbol="BTCUSDC", score=80.0, price=65000.0):
         "risk_score": 18,
         "score": score,
         "global_score": score,
+        "volatility_pct": 0.006,
+        "consistency_score": 86,
+        "movement_risk_score": 14,
+        "risk_level": "LOW",
+        "risk_label": "Stable",
+        "risk_reason": "mouvement regulier",
         "signal": "WATCH",
         "reason": "test",
     }
@@ -81,4 +87,5 @@ def test_token_detail_returns_latest_and_history(tmp_path):
 
     assert detail["latest"]["global_score"] == 82
     assert detail["latest"]["score"] == 82
+    assert detail["latest"]["risk_level"] == "LOW"
     assert len(detail["history"]) == 2

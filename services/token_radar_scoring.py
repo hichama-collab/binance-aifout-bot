@@ -124,6 +124,88 @@ def _score_risk(data: Mapping) -> float:
     return round(_clamp(score, 0.0, 20.0), 3)
 
 
+def _movement_profile(data: Mapping) -> dict:
+    windows = [
+        _num(data, "change_5m_pct"),
+        _num(data, "change_15m_pct"),
+        _num(data, "change_30m_pct"),
+        _num(data, "change_1h_pct"),
+        _num(data, "change_2h_pct"),
+        _num(data, "change_4h_pct"),
+    ]
+    signs = [1 if value > 0 else -1 if value < 0 else 0 for value in windows]
+    sign_flips = sum(
+        1
+        for prev, cur in zip(signs, signs[1:])
+        if prev != 0 and cur != 0 and prev != cur
+    )
+    negatives = sum(1 for value in windows if value < 0)
+    abs_values = [abs(value) for value in windows]
+    avg_abs = sum(abs_values) / len(abs_values)
+    max_abs = max(abs_values)
+    volatility = max(windows) - min(windows)
+    spike_ratio = max_abs / avg_abs if avg_abs > 0 else 0.0
+
+    consistency = 100.0
+    consistency -= sign_flips * 18.0
+    consistency -= negatives * 8.0
+    consistency -= _clamp(volatility / 0.08) * 28.0
+    if spike_ratio > 2.4:
+        consistency -= min(24.0, (spike_ratio - 2.4) * 10.0)
+    consistency = round(_clamp(consistency, 0.0, 100.0), 3)
+
+    spread = _num(data, "spread_pct")
+    distance_high = _num(data, "distance_high_24h_pct", -1.0)
+    c5 = _num(data, "change_5m_pct")
+    c24 = _num(data, "change_24h_pct")
+    movement_risk = 100.0 - consistency
+    if spread > 0.001:
+        movement_risk += 8.0
+    if distance_high > -0.004:
+        movement_risk += 10.0
+    if c5 > 0.018:
+        movement_risk += 10.0
+    if c24 > 0.12:
+        movement_risk += 8.0
+    movement_risk = round(_clamp(movement_risk, 0.0, 100.0), 3)
+
+    if movement_risk >= 75:
+        risk_level = "EXTREME"
+        risk_label = "Chaotique"
+    elif movement_risk >= 55:
+        risk_level = "HIGH"
+        risk_label = "Agite"
+    elif movement_risk >= 32:
+        risk_level = "MEDIUM"
+        risk_label = "Correct"
+    else:
+        risk_level = "LOW"
+        risk_label = "Stable"
+
+    reasons = []
+    if sign_flips >= 2:
+        reasons.append("directions alternees")
+    if volatility >= 0.05:
+        reasons.append("amplitude forte")
+    if spike_ratio > 2.4:
+        reasons.append("mouvement concentre")
+    if spread > 0.001:
+        reasons.append("spread a surveiller")
+    if distance_high > -0.004:
+        reasons.append("proche high")
+    if not reasons:
+        reasons.append("mouvement regulier")
+
+    return {
+        "volatility_pct": round(volatility, 6),
+        "consistency_score": consistency,
+        "movement_risk_score": movement_risk,
+        "risk_level": risk_level,
+        "risk_label": risk_label,
+        "risk_reason": ", ".join(reasons)[:180],
+    }
+
+
 def classify_signal(data: Mapping, scores: Mapping) -> str:
     spread = max(0.0, _num(data, "spread_pct"))
     quote_volume = max(0.0, _num(data, "quote_volume_24h"))
@@ -159,6 +241,9 @@ def build_reason(data: Mapping, scores: Mapping) -> str:
         parts.append("proche du high 24h")
     if _num(data, "change_5m_pct") < 0:
         parts.append("pullback court terme")
+    risk_level = str(scores.get("risk_level") or "")
+    if risk_level in {"HIGH", "EXTREME"}:
+        parts.append(str(scores.get("risk_reason") or "risque eleve"))
     if not parts:
         parts.append("signal neutre a surveiller")
     return ", ".join(parts)[:240]
@@ -170,6 +255,7 @@ def score_token(data: Mapping) -> dict:
     spread = _score_spread(data)
     trend_quality = _score_trend_quality(data)
     risk = _score_risk(data)
+    movement = _movement_profile(data)
     global_score = round(_clamp(momentum + liquidity + spread + trend_quality + risk, 0.0, 100.0), 3)
     scores = {
         "momentum_score": momentum,
@@ -179,6 +265,7 @@ def score_token(data: Mapping) -> dict:
         "risk_score": risk,
         "score": global_score,
         "global_score": global_score,
+        **movement,
     }
     scores["signal"] = classify_signal(data, scores)
     scores["reason"] = build_reason(data, scores)
