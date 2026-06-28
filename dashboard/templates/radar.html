@@ -31,6 +31,7 @@
             <em x-text="'Hot ' + fmt(row.hot_score, 0)"></em>
             <em x-text="'1h ' + pct(row.change_1h_pct)"></em>
             <em x-text="'Vol ' + pct(amplitudeValue(row))"></em>
+            <em x-show="Number(row.negative_pressure_score || 0) >= 25" x-text="'Neg ' + fmt(row.negative_pressure_score, 0)"></em>
           </span>
           <small x-text="row.reason || row.risk_reason"></small>
         </button>
@@ -63,12 +64,12 @@
       <input type="number" min="0" step="100000" x-model.number="filters.min_volume" @change="loadTop()" />
     </label>
     <label>
-      <span>Max spread</span>
-      <input type="number" min="0" step="0.0001" x-model.number="filters.max_spread" @change="loadTop()" />
+      <span>Max spread optionnel</span>
+      <input type="number" min="0" step="0.0001" placeholder="aucun" x-model="filters.max_spread" @change="loadTop()" />
     </label>
     <label>
       <span>Limit</span>
-      <input type="number" min="5" max="250" step="5" x-model.number="filters.limit" @change="loadTop()" />
+      <input type="number" min="5" max="1000" step="5" x-model.number="filters.limit" @change="loadTop()" />
     </label>
     <label class="radar-check">
       <input type="checkbox" x-model="filters.favorites_only" @change="loadTop()" />
@@ -93,6 +94,7 @@
               <th><button @click="sortBy('hot')">Hot <span x-text="sortMark('hot')"></span></button></th>
               <th><button @click="sortBy('reliability')">Fiabilite <span x-text="sortMark('reliability')"></span></button></th>
               <th><button @click="sortBy('volatility')">Vol <span x-text="sortMark('volatility')"></span></button></th>
+              <th><button @click="sortBy('negative')">Neg <span x-text="sortMark('negative')"></span></button></th>
               <th><button @click="sortBy('5m')">5m <span x-text="sortMark('5m')"></span></button></th>
               <th><button @click="sortBy('15m')">15m <span x-text="sortMark('15m')"></span></button></th>
               <th><button @click="sortBy('1h')">1h <span x-text="sortMark('1h')"></span></button></th>
@@ -118,6 +120,7 @@
                 <td><span class="score-pill hot-pill" x-text="fmt(row.hot_score, 0)"></span></td>
                 <td><span :class="'risk-badge ' + riskClass(row.risk_level)" x-text="riskText(row)"></span></td>
                 <td :class="amplitudeClass(amplitudeValue(row))" x-text="pct(amplitudeValue(row))"></td>
+                <td :class="negativeClass(row.negative_pressure_score)" x-text="fmt(row.negative_pressure_score, 0)"></td>
                 <td :class="pctClass(row.change_5m_pct)" x-text="pct(row.change_5m_pct)"></td>
                 <td :class="pctClass(row.change_15m_pct)" x-text="pct(row.change_15m_pct)"></td>
                 <td :class="pctClass(row.change_1h_pct)" x-text="pct(row.change_1h_pct)"></td>
@@ -136,7 +139,7 @@
               </tr>
             </template>
             <tr x-show="!top.length">
-              <td colspan="20" class="empty">Aucune donnée radar disponible</td>
+              <td colspan="21" class="empty">Aucune donnée radar disponible</td>
             </tr>
           </tbody>
         </table>
@@ -176,6 +179,7 @@
           <div><span>Hot</span><strong x-text="fmt(detail.latest?.hot_score, 0)"></strong></div>
           <div><span>Fiabilite</span><strong x-text="riskText(detail.latest)"></strong></div>
           <div><span>Vol</span><strong x-text="pct(amplitudeValue(detail.latest))"></strong></div>
+          <div><span>Neg</span><strong x-text="fmt(detail.latest?.negative_pressure_score, 0)"></strong></div>
           <div><span>Momentum</span><strong x-text="fmt(detail.latest?.momentum_score, 1)"></strong></div>
           <div><span>Liquidity</span><strong x-text="fmt(detail.latest?.liquidity_score, 1)"></strong></div>
           <div><span>Spread</span><strong x-text="pct(detail.latest?.spread_pct)"></strong></div>
@@ -211,10 +215,10 @@ function tokenRadar() {
     filters: {
       period: '1h',
       min_score: 0,
-      min_volume: 500000,
-      max_spread: 0.006,
+      min_volume: 0,
+      max_spread: '',
       favorites_only: false,
-      limit: 50,
+      limit: 500,
     },
     sort: {key: 'score', dir: 'desc'},
     sortMap: {
@@ -225,6 +229,7 @@ function tokenRadar() {
       hot: 'hot_score',
       reliability: 'reliability_score',
       volatility: 'amplitude_pct',
+      negative: 'negative_pressure_score',
       '5m': 'change_5m_pct',
       '15m': 'change_15m_pct',
       '1h': 'change_1h_pct',
@@ -247,18 +252,23 @@ function tokenRadar() {
     get picks() {
       return [...this.top]
         .filter(row => ['LOW', 'MEDIUM'].includes(row.risk_level || 'MEDIUM'))
-        .filter(row => Number(row.change_1h_pct || 0) > 0)
-        .filter(row => Number(row.spread_pct || 0) <= Number(this.filters.max_spread || 0.006))
+        .filter(row => Number(row.negative_pressure_score || 0) < 35)
+        .filter(row => Number(row.change_1h_pct || 0) > 0 || Number(row.hot_score || 0) >= 45)
         .sort((a, b) => {
-          const left = Number(b.hot_score || 0) - Number(a.hot_score || 0);
+          const left = Number(this.scoreValue(b) || 0) - Number(this.scoreValue(a) || 0);
           if (left) return left;
+          const hot = Number(b.hot_score || 0) - Number(a.hot_score || 0);
+          if (hot) return hot;
           return Number(b.reliability_score || b.consistency_score || 0) - Number(a.reliability_score || a.consistency_score || 0);
         })
         .slice(0, 4);
     },
     query() {
       const p = new URLSearchParams();
-      Object.entries(this.filters).forEach(([k, v]) => p.set(k, v));
+      Object.entries(this.filters).forEach(([k, v]) => {
+        if (v === '' || v === null || v === undefined || v === false) return;
+        p.set(k, v);
+      });
       return p.toString();
     },
     async fetchJson(url, options = {}) {
@@ -332,9 +342,15 @@ function tokenRadar() {
     amplitudeClass(v) {
       const n = Number(v);
       if (!Number.isFinite(n)) return 'neutral';
-      if (n >= 0.08) return 'profit';
+      if (n >= 0.08) return 'warn';
       if (n >= 0.03) return 'warn';
       return 'neutral';
+    },
+    negativeClass(v) {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 25) return 'neutral';
+      if (n >= 60) return 'loss';
+      return 'warn';
     },
     scoreClass(v) {
       const n = Number(v);

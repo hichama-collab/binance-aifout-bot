@@ -34,7 +34,17 @@ def _float_arg(name: str, default: float) -> float:
         return default
 
 
-def _int_arg(name: str, default: int, min_value: int = 1, max_value: int = 250) -> int:
+def _optional_float_arg(name: str) -> float | None:
+    raw = request.args.get(name)
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        return float(raw)
+    except Exception:
+        return None
+
+
+def _int_arg(name: str, default: int, min_value: int = 1, max_value: int = 1000) -> int:
     try:
         return max(min_value, min(max_value, int(request.args.get(name, default))))
     except Exception:
@@ -63,8 +73,8 @@ def register_radar_routes(app, require_basic_auth, base_dir):
             period=request.args.get("period", "1h"),
             min_score=_float_arg("min_score", 0.0),
             min_volume=_float_arg("min_volume", 0.0),
-            max_spread=_float_arg("max_spread", 999.0),
-            limit=_int_arg("limit", 50),
+            max_spread=_optional_float_arg("max_spread"),
+            limit=_int_arg("limit", 500),
             favorites_only=_bool_arg("favorites_only", False),
             db_path=db_path,
         )

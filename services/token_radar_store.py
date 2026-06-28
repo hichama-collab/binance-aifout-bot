@@ -19,7 +19,7 @@ SNAPSHOT_COLUMNS = [
     "risk_score", "score", "global_score",
     "hot_score", "volatility_pct", "amplitude_pct", "consistency_score",
     "reliability_score", "noise_score", "movement_risk_score",
-    "risk_level", "risk_label", "risk_reason",
+    "negative_pressure_score", "risk_level", "risk_label", "risk_reason",
     "signal", "reason",
 ]
 
@@ -97,6 +97,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             reliability_score REAL,
             noise_score REAL,
             movement_risk_score REAL,
+            negative_pressure_score REAL,
             risk_level TEXT,
             risk_label TEXT,
             risk_reason TEXT,
@@ -145,6 +146,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         "reliability_score": "REAL",
         "noise_score": "REAL",
         "movement_risk_score": "REAL",
+        "negative_pressure_score": "REAL",
         "risk_level": "TEXT",
         "risk_label": "TEXT",
         "risk_reason": "TEXT",
@@ -297,7 +299,7 @@ def get_top_tokens(
         join_fav = "JOIN token_favorites f ON f.symbol = s.symbol AND COALESCE(f.status, 'active') = 'active'"
     where = f"{join_fav} WHERE " + " AND ".join(filters)
     sql = _latest_rows_sql(where) + f" ORDER BY {score_expr} DESC, COALESCE(s.{period_col}, 0) DESC LIMIT ?"
-    params.append(max(1, min(int(limit), 250)))
+    params.append(max(1, min(int(limit), 1000)))
     with connect(db_path, base_dir) as conn:
         ensure_schema(conn)
         return [dict(row) for row in conn.execute(sql, params).fetchall()]

@@ -144,6 +144,37 @@ def _score_hot(data: Mapping) -> float:
     return round(_clamp(score, 0.0, 100.0), 3)
 
 
+def _score_negative_pressure(data: Mapping) -> float:
+    """Directional downside pressure, separate from exploitable upside amplitude."""
+    c5 = _num(data, "change_5m_pct")
+    c15 = _num(data, "change_15m_pct")
+    c30 = _num(data, "change_30m_pct")
+    c1h = _num(data, "change_1h_pct")
+    c2h = _num(data, "change_2h_pct")
+    c4h = _num(data, "change_4h_pct")
+    c24 = _num(data, "change_24h_pct")
+
+    score = 0.0
+    score += 18.0 * _positive_scale(-c5, 0.018)
+    score += 20.0 * _positive_scale(-c15, 0.025)
+    score += 22.0 * _positive_scale(-c1h, 0.055)
+    score += 18.0 * _positive_scale(-c4h, 0.10)
+    score += 10.0 * _positive_scale(-c24, 0.12)
+
+    windows = [c5, c15, c30, c1h, c2h, c4h]
+    negatives = sum(1 for value in windows if value < 0)
+    if negatives >= 4:
+        score += 14.0
+    elif negatives >= 3:
+        score += 8.0
+    if c5 < 0 and c15 < 0 and c1h < 0:
+        score += 8.0
+    if c1h < 0 and c4h < 0:
+        score += 8.0
+
+    return round(_clamp(score, 0.0, 100.0), 3)
+
+
 def _movement_profile(data: Mapping) -> dict:
     windows = [
         _num(data, "change_5m_pct"),
@@ -165,6 +196,7 @@ def _movement_profile(data: Mapping) -> dict:
     max_abs = max(abs_values)
     volatility = max(windows) - min(windows)
     spike_ratio = max_abs / avg_abs if avg_abs > 0 else 0.0
+    negative_pressure = _score_negative_pressure(data)
     trend_positive = (
         _num(data, "change_15m_pct") > 0
         and _num(data, "change_1h_pct") > 0
@@ -180,6 +212,8 @@ def _movement_profile(data: Mapping) -> dict:
         reliability -= 4.0 if trend_positive else min(24.0, (spike_ratio - 2.8) * 10.0)
     if _num(data, "change_5m_pct") < -0.008 and trend_positive:
         reliability -= 8.0
+    if negative_pressure > 0:
+        reliability -= min(35.0, negative_pressure * 0.45)
     reliability = round(_clamp(reliability, 0.0, 100.0), 3)
 
     spread = _num(data, "spread_pct")
@@ -195,9 +229,16 @@ def _movement_profile(data: Mapping) -> dict:
         movement_risk += 10.0
     if c24 > 0.12:
         movement_risk += 8.0
+    movement_risk += negative_pressure * 0.65
     movement_risk = round(_clamp(movement_risk, 0.0, 100.0), 3)
 
-    if movement_risk >= 75:
+    if negative_pressure >= 65:
+        risk_level = "EXTREME"
+        risk_label = "Negatif"
+    elif negative_pressure >= 40:
+        risk_level = "HIGH"
+        risk_label = "Alerte"
+    elif movement_risk >= 75:
         risk_level = "EXTREME"
         risk_label = "Piege"
     elif movement_risk >= 55:
@@ -213,6 +254,10 @@ def _movement_profile(data: Mapping) -> dict:
     reasons = []
     if trend_positive:
         reasons.append("tendance multi-fenetres")
+    if negative_pressure >= 60:
+        reasons.append("pression vendeuse forte")
+    elif negative_pressure >= 35:
+        reasons.append("pression vendeuse")
     if volatility >= 0.06 and trend_positive:
         reasons.append("haute amplitude exploitable")
     if sign_flips >= 2:
@@ -235,6 +280,7 @@ def _movement_profile(data: Mapping) -> dict:
         "reliability_score": reliability,
         "noise_score": movement_risk,
         "movement_risk_score": movement_risk,
+        "negative_pressure_score": negative_pressure,
         "risk_level": risk_level,
         "risk_label": risk_label,
         "risk_reason": ", ".join(reasons)[:180],
@@ -251,19 +297,22 @@ def classify_signal(data: Mapping, scores: Mapping) -> str:
     distance_high = _num(data, "distance_high_24h_pct", -1.0)
     global_score = _num(scores, "global_score")
     hot_score = _num(scores, "hot_score")
+    negative_pressure = _num(scores, "negative_pressure_score")
 
+    if negative_pressure >= 60:
+        return "NEGATIVE_VOLATILITY"
+    if hot_score >= 80 and c1h > 0 and c4h > 0:
+        return "HOT"
+    if c15 > 0 and c1h > 0 and c4h > 0 and global_score >= 70:
+        return "STRONG_MOMENTUM"
+    if c1h > 0 and c4h > 0 and c5 < 0 and global_score >= 60:
+        return "PULLBACK_WATCH"
+    if distance_high > -0.002:
+        return "NEAR_HIGH_RISK"
     if spread > 0.006:
         return "SPREAD_TOO_HIGH"
     if quote_volume < 500_000:
         return "LOW_LIQUIDITY"
-    if distance_high > -0.002:
-        return "NEAR_HIGH_RISK"
-    if hot_score >= 80 and c1h > 0 and c4h > 0:
-        return "HOT"
-    if c1h > 0 and c4h > 0 and c5 < 0 and global_score >= 60:
-        return "PULLBACK_WATCH"
-    if c15 > 0 and c1h > 0 and c4h > 0 and global_score >= 75:
-        return "STRONG_MOMENTUM"
     return "WATCH"
 
 
@@ -271,6 +320,10 @@ def build_reason(data: Mapping, scores: Mapping) -> str:
     parts = []
     if _num(scores, "hot_score") >= 75:
         parts.append("hot fort")
+    if _num(scores, "negative_pressure_score") >= 60:
+        parts.append("pression vendeuse forte")
+    elif _num(scores, "negative_pressure_score") >= 35:
+        parts.append("pression vendeuse")
     if _num(data, "change_1h_pct") > 0 and _num(data, "change_4h_pct") > 0:
         parts.append("momentum 1h/4h positif")
     if _num(scores, "reliability_score") >= 70:
@@ -303,12 +356,14 @@ def score_token(data: Mapping) -> dict:
     movement = _movement_profile(data)
     liquidity_norm = liquidity * 5.0
     spread_norm = spread * (100.0 / 15.0)
+    negative_pressure = movement["negative_pressure_score"]
     global_score = round(
         _clamp(
             hot * 0.45
             + movement["reliability_score"] * 0.30
             + liquidity_norm * 0.15
-            + spread_norm * 0.10,
+            + spread_norm * 0.10
+            - negative_pressure * 0.35,
             0.0,
             100.0,
         ),

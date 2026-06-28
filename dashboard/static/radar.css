@@ -198,7 +198,7 @@
 
 .radar-table {
   width: 100%;
-  min-width: 1480px;
+  min-width: 1540px;
   border-collapse: collapse;
 }
 
@@ -234,16 +234,16 @@
 
 .radar-table th:nth-child(2),
 .radar-table td:nth-child(2),
-.radar-table th:nth-child(18),
-.radar-table td:nth-child(18),
 .radar-table th:nth-child(19),
-.radar-table td:nth-child(19) {
+.radar-table td:nth-child(19),
+.radar-table th:nth-child(20),
+.radar-table td:nth-child(20) {
   text-align: left;
 }
 
 .radar-table th:nth-child(2) button,
-.radar-table th:nth-child(18) button,
-.radar-table th:nth-child(19) button {
+.radar-table th:nth-child(19) button,
+.radar-table th:nth-child(20) button {
   justify-content: flex-start;
 }
 
@@ -430,7 +430,7 @@
   }
 
   .radar-table {
-    min-width: 1320px;
+    min-width: 1380px;
   }
 
   .radar-table th,

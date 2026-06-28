@@ -22,16 +22,14 @@ from services.token_radar_store import finish_scan_run, insert_snapshots, resolv
 
 BASE_URL = os.getenv("TOKEN_RADAR_BASE_URL", "https://api.binance.com").rstrip("/")
 QUOTE = os.getenv("TOKEN_RADAR_QUOTE", "USDC").upper()
-LIMIT = max(1, int(os.getenv("TOKEN_RADAR_LIMIT", "80")))
-MIN_QUOTE_VOLUME_24H = float(os.getenv("TOKEN_RADAR_MIN_QUOTE_VOLUME_24H", "500000"))
-MAX_SPREAD_PCT = float(os.getenv("TOKEN_RADAR_MAX_SPREAD_PCT", "0.006"))
+LIMIT = max(0, int(os.getenv("TOKEN_RADAR_LIMIT", "0")))
 HTTP_TIMEOUT = float(os.getenv("TOKEN_RADAR_HTTP_TIMEOUT", "10"))
 MAX_WORKERS = max(1, int(os.getenv("TOKEN_RADAR_MAX_WORKERS", "8")))
 EXCLUDED_BASE_ASSETS = {
     item.strip().upper()
     for item in os.getenv(
         "TOKEN_RADAR_EXCLUDE_BASES",
-        "USDC,USDT,FDUSD,TUSD,USDP,DAI,USD1,EUR,TRY,BRL",
+        "USDC,USDT,FDUSD,TUSD,USDP,DAI,USD1,USDE,BFUSD,USD0,USDD,PYUSD,RLUSD,EUR,TRY,BRL",
     ).split(",")
     if item.strip()
 }
@@ -122,10 +120,6 @@ def _build_base_candidate(symbol: str, ticker: dict, book: dict) -> dict | None:
         return None
     spread = (ask - bid) / mid
     quote_volume = _float(ticker.get("quoteVolume"))
-    if quote_volume < MIN_QUOTE_VOLUME_24H:
-        return None
-    if spread > MAX_SPREAD_PCT:
-        return None
 
     high_24h = _float(ticker.get("highPrice"))
     low_24h = _float(ticker.get("lowPrice"))
@@ -169,13 +163,6 @@ def _enrich_candidate(symbol: str, base: dict) -> dict:
     return row
 
 
-def _has_positive_variation(row: dict) -> bool:
-    return any(
-        (row.get(key) or 0.0) > 0.0
-        for key in ("change_5m_pct", "change_15m_pct", "change_1h_pct", "change_24h_pct")
-    )
-
-
 def scan() -> list[dict]:
     session = requests.Session()
     symbols = _load_symbols(session)
@@ -198,7 +185,7 @@ def scan() -> list[dict]:
         ),
         reverse=True,
     )
-    selected = candidates[:LIMIT]
+    selected = candidates if LIMIT <= 0 else candidates[:LIMIT]
     created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     snapshots = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
@@ -207,8 +194,6 @@ def scan() -> list[dict]:
             item = future_to_item[future]
             try:
                 row = future.result()
-                if not _has_positive_variation(row):
-                    continue
                 row["created_at"] = created_at
                 snapshots.append(row)
             except Exception as exc:

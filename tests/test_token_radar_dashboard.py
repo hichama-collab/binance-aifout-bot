@@ -45,6 +45,7 @@ def _import_dashboard_app(tmp_path, monkeypatch):
             "reliability_score": 80.0,
             "noise_score": 20.0,
             "movement_risk_score": 20.0,
+            "negative_pressure_score": 0.0,
             "risk_level": "LOW",
             "risk_label": "Fiable",
             "risk_reason": "mouvement regulier",

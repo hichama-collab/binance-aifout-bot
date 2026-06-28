@@ -99,3 +99,41 @@ def test_choppy_movement_is_marked_risky():
     assert score["risk_level"] in {"HIGH", "EXTREME"}
     assert score["movement_risk_score"] >= 55
     assert "directions" in score["risk_reason"]
+
+
+def test_rising_high_amplitude_is_kept_reliable_not_negative():
+    score = score_token(
+        _base(
+            change_5m_pct=0.027,
+            change_15m_pct=0.025,
+            change_30m_pct=0.060,
+            change_1h_pct=0.130,
+            change_2h_pct=0.180,
+            change_4h_pct=0.233,
+            change_24h_pct=0.194,
+            change_7d_pct=1.995,
+        )
+    )
+
+    assert score["amplitude_pct"] > 0.20
+    assert score["negative_pressure_score"] == 0
+    assert score["risk_label"] in {"Fiable", "Correct"}
+    assert score["signal"] in {"HOT", "STRONG_MOMENTUM", "WATCH"}
+
+
+def test_negative_volatility_is_flagged_without_hiding_row():
+    score = score_token(
+        _base(
+            change_5m_pct=-0.021,
+            change_15m_pct=-0.030,
+            change_30m_pct=-0.045,
+            change_1h_pct=-0.070,
+            change_2h_pct=-0.095,
+            change_4h_pct=-0.120,
+            change_24h_pct=-0.180,
+        )
+    )
+
+    assert score["negative_pressure_score"] >= 60
+    assert score["signal"] == "NEGATIVE_VOLATILITY"
+    assert score["global_score"] < 35

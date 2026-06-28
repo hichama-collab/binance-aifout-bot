@@ -46,6 +46,7 @@ def _snapshot(symbol="BTCUSDC", score=80.0, price=65000.0):
         "reliability_score": 86,
         "noise_score": 14,
         "movement_risk_score": 14,
+        "negative_pressure_score": 0,
         "risk_level": "LOW",
         "risk_label": "Fiable",
         "risk_reason": "mouvement regulier",
