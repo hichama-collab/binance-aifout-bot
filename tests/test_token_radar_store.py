@@ -94,3 +94,16 @@ def test_token_detail_returns_latest_and_history(tmp_path):
     assert detail["latest"]["risk_level"] == "LOW"
     assert detail["latest"]["risk_label"] == "Fiable"
     assert len(detail["history"]) == 2
+
+
+def test_top_tokens_uses_latest_scan_only(tmp_path):
+    db = tmp_path / "radar.sqlite3"
+    old = _snapshot("OLDUSDC", 99, 1)
+    old["created_at"] = "2026-06-28T00:00:00+00:00"
+    new = _snapshot("NEWUSDC", 60, 2)
+    new["created_at"] = "2026-06-28T00:15:00+00:00"
+    insert_snapshots([old, new], db)
+
+    rows = get_top_tokens(min_score=0, limit=10, db_path=db)
+
+    assert [row["symbol"] for row in rows] == ["NEWUSDC"]

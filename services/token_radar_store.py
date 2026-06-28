@@ -244,14 +244,13 @@ def insert_snapshots(
 
 def _latest_rows_sql(where: str = "") -> str:
     return f"""
-        WITH latest AS (
-            SELECT symbol, MAX(created_at) AS created_at
+        WITH latest_scan AS (
+            SELECT MAX(created_at) AS created_at
               FROM token_snapshots
-             GROUP BY symbol
         )
         SELECT s.*
           FROM token_snapshots s
-          JOIN latest l ON l.symbol = s.symbol AND l.created_at = s.created_at
+          JOIN latest_scan l ON l.created_at = s.created_at
         {where}
     """
 
