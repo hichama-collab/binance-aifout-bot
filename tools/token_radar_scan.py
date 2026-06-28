@@ -27,6 +27,14 @@ MIN_QUOTE_VOLUME_24H = float(os.getenv("TOKEN_RADAR_MIN_QUOTE_VOLUME_24H", "5000
 MAX_SPREAD_PCT = float(os.getenv("TOKEN_RADAR_MAX_SPREAD_PCT", "0.002"))
 HTTP_TIMEOUT = float(os.getenv("TOKEN_RADAR_HTTP_TIMEOUT", "10"))
 MAX_WORKERS = max(1, int(os.getenv("TOKEN_RADAR_MAX_WORKERS", "8")))
+EXCLUDED_BASE_ASSETS = {
+    item.strip().upper()
+    for item in os.getenv(
+        "TOKEN_RADAR_EXCLUDE_BASES",
+        "USDC,USDT,FDUSD,TUSD,USDP,DAI,USD1,EUR,TRY,BRL",
+    ).split(",")
+    if item.strip()
+}
 
 
 def _float(value, default: float = 0.0) -> float:
@@ -53,9 +61,9 @@ def _public_get(session: requests.Session, path: str, params: dict | None = None
     raise RuntimeError(f"GET {path} failed: {last_exc}")
 
 
-def _is_leveraged_base(base_asset: str) -> bool:
+def _is_excluded_base(base_asset: str) -> bool:
     base = str(base_asset or "").upper()
-    return base.endswith(("UP", "DOWN", "BULL", "BEAR"))
+    return base in EXCLUDED_BASE_ASSETS or base.endswith(("UP", "DOWN", "BULL", "BEAR"))
 
 
 def _load_symbols(session: requests.Session) -> set[str]:
@@ -72,7 +80,7 @@ def _load_symbols(session: requests.Session) -> set[str]:
             continue
         if row.get("isSpotTradingAllowed") is False:
             continue
-        if _is_leveraged_base(base_asset):
+        if _is_excluded_base(base_asset):
             continue
         symbols.add(symbol)
     return symbols

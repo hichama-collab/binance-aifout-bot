@@ -308,6 +308,11 @@
   color: var(--color-accent);
 }
 
+.score-pill.hot-pill {
+  background: rgba(240, 185, 11, 0.16);
+  color: var(--color-accent);
+}
+
 .score-pill.weak {
   background: rgba(236, 106, 122, 0.11);
   color: #d98995;

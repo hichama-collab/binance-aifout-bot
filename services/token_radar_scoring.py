@@ -124,6 +124,26 @@ def _score_risk(data: Mapping) -> float:
     return round(_clamp(score, 0.0, 20.0), 3)
 
 
+def _score_hot(data: Mapping) -> float:
+    c5 = _num(data, "change_5m_pct")
+    c15 = _num(data, "change_15m_pct")
+    c1h = _num(data, "change_1h_pct")
+    c4h = _num(data, "change_4h_pct")
+    c24 = _num(data, "change_24h_pct")
+
+    score = 0.0
+    score += 18.0 * _positive_scale(c5, 0.012)
+    score += 22.0 * _positive_scale(c15, 0.025)
+    score += 28.0 * _positive_scale(c1h, 0.08)
+    score += 22.0 * _positive_scale(c4h, 0.18)
+    score += 10.0 * _positive_scale(c24, 0.25)
+    if c5 < -0.006:
+        score -= 8.0
+    if c15 < -0.004:
+        score -= 6.0
+    return round(_clamp(score, 0.0, 100.0), 3)
+
+
 def _movement_profile(data: Mapping) -> dict:
     windows = [
         _num(data, "change_5m_pct"),
@@ -145,20 +165,28 @@ def _movement_profile(data: Mapping) -> dict:
     max_abs = max(abs_values)
     volatility = max(windows) - min(windows)
     spike_ratio = max_abs / avg_abs if avg_abs > 0 else 0.0
+    trend_positive = (
+        _num(data, "change_15m_pct") > 0
+        and _num(data, "change_1h_pct") > 0
+        and _num(data, "change_4h_pct") > 0
+    )
 
-    consistency = 100.0
-    consistency -= sign_flips * 18.0
-    consistency -= negatives * 8.0
-    consistency -= _clamp(volatility / 0.08) * 28.0
-    if spike_ratio > 2.4:
-        consistency -= min(24.0, (spike_ratio - 2.4) * 10.0)
-    consistency = round(_clamp(consistency, 0.0, 100.0), 3)
+    reliability = 100.0
+    reliability -= sign_flips * 20.0
+    reliability -= negatives * 10.0
+    if volatility > 0.08:
+        reliability -= 6.0 if trend_positive else min(28.0, (volatility - 0.08) * 220.0)
+    if spike_ratio > 2.8:
+        reliability -= 4.0 if trend_positive else min(24.0, (spike_ratio - 2.8) * 10.0)
+    if _num(data, "change_5m_pct") < -0.008 and trend_positive:
+        reliability -= 8.0
+    reliability = round(_clamp(reliability, 0.0, 100.0), 3)
 
     spread = _num(data, "spread_pct")
     distance_high = _num(data, "distance_high_24h_pct", -1.0)
     c5 = _num(data, "change_5m_pct")
     c24 = _num(data, "change_24h_pct")
-    movement_risk = 100.0 - consistency
+    movement_risk = 100.0 - reliability
     if spread > 0.001:
         movement_risk += 8.0
     if distance_high > -0.004:
@@ -171,7 +199,7 @@ def _movement_profile(data: Mapping) -> dict:
 
     if movement_risk >= 75:
         risk_level = "EXTREME"
-        risk_label = "Chaotique"
+        risk_label = "Piege"
     elif movement_risk >= 55:
         risk_level = "HIGH"
         risk_label = "Agite"
@@ -180,12 +208,16 @@ def _movement_profile(data: Mapping) -> dict:
         risk_label = "Correct"
     else:
         risk_level = "LOW"
-        risk_label = "Stable"
+        risk_label = "Fiable"
 
     reasons = []
+    if trend_positive:
+        reasons.append("tendance multi-fenetres")
+    if volatility >= 0.06 and trend_positive:
+        reasons.append("haute amplitude exploitable")
     if sign_flips >= 2:
         reasons.append("directions alternees")
-    if volatility >= 0.05:
+    if volatility >= 0.05 and not trend_positive:
         reasons.append("amplitude forte")
     if spike_ratio > 2.4:
         reasons.append("mouvement concentre")
@@ -198,7 +230,10 @@ def _movement_profile(data: Mapping) -> dict:
 
     return {
         "volatility_pct": round(volatility, 6),
-        "consistency_score": consistency,
+        "amplitude_pct": round(volatility, 6),
+        "consistency_score": reliability,
+        "reliability_score": reliability,
+        "noise_score": movement_risk,
         "movement_risk_score": movement_risk,
         "risk_level": risk_level,
         "risk_label": risk_label,
@@ -215,6 +250,7 @@ def classify_signal(data: Mapping, scores: Mapping) -> str:
     c4h = _num(data, "change_4h_pct")
     distance_high = _num(data, "distance_high_24h_pct", -1.0)
     global_score = _num(scores, "global_score")
+    hot_score = _num(scores, "hot_score")
 
     if spread > 0.002:
         return "SPREAD_TOO_HIGH"
@@ -222,6 +258,8 @@ def classify_signal(data: Mapping, scores: Mapping) -> str:
         return "LOW_LIQUIDITY"
     if distance_high > -0.002:
         return "NEAR_HIGH_RISK"
+    if hot_score >= 80 and c1h > 0 and c4h > 0:
+        return "HOT"
     if c1h > 0 and c4h > 0 and c5 < 0 and global_score >= 60:
         return "PULLBACK_WATCH"
     if c15 > 0 and c1h > 0 and c4h > 0 and global_score >= 75:
@@ -231,8 +269,14 @@ def classify_signal(data: Mapping, scores: Mapping) -> str:
 
 def build_reason(data: Mapping, scores: Mapping) -> str:
     parts = []
+    if _num(scores, "hot_score") >= 75:
+        parts.append("hot fort")
     if _num(data, "change_1h_pct") > 0 and _num(data, "change_4h_pct") > 0:
         parts.append("momentum 1h/4h positif")
+    if _num(scores, "reliability_score") >= 70:
+        parts.append("mouvement fiable")
+    if _num(scores, "amplitude_pct") >= 0.06:
+        parts.append("haute amplitude")
     if _num(data, "quote_volume_24h") >= 5_000_000:
         parts.append("volume correct")
     if _num(data, "spread_pct") <= 0.001:
@@ -255,14 +299,28 @@ def score_token(data: Mapping) -> dict:
     spread = _score_spread(data)
     trend_quality = _score_trend_quality(data)
     risk = _score_risk(data)
+    hot = _score_hot(data)
     movement = _movement_profile(data)
-    global_score = round(_clamp(momentum + liquidity + spread + trend_quality + risk, 0.0, 100.0), 3)
+    liquidity_norm = liquidity * 5.0
+    spread_norm = spread * (100.0 / 15.0)
+    global_score = round(
+        _clamp(
+            hot * 0.45
+            + movement["reliability_score"] * 0.30
+            + liquidity_norm * 0.15
+            + spread_norm * 0.10,
+            0.0,
+            100.0,
+        ),
+        3,
+    )
     scores = {
         "momentum_score": momentum,
         "liquidity_score": liquidity,
         "spread_score": spread,
         "trend_quality_score": trend_quality,
         "risk_score": risk,
+        "hot_score": hot,
         "score": global_score,
         "global_score": global_score,
         **movement,

@@ -21,11 +21,32 @@ def _base(**kwargs):
 def test_clean_momentum_scores_high():
     score = score_token(_base())
 
-    assert score["global_score"] >= 70
+    assert score["global_score"] >= 55
     assert score["score"] == score["global_score"]
     assert score["signal"] in {"WATCH", "STRONG_MOMENTUM"}
     assert score["risk_level"] in {"LOW", "MEDIUM"}
     assert score["consistency_score"] >= 60
+    assert score["reliability_score"] >= 60
+
+
+def test_hot_reliable_token_scores_high():
+    score = score_token(
+        _base(
+            change_5m_pct=0.027,
+            change_15m_pct=0.025,
+            change_30m_pct=0.06,
+            change_1h_pct=0.13,
+            change_2h_pct=0.18,
+            change_4h_pct=0.23,
+            change_24h_pct=0.19,
+            change_3d_pct=0.05,
+            change_7d_pct=1.9,
+        )
+    )
+
+    assert score["hot_score"] >= 90
+    assert score["global_score"] >= 75
+    assert score["risk_label"] in {"Fiable", "Correct"}
 
 
 def test_near_high_and_excessive_pump_penalizes_risk():

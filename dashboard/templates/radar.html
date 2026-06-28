@@ -28,8 +28,9 @@
           <span class="pick-score" x-text="fmt(scoreValue(row), 1)"></span>
           <span :class="'risk-badge ' + riskClass(row.risk_level)" x-text="riskText(row)"></span>
           <span class="pick-line">
+            <em x-text="'Hot ' + fmt(row.hot_score, 0)"></em>
             <em x-text="'1h ' + pct(row.change_1h_pct)"></em>
-            <em x-text="'Vol ' + compact(row.quote_volume_24h)"></em>
+            <em x-text="'Vol ' + pct(amplitudeValue(row))"></em>
           </span>
           <small x-text="row.reason || row.risk_reason"></small>
         </button>
@@ -89,9 +90,9 @@
               <th><button @click="sortBy('symbol')">Symbol <span x-text="sortMark('symbol')"></span></button></th>
               <th><button @click="sortBy('price')">Price <span x-text="sortMark('price')"></span></button></th>
               <th><button @click="sortBy('score')">Score <span x-text="sortMark('score')"></span></button></th>
-              <th><button @click="sortBy('risk')">Risque <span x-text="sortMark('risk')"></span></button></th>
-              <th><button @click="sortBy('consistency')">Stable <span x-text="sortMark('consistency')"></span></button></th>
-              <th><button @click="sortBy('volatility')">Volatilite <span x-text="sortMark('volatility')"></span></button></th>
+              <th><button @click="sortBy('hot')">Hot <span x-text="sortMark('hot')"></span></button></th>
+              <th><button @click="sortBy('reliability')">Fiabilite <span x-text="sortMark('reliability')"></span></button></th>
+              <th><button @click="sortBy('volatility')">Vol <span x-text="sortMark('volatility')"></span></button></th>
               <th><button @click="sortBy('5m')">5m <span x-text="sortMark('5m')"></span></button></th>
               <th><button @click="sortBy('15m')">15m <span x-text="sortMark('15m')"></span></button></th>
               <th><button @click="sortBy('1h')">1h <span x-text="sortMark('1h')"></span></button></th>
@@ -114,9 +115,9 @@
                 <td><strong x-text="row.symbol"></strong></td>
                 <td class="num" x-text="price(row.price)"></td>
                 <td><span class="score-pill" :class="scoreClass(scoreValue(row))" x-text="fmt(scoreValue(row), 1)"></span></td>
+                <td><span class="score-pill hot-pill" x-text="fmt(row.hot_score, 0)"></span></td>
                 <td><span :class="'risk-badge ' + riskClass(row.risk_level)" x-text="riskText(row)"></span></td>
-                <td class="num" x-text="fmt(row.consistency_score, 0)"></td>
-                <td :class="riskVolClass(row.volatility_pct)" x-text="pct(row.volatility_pct)"></td>
+                <td :class="amplitudeClass(amplitudeValue(row))" x-text="pct(amplitudeValue(row))"></td>
                 <td :class="pctClass(row.change_5m_pct)" x-text="pct(row.change_5m_pct)"></td>
                 <td :class="pctClass(row.change_15m_pct)" x-text="pct(row.change_15m_pct)"></td>
                 <td :class="pctClass(row.change_1h_pct)" x-text="pct(row.change_1h_pct)"></td>
@@ -172,14 +173,15 @@
         <div class="detail-grid" x-show="detail.latest">
           <div><span>Price</span><strong x-text="price(detail.latest?.price)"></strong></div>
           <div><span>Score</span><strong x-text="fmt(scoreValue(detail.latest), 1)"></strong></div>
+          <div><span>Hot</span><strong x-text="fmt(detail.latest?.hot_score, 0)"></strong></div>
+          <div><span>Fiabilite</span><strong x-text="riskText(detail.latest)"></strong></div>
+          <div><span>Vol</span><strong x-text="pct(amplitudeValue(detail.latest))"></strong></div>
           <div><span>Momentum</span><strong x-text="fmt(detail.latest?.momentum_score, 1)"></strong></div>
           <div><span>Liquidity</span><strong x-text="fmt(detail.latest?.liquidity_score, 1)"></strong></div>
           <div><span>Spread</span><strong x-text="pct(detail.latest?.spread_pct)"></strong></div>
           <div><span>High dist</span><strong x-text="pct(detail.latest?.distance_high_24h_pct)"></strong></div>
-          <div><span>Risque</span><strong x-text="riskText(detail.latest)"></strong></div>
-          <div><span>Stabilite</span><strong x-text="fmt(detail.latest?.consistency_score, 0)"></strong></div>
-          <div><span>Volatilite</span><strong x-text="pct(detail.latest?.volatility_pct)"></strong></div>
-          <div><span>Raison risque</span><strong x-text="detail.latest?.risk_reason || '—'"></strong></div>
+          <div><span>Fiab score</span><strong x-text="fmt(detail.latest?.reliability_score ?? detail.latest?.consistency_score, 0)"></strong></div>
+          <div><span>Raison fiab</span><strong x-text="detail.latest?.risk_reason || '—'"></strong></div>
         </div>
         <p class="reason" x-text="detail.latest ? detail.latest.reason : ''"></p>
         <div class="history-list">
@@ -220,9 +222,9 @@ function tokenRadar() {
       symbol: 'symbol',
       price: 'price',
       score: 'score',
-      risk: 'movement_risk_score',
-      consistency: 'consistency_score',
-      volatility: 'volatility_pct',
+      hot: 'hot_score',
+      reliability: 'reliability_score',
+      volatility: 'amplitude_pct',
       '5m': 'change_5m_pct',
       '15m': 'change_15m_pct',
       '1h': 'change_1h_pct',
@@ -248,9 +250,9 @@ function tokenRadar() {
         .filter(row => Number(row.change_1h_pct || 0) > 0)
         .filter(row => Number(row.spread_pct || 0) <= Number(this.filters.max_spread || 0.002))
         .sort((a, b) => {
-          const left = this.scoreValue(b) - this.scoreValue(a);
+          const left = Number(b.hot_score || 0) - Number(a.hot_score || 0);
           if (left) return left;
-          return Number(b.consistency_score || 0) - Number(a.consistency_score || 0);
+          return Number(b.reliability_score || b.consistency_score || 0) - Number(a.reliability_score || a.consistency_score || 0);
         })
         .slice(0, 4);
     },
@@ -327,12 +329,12 @@ function tokenRadar() {
       if (!Number.isFinite(n) || Math.abs(n) < 0.00001) return 'neutral';
       return n > 0 ? 'profit' : 'loss';
     },
-    riskVolClass(v) {
+    amplitudeClass(v) {
       const n = Number(v);
       if (!Number.isFinite(n)) return 'neutral';
-      if (n >= 0.08) return 'loss';
-      if (n >= 0.04) return 'warn';
-      return 'profit';
+      if (n >= 0.08) return 'profit';
+      if (n >= 0.03) return 'warn';
+      return 'neutral';
     },
     scoreClass(v) {
       const n = Number(v);
@@ -343,6 +345,10 @@ function tokenRadar() {
     scoreValue(row) {
       if (!row) return null;
       return row.score ?? row.global_score;
+    },
+    amplitudeValue(row) {
+      if (!row) return null;
+      return row.amplitude_pct ?? row.volatility_pct;
     },
     riskText(row) {
       if (!row) return '—';
@@ -365,7 +371,7 @@ function tokenRadar() {
         this.sort.dir = this.sort.dir === 'asc' ? 'desc' : 'asc';
       } else {
         this.sort.key = key;
-        this.sort.dir = ['rank', 'symbol', 'risk', 'spread', 'volatility'].includes(key) ? 'asc' : 'desc';
+        this.sort.dir = ['rank', 'symbol', 'spread'].includes(key) ? 'asc' : 'desc';
       }
     },
     sortMark(key) {
@@ -376,6 +382,11 @@ function tokenRadar() {
       const field = this.sortMap[key] || key;
       const av = key === 'score' ? this.scoreValue(a) : a[field];
       const bv = key === 'score' ? this.scoreValue(b) : b[field];
+      if (key === 'volatility') {
+        const aa = Number(this.amplitudeValue(a));
+        const bb = Number(this.amplitudeValue(b));
+        return aa === bb ? 0 : aa > bb ? 1 : -1;
+      }
       const an = Number(av);
       const bn = Number(bv);
       if (Number.isFinite(an) && Number.isFinite(bn)) return an === bn ? 0 : an > bn ? 1 : -1;
