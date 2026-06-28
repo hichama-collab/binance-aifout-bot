@@ -252,7 +252,7 @@ def classify_signal(data: Mapping, scores: Mapping) -> str:
     global_score = _num(scores, "global_score")
     hot_score = _num(scores, "hot_score")
 
-    if spread > 0.002:
+    if spread > 0.006:
         return "SPREAD_TOO_HIGH"
     if quote_volume < 500_000:
         return "LOW_LIQUIDITY"

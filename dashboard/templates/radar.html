@@ -212,7 +212,7 @@ function tokenRadar() {
       period: '1h',
       min_score: 0,
       min_volume: 500000,
-      max_spread: 0.002,
+      max_spread: 0.006,
       favorites_only: false,
       limit: 50,
     },
@@ -248,7 +248,7 @@ function tokenRadar() {
       return [...this.top]
         .filter(row => ['LOW', 'MEDIUM'].includes(row.risk_level || 'MEDIUM'))
         .filter(row => Number(row.change_1h_pct || 0) > 0)
-        .filter(row => Number(row.spread_pct || 0) <= Number(this.filters.max_spread || 0.002))
+        .filter(row => Number(row.spread_pct || 0) <= Number(this.filters.max_spread || 0.006))
         .sort((a, b) => {
           const left = Number(b.hot_score || 0) - Number(a.hot_score || 0);
           if (left) return left;

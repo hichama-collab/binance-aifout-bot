@@ -60,6 +60,12 @@ def test_wide_spread_has_low_spread_score():
     score = score_token(_base(spread_pct=0.003))
 
     assert score["spread_score"] <= 3
+    assert score["signal"] != "SPREAD_TOO_HIGH"
+
+
+def test_extreme_spread_is_flagged_too_high():
+    score = score_token(_base(spread_pct=0.007))
+
     assert score["signal"] == "SPREAD_TOO_HIGH"
 
 
