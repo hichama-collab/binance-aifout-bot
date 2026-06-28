@@ -36,5 +36,7 @@ venv.txt
 data/logs/
 data/runtime/
 data/**/*.csv
+data/*.db
+data/*.sqlite3
 data/**/*.sqlite3
 dashboard/.venv/

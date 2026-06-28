@@ -1,0 +1,14 @@
+[Unit]
+Description=Token Radar Scan
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/binance-aifout-bot
+EnvironmentFile=-/opt/binance-aifout-bot/.service.env
+ExecStart=/opt/binance-aifout-bot/venv/bin/python tools/token_radar_scan.py
+User=root
+Group=root
+Nice=5
+

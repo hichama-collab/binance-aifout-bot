@@ -442,6 +442,11 @@ def require_token_auth(f):
     return decorated
 
 
+from dashboard.routes_radar import register_radar_routes
+
+register_radar_routes(app, require_basic_auth, BASE_DIR)
+
+
 # ---------------------------------------------------------------------------
 # Data helpers
 # ---------------------------------------------------------------------------

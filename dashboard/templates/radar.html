@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+{% block title %}Radar{% endblock %}
+{% block head_extra %}
+<link rel="stylesheet" href="/static/radar.css" />
+{% endblock %}
+
+{% block content %}
+<div x-data="tokenRadar()" x-init="init()" class="page-content radar-page">
+  <section class="radar-head">
+    <div>
+      <h1>Token Radar</h1>
+      <p x-text="summaryText()"></p>
+    </div>
+    <button class="radar-btn radar-btn-primary" @click="loadAll()" :disabled="loading">
+      <span x-text="loading ? 'Refresh…' : 'Refresh'"></span>
+    </button>
+  </section>
+
+  <section class="radar-filters">
+    <label>
+      <span>Period</span>
+      <select x-model="filters.period" @change="loadTop()">
+        <option value="5m">5m</option>
+        <option value="15m">15m</option>
+        <option value="30m">30m</option>
+        <option value="1h">1h</option>
+        <option value="2h">2h</option>
+        <option value="4h">4h</option>
+        <option value="24h">24h</option>
+        <option value="3d">3d</option>
+        <option value="7d">7d</option>
+      </select>
+    </label>
+    <label>
+      <span>Min score</span>
+      <input type="number" min="0" max="100" step="1" x-model.number="filters.min_score" @change="loadTop()" />
+    </label>
+    <label>
+      <span>Min volume</span>
+      <input type="number" min="0" step="100000" x-model.number="filters.min_volume" @change="loadTop()" />
+    </label>
+    <label>
+      <span>Max spread</span>
+      <input type="number" min="0" step="0.0001" x-model.number="filters.max_spread" @change="loadTop()" />
+    </label>
+    <label>
+      <span>Limit</span>
+      <input type="number" min="5" max="250" step="5" x-model.number="filters.limit" @change="loadTop()" />
+    </label>
+    <label class="radar-check">
+      <input type="checkbox" x-model="filters.favorites_only" @change="loadTop()" />
+      <span>Favoris</span>
+    </label>
+  </section>
+
+  <section class="radar-grid">
+    <div class="radar-panel radar-main">
+      <div class="radar-panel-title">
+        <h2>Top tokens</h2>
+        <span x-text="top.length + ' lignes'"></span>
+      </div>
+      <div class="radar-table-wrap">
+        <table class="radar-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Symbol</th>
+              <th>Price</th>
+              <th>Score</th>
+              <th>5m</th>
+              <th>15m</th>
+              <th>1h</th>
+              <th>4h</th>
+              <th>24h</th>
+              <th>3d</th>
+              <th>7d</th>
+              <th>Vol 24h</th>
+              <th>Spread</th>
+              <th>Dist high</th>
+              <th>Signal</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(row, idx) in top" :key="row.symbol">
+              <tr @click="select(row.symbol)">
+                <td class="muted" x-text="idx + 1"></td>
+                <td><strong x-text="row.symbol"></strong></td>
+                <td class="num" x-text="price(row.price)"></td>
+                <td><span class="score-pill" :class="scoreClass(row.global_score)" x-text="fmt(row.global_score, 1)"></span></td>
+                <td :class="pctClass(row.change_5m_pct)" x-text="pct(row.change_5m_pct)"></td>
+                <td :class="pctClass(row.change_15m_pct)" x-text="pct(row.change_15m_pct)"></td>
+                <td :class="pctClass(row.change_1h_pct)" x-text="pct(row.change_1h_pct)"></td>
+                <td :class="pctClass(row.change_4h_pct)" x-text="pct(row.change_4h_pct)"></td>
+                <td :class="pctClass(row.change_24h_pct)" x-text="pct(row.change_24h_pct)"></td>
+                <td :class="pctClass(row.change_3d_pct)" x-text="pct(row.change_3d_pct)"></td>
+                <td :class="pctClass(row.change_7d_pct)" x-text="pct(row.change_7d_pct)"></td>
+                <td class="num" x-text="compact(row.quote_volume_24h)"></td>
+                <td class="num" x-text="pct(row.spread_pct)"></td>
+                <td :class="pctClass(row.distance_high_24h_pct)" x-text="pct(row.distance_high_24h_pct)"></td>
+                <td><span class="signal" x-text="row.signal"></span></td>
+                <td>
+                  <button class="radar-icon-btn" @click.stop="addFav(row.symbol)">＋</button>
+                </td>
+              </tr>
+            </template>
+            <tr x-show="!top.length">
+              <td colspan="16" class="empty">Aucune donnée radar disponible</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <aside class="radar-panel radar-side">
+      <div class="radar-panel-title">
+        <h2>Favoris</h2>
+        <span x-text="favorites.length"></span>
+      </div>
+      <div class="favorite-list">
+        <template x-for="fav in favorites" :key="fav.symbol">
+          <div class="favorite-row" @click="select(fav.symbol)">
+            <div>
+              <strong x-text="fav.symbol"></strong>
+              <span x-text="fav.last_signal || 'WATCH'"></span>
+            </div>
+            <div class="favorite-metrics">
+              <span x-text="perfSinceAdd(fav)"></span>
+              <span x-text="fmt(fav.current_score, 1)"></span>
+              <button @click.stop="removeFav(fav.symbol)">×</button>
+            </div>
+          </div>
+        </template>
+        <div x-show="!favorites.length" class="empty">Aucun favori</div>
+      </div>
+
+      <div class="token-detail" x-show="detail.latest">
+        <div class="radar-panel-title">
+          <h2 x-text="detail.symbol"></h2>
+          <span x-text="detail.latest ? detail.latest.signal : ''"></span>
+        </div>
+        <div class="detail-grid" x-show="detail.latest">
+          <div><span>Price</span><strong x-text="price(detail.latest?.price)"></strong></div>
+          <div><span>Score</span><strong x-text="fmt(detail.latest?.global_score, 1)"></strong></div>
+          <div><span>Momentum</span><strong x-text="fmt(detail.latest?.momentum_score, 1)"></strong></div>
+          <div><span>Liquidity</span><strong x-text="fmt(detail.latest?.liquidity_score, 1)"></strong></div>
+          <div><span>Spread</span><strong x-text="pct(detail.latest?.spread_pct)"></strong></div>
+          <div><span>High dist</span><strong x-text="pct(detail.latest?.distance_high_24h_pct)"></strong></div>
+        </div>
+        <p class="reason" x-text="detail.latest ? detail.latest.reason : ''"></p>
+        <div class="history-list">
+          <template x-for="row in detail.history.slice(0, 8)" :key="row.id">
+            <div>
+              <span x-text="shortDate(row.created_at)"></span>
+              <strong x-text="fmt(row.global_score, 1)"></strong>
+              <em :class="pctClass(row.change_1h_pct)" x-text="pct(row.change_1h_pct)"></em>
+            </div>
+          </template>
+        </div>
+      </div>
+    </aside>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function tokenRadar() {
+  return {
+    loading: false,
+    error: '',
+    top: [],
+    favorites: [],
+    detail: {symbol: '', latest: null, history: []},
+    filters: {
+      period: '1h',
+      min_score: 0,
+      min_volume: 500000,
+      max_spread: 0.002,
+      favorites_only: false,
+      limit: 50,
+    },
+    async init() { await this.loadAll(); },
+    query() {
+      const p = new URLSearchParams();
+      Object.entries(this.filters).forEach(([k, v]) => p.set(k, v));
+      return p.toString();
+    },
+    async fetchJson(url, options = {}) {
+      const res = await fetch(url, {credentials: 'same-origin', ...options});
+      const data = await res.json();
+      if (!res.ok || data.ok === false) throw new Error(data.error || res.statusText);
+      return data;
+    },
+    async loadAll() {
+      this.loading = true;
+      try {
+        await Promise.all([this.loadTop(), this.loadFavorites()]);
+      } finally {
+        this.loading = false;
+      }
+    },
+    async loadTop() {
+      const data = await this.fetchJson('/api/radar/top?' + this.query());
+      this.top = data.items || [];
+      if (!this.detail.latest && this.top.length) this.select(this.top[0].symbol);
+    },
+    async loadFavorites() {
+      const data = await this.fetchJson('/api/radar/favorites');
+      this.favorites = data.items || [];
+    },
+    async select(symbol) {
+      const data = await this.fetchJson('/api/radar/token/' + encodeURIComponent(symbol));
+      this.detail = data;
+    },
+    async addFav(symbol) {
+      await this.fetchJson('/api/radar/favorites', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({symbol}),
+      });
+      await this.loadFavorites();
+    },
+    async removeFav(symbol) {
+      await this.fetchJson('/api/radar/favorites/' + encodeURIComponent(symbol), {method: 'DELETE'});
+      await this.loadFavorites();
+    },
+    summaryText() {
+      if (this.top.length) return 'Dernier snapshot: ' + this.shortDate(this.top[0].created_at);
+      return 'En attente de scan';
+    },
+    fmt(v, d = 2) { return Number.isFinite(Number(v)) ? Number(v).toFixed(d) : '—'; },
+    price(v) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return '—';
+      if (n >= 100) return n.toFixed(2);
+      if (n >= 1) return n.toFixed(4);
+      return n.toPrecision(6);
+    },
+    pct(v) {
+      const n = Number(v);
+      return Number.isFinite(n) ? (n * 100).toFixed(2) + '%' : '—';
+    },
+    compact(v) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return '—';
+      if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+      return n.toFixed(0);
+    },
+    pctClass(v) {
+      const n = Number(v);
+      if (!Number.isFinite(n) || Math.abs(n) < 0.00001) return 'neutral';
+      return n > 0 ? 'profit' : 'loss';
+    },
+    scoreClass(v) {
+      const n = Number(v);
+      if (n >= 75) return 'strong';
+      if (n >= 55) return 'watch';
+      return 'weak';
+    },
+    perfSinceAdd(fav) {
+      const added = Number(fav.added_price);
+      const current = Number(fav.current_price);
+      if (!added || !current) return '—';
+      return this.pct((current - added) / added);
+    },
+    shortDate(raw) {
+      if (!raw) return '—';
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return raw;
+      return d.toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
+    },
+  };
+}
+</script>
+{% endblock %}
