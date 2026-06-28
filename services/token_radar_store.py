@@ -16,7 +16,7 @@ SNAPSHOT_COLUMNS = [
     "change_2h_pct", "change_4h_pct", "change_24h_pct", "change_3d_pct", "change_7d_pct",
     "high_24h", "low_24h", "distance_high_24h_pct", "distance_low_24h_pct",
     "momentum_score", "liquidity_score", "spread_score", "trend_quality_score",
-    "risk_score", "global_score", "signal", "reason",
+    "risk_score", "score", "global_score", "signal", "reason",
 ]
 
 PERIOD_COLUMNS = {
@@ -84,6 +84,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             spread_score REAL,
             trend_quality_score REAL,
             risk_score REAL,
+            score REAL,
             global_score REAL,
             signal TEXT,
             reason TEXT
@@ -118,6 +119,16 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             inserted_count INTEGER DEFAULT 0,
             error TEXT
         );
+        """
+    )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(token_snapshots)").fetchall()}
+    if "score" not in columns:
+        conn.execute("ALTER TABLE token_snapshots ADD COLUMN score REAL")
+    conn.execute("UPDATE token_snapshots SET score = global_score WHERE score IS NULL AND global_score IS NOT NULL")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_token_snapshots_created_score_simple
+        ON token_snapshots(created_at, score)
         """
     )
     conn.commit()
@@ -242,7 +253,8 @@ def get_top_tokens(
     base_dir: str | Path | None = None,
 ) -> list[dict]:
     period_col = PERIOD_COLUMNS.get(str(period or "1h"), "change_1h_pct")
-    filters = ["s.global_score >= ?", "COALESCE(s.quote_volume_24h, 0) >= ?"]
+    score_expr = "COALESCE(s.score, s.global_score, 0)"
+    filters = [f"{score_expr} >= ?", "COALESCE(s.quote_volume_24h, 0) >= ?"]
     params: list = [float(min_score), float(min_volume)]
     if max_spread is not None:
         filters.append("COALESCE(s.spread_pct, 999) <= ?")
@@ -251,7 +263,7 @@ def get_top_tokens(
     if favorites_only:
         join_fav = "JOIN token_favorites f ON f.symbol = s.symbol AND COALESCE(f.status, 'active') = 'active'"
     where = f"{join_fav} WHERE " + " AND ".join(filters)
-    sql = _latest_rows_sql(where) + f" ORDER BY s.global_score DESC, COALESCE(s.{period_col}, 0) DESC LIMIT ?"
+    sql = _latest_rows_sql(where) + f" ORDER BY {score_expr} DESC, COALESCE(s.{period_col}, 0) DESC LIMIT ?"
     params.append(max(1, min(int(limit), 250)))
     with connect(db_path, base_dir) as conn:
         ensure_schema(conn)
@@ -291,9 +303,9 @@ def add_favorite(
                 now,
                 note[:500],
                 snapshot.get("price"),
-                snapshot.get("global_score"),
+                snapshot.get("score", snapshot.get("global_score")),
                 snapshot.get("price"),
-                snapshot.get("global_score"),
+                snapshot.get("score", snapshot.get("global_score")),
             ),
         )
         conn.commit()
@@ -344,7 +356,7 @@ def list_favorites(db_path: str | Path | None = None, base_dir: str | Path | Non
             )
             SELECT f.*,
                    s.price AS current_price,
-                   s.global_score AS current_score,
+                   COALESCE(s.score, s.global_score) AS current_score,
                    s.signal AS last_signal,
                    s.reason AS reason,
                    s.created_at AS last_seen_at

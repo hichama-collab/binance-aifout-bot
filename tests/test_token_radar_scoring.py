@@ -22,6 +22,7 @@ def test_clean_momentum_scores_high():
     score = score_token(_base())
 
     assert score["global_score"] >= 70
+    assert score["score"] == score["global_score"]
     assert score["signal"] in {"WATCH", "STRONG_MOMENTUM"}
 
 
@@ -52,4 +53,3 @@ def test_global_score_is_bounded():
 
     assert 0 <= low["global_score"] <= 100
     assert 0 <= high["global_score"] <= 100
-

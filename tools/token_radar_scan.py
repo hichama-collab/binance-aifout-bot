@@ -161,6 +161,13 @@ def _enrich_candidate(symbol: str, base: dict) -> dict:
     return row
 
 
+def _has_positive_variation(row: dict) -> bool:
+    return any(
+        (row.get(key) or 0.0) > 0.0
+        for key in ("change_5m_pct", "change_15m_pct", "change_1h_pct", "change_24h_pct")
+    )
+
+
 def scan() -> list[dict]:
     session = requests.Session()
     symbols = _load_symbols(session)
@@ -192,11 +199,13 @@ def scan() -> list[dict]:
             item = future_to_item[future]
             try:
                 row = future.result()
+                if not _has_positive_variation(row):
+                    continue
                 row["created_at"] = created_at
                 snapshots.append(row)
             except Exception as exc:
                 print(f"TOKEN_RADAR: skip {item['symbol']} err={type(exc).__name__}:{exc}", file=sys.stderr)
-    snapshots.sort(key=lambda item: (item["global_score"], item["symbol"]), reverse=True)
+    snapshots.sort(key=lambda item: (item["score"], item["symbol"]), reverse=True)
     return snapshots
 
 
@@ -210,7 +219,7 @@ def main() -> int:
         finish_scan_run(run_id, status="ok", scanned_count=len(snapshots), inserted_count=inserted, db_path=db_path)
         print(f"TOKEN_RADAR: db={db_path} scanned={len(snapshots)} inserted={inserted}")
         for row in snapshots[:10]:
-            print(f"{row['symbol']} score={row['global_score']:.2f} signal={row['signal']} price={row['price']:.8g}")
+            print(f"{row['symbol']} score={row['score']:.2f} signal={row['signal']} price={row['price']:.8g}")
         return 0
     except Exception as exc:
         finish_scan_run(

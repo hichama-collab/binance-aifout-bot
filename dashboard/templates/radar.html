@@ -87,7 +87,7 @@
                 <td class="muted" x-text="idx + 1"></td>
                 <td><strong x-text="row.symbol"></strong></td>
                 <td class="num" x-text="price(row.price)"></td>
-                <td><span class="score-pill" :class="scoreClass(row.global_score)" x-text="fmt(row.global_score, 1)"></span></td>
+                <td><span class="score-pill" :class="scoreClass(scoreValue(row))" x-text="fmt(scoreValue(row), 1)"></span></td>
                 <td :class="pctClass(row.change_5m_pct)" x-text="pct(row.change_5m_pct)"></td>
                 <td :class="pctClass(row.change_15m_pct)" x-text="pct(row.change_15m_pct)"></td>
                 <td :class="pctClass(row.change_1h_pct)" x-text="pct(row.change_1h_pct)"></td>
@@ -141,7 +141,7 @@
         </div>
         <div class="detail-grid" x-show="detail.latest">
           <div><span>Price</span><strong x-text="price(detail.latest?.price)"></strong></div>
-          <div><span>Score</span><strong x-text="fmt(detail.latest?.global_score, 1)"></strong></div>
+          <div><span>Score</span><strong x-text="fmt(scoreValue(detail.latest), 1)"></strong></div>
           <div><span>Momentum</span><strong x-text="fmt(detail.latest?.momentum_score, 1)"></strong></div>
           <div><span>Liquidity</span><strong x-text="fmt(detail.latest?.liquidity_score, 1)"></strong></div>
           <div><span>Spread</span><strong x-text="pct(detail.latest?.spread_pct)"></strong></div>
@@ -152,7 +152,7 @@
           <template x-for="row in detail.history.slice(0, 8)" :key="row.id">
             <div>
               <span x-text="shortDate(row.created_at)"></span>
-              <strong x-text="fmt(row.global_score, 1)"></strong>
+              <strong x-text="fmt(scoreValue(row), 1)"></strong>
               <em :class="pctClass(row.change_1h_pct)" x-text="pct(row.change_1h_pct)"></em>
             </div>
           </template>
@@ -259,6 +259,10 @@ function tokenRadar() {
       if (n >= 75) return 'strong';
       if (n >= 55) return 'watch';
       return 'weak';
+    },
+    scoreValue(row) {
+      if (!row) return null;
+      return row.score ?? row.global_score;
     },
     perfSinceAdd(fav) {
       const added = Number(fav.added_price);

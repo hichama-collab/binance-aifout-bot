@@ -177,6 +177,7 @@ def score_token(data: Mapping) -> dict:
         "spread_score": spread,
         "trend_quality_score": trend_quality,
         "risk_score": risk,
+        "score": global_score,
         "global_score": global_score,
     }
     scores["signal"] = classify_signal(data, scores)
