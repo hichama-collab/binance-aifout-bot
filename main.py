@@ -452,7 +452,7 @@ from exchange.stream import Stream
 
 from execution.orders import OrderStateUnknown, order_fee_summary, placeLimit, waitFillOrCancel
 from state.wallet_sync import loadWalletFlatGuard, walletSyncEvery
-from state.position import Position
+from state.position import Position, SESSION_HIGH_DROP_REASON
 
 from indicators.basic import fmt, computeSignals, computeMarketContext
 
@@ -523,6 +523,7 @@ LOSS_ALLOWED_REASONS = (
     "ENTRY_GUARD_LOSS_CUT",
     "PSELL FAIL",
     "PSELL FAST",
+    SESSION_HIGH_DROP_REASON,
 )
 
 
@@ -1033,6 +1034,46 @@ def main():
         except Exception:
             pass
 
+    def _session_high_value(position) -> float:
+        if position is None:
+            return 0.0
+        entry = float(getattr(position, "entry", 0.0) or 0.0)
+        high = float(getattr(position, "high", entry) or entry)
+        session_high = float(getattr(position, "sessionHighPrice", 0.0) or 0.0)
+        return max(entry, high, session_high)
+
+    def persist_open_position_state(reason: str = ""):
+        if pos is None or float(getattr(pos, "entry", 0.0) or 0.0) <= 0:
+            return
+        try:
+            session_high = _session_high_value(pos)
+            _pos_file = runtime_dir / "active_position.json"
+            _pos_file.parent.mkdir(parents=True, exist_ok=True)
+            _pos_file.write_text(json.dumps({
+                "symbol": symbol,
+                "entry": float(getattr(pos, 'entry', 0.0)),
+                "entry_price": float(getattr(pos, 'entry', 0.0)),
+                "qty": float(getattr(pos, 'qty', 0.0)),
+                "ts_entry": float(getattr(pos, 'ts_entry', time.time())),
+                "session_high_price": session_high,
+                "high": session_high,
+                "reason": reason,
+            }), encoding="utf-8")
+            save_position(PersistedPosition(
+                symbol=symbol,
+                entry_price=float(getattr(pos, 'entry', 0.0)),
+                entry_qty=float(getattr(pos, 'qty', 0.0)),
+                entry_ts=float(getattr(pos, 'ts_entry', time.time())),
+                entry_reason=reason or "OPEN_POSITION",
+                high_seen=session_high,
+                buy_notional=float(getattr(pos, 'entry', 0.0)) * float(getattr(pos, 'qty', 0.0)),
+            ), _persisted_path)
+        except Exception as e:
+            try:
+                logErr("PERSIST_OPEN_POSITION_FAIL", e)
+            except Exception:
+                pass
+
     def sync_log_day_anchor(position):
         if position is None:
             logDayCtx.clear_anchor()
@@ -1222,6 +1263,8 @@ def main():
         except Exception:
             pass
         try:
+            if float(getattr(pos, "sessionHighPrice", 0.0) or 0.0) <= 0:
+                pos.sessionHighPrice = _session_high_value(pos)
             _pos_file = runtime_dir / "active_position.json"
             _pos_file.parent.mkdir(parents=True, exist_ok=True)
             _pos_file.write_text(json.dumps({
@@ -1232,6 +1275,8 @@ def main():
                 "entry_source": str(syncInfo.get('entry_source', '')),
                 "qty": float(getattr(pos, 'qty', 0.0)),
                 "ts_entry": float(getattr(pos, 'ts_entry', time.time())),
+                "session_high_price": _session_high_value(pos),
+                "high": _session_high_value(pos),
                 "source": sync_reason,
             }), encoding="utf-8")
             if float(getattr(pos, "entry", 0.0) or 0.0) > 0:
@@ -1241,7 +1286,7 @@ def main():
                     entry_qty=float(getattr(pos, 'qty', 0.0)),
                     entry_ts=float(getattr(pos, 'ts_entry', time.time())),
                     entry_reason=f"WALLET_SYNC_{sync_reason}",
-                    high_seen=float(getattr(pos, 'high', getattr(pos, 'entry', 0.0))),
+                    high_seen=_session_high_value(pos),
                     buy_notional=float(getattr(pos, 'entry', 0.0)) * float(getattr(pos, 'qty', 0.0)),
                 ), _persisted_path)
         except Exception as e:
@@ -1401,12 +1446,14 @@ def main():
             # NEVER adopt bid as entry — unknown entry price means unknown risk.
             if pos is not None and getattr(pos, 'entry', 0.0) == 0.0:
                 _recovered_entry = 0.0
+                _recovered_session_high = 0.0
                 try:
                     _pos_file = runtime_dir / "active_position.json"
                     if _pos_file.exists():
                         _pd = json.loads(_pos_file.read_text(encoding="utf-8"))
                         if _pd.get("symbol") == symbol and float(_pd.get("entry", 0.0)) > 0:
                             _recovered_entry = float(_pd["entry"])
+                            _recovered_session_high = float(_pd.get("session_high_price", _pd.get("high", _recovered_entry)) or _recovered_entry)
                             logTrade(f"ENTRY_RECOVERED symbol={symbol} entry={_recovered_entry} from_disk=true")
                 except Exception:
                     pass
@@ -1423,8 +1470,10 @@ def main():
                     try:
                         _pp_high = load_position(_persisted_path)
                         pos.high = max(float(bid), float(getattr(_pp_high, "high_seen", 0.0) or 0.0), _recovered_entry)
+                        pos.sessionHighPrice = max(float(getattr(pos, "high", _recovered_entry)), _recovered_session_high, _recovered_entry)
                     except Exception:
                         pos.high = float(bid)
+                        pos.sessionHighPrice = max(float(bid), _recovered_entry)
                     pos.stop = 0.0
                     try:
                         pos.init_stops(cfg, profile, tick=tick)
@@ -2781,6 +2830,7 @@ def main():
 
                 if pos is None:
                     pos = Position(qty=execQty, entry=entryPx, high=entryPx, stop=0.0, ts_entry=time.time())
+                    pos.sessionHighPrice = entryPx
                     pos.init_stops(cfg, profile, tick=tick)
                 else:
                     # add to existing position (weighted average)
@@ -2791,6 +2841,7 @@ def main():
                         new_entry = ((old_qty * old_entry) + quoteQty) / new_qty
                         pos.qty = new_qty
                         pos.entry = new_entry
+                        pos.sessionHighPrice = max(float(getattr(pos, "sessionHighPrice", 0.0) or 0.0), new_entry)
                         try:
                             pos.high = max(float(getattr(pos, 'high', new_entry)), float(bid))
                         except Exception:
@@ -2812,6 +2863,8 @@ def main():
                         "entry": float(getattr(pos, 'entry', 0.0)),
                         "qty": float(getattr(pos, 'qty', 0.0)),
                         "ts_entry": float(getattr(pos, 'ts_entry', time.time())),
+                        "session_high_price": _session_high_value(pos),
+                        "high": _session_high_value(pos),
                     }), encoding="utf-8")
                 except Exception:
                     pass
@@ -2895,7 +2948,7 @@ def main():
                     entry_qty=float(getattr(pos, 'qty', 0.0)),
                     entry_ts=float(getattr(pos, 'ts_entry', time.time())),
                     entry_reason=entryMode,
-                    high_seen=float(getattr(pos, 'high', getattr(pos, 'entry', 0.0))),
+                    high_seen=_session_high_value(pos),
                     buy_notional=float(getattr(pos, 'entry', 0.0)) * float(getattr(pos, 'qty', 0.0)),
                 )
                 save_position(_pp, _persisted_path)
@@ -2974,12 +3027,30 @@ def main():
 
             # If position was adopted from wallet (entry=0), treat as untracked.
             # We do not fabricate an entry; we liquidate when sellable, otherwise we clear as dust.
+            sessionHighInfo = {}
             if pos.entry <= 0:
                 exitReason = "WALLET_UNTRACKED"
             else:
-                pos.update(bid, cfg, profile, tick=tick)
                 exitReason = None
+                sessionHighDrop, sessionHighInfo = pos.check_session_high_drop(bid)
+                if sessionHighDrop:
+                    exitReason = SESSION_HIGH_DROP_REASON
+                    try:
+                        logTrade(
+                            f"{SESSION_HIGH_DROP_REASON} "
+                            f"session_high_price={sessionHighInfo.get('session_high_price', 0.0):.8f} "
+                            f"current_price={sessionHighInfo.get('current_price', 0.0):.8f} "
+                            f"session_high_drop_pct={float(sessionHighInfo.get('session_high_drop_pct', 0.0))*100.0:.4f}%"
+                        )
+                    except Exception:
+                        pass
+                elif bool(sessionHighInfo.get("session_high_updated")):
+                    persist_open_position_state("SESSION_HIGH_UPDATE")
+                if exitReason is None:
+                    pos.update(bid, cfg, profile, tick=tick)
                 if (
+                    exitReason is None
+                    and
                     has_new_tick
                     and bool(getattr(cfg, "psellStrictPTapeExitEnabled", False))
                 ):
@@ -3286,6 +3357,7 @@ def main():
                     "px", fmt(sellPx, tick),
                     "entry", fmt(getattr(pos, "entry", 0.0), tick),
                     "high", fmt(getattr(pos, "high", 0.0), tick),
+                    "session_high", fmt(_session_high_value(pos), tick),
                     "stop", fmt(getattr(pos, "stop", 0.0), tick),
                 )
             except Exception:
@@ -3348,6 +3420,11 @@ def main():
                 "client_order_id": info.get("clientOrderId", order.get("clientOrderId", "")),
                 "exchange_status": info.get("status", ""),
                 "fill_latency_ms": int((time.time() - _sell_order_t0) * 1000),
+                "exit_reason": exitReason,
+                "exit_reason_raw": exitReason,
+                "session_high_price": sessionHighInfo.get("session_high_price", _session_high_value(pos)),
+                "current_price": sessionHighInfo.get("current_price", bid),
+                "session_high_drop_pct": float(sessionHighInfo.get("session_high_drop_pct", 0.0) or 0.0) * 100.0,
                 "fee_source": _sell_fee["fee_source"],
                 "fee_sell": _sell_fee["fee"],
                 "commission_asset": _sell_fee["commission_asset"],
@@ -3395,7 +3472,13 @@ def main():
             
             sell_event = "SELL_PARTIAL_FILLED" if is_partial_sell else "SELL_FILLED"
             print(sell_event, filledQty, "@", fmt(exitPx), "PNL", fmt(pnl, Decimal('0.0001')), exitReason)
-            logTrade(f"SELL symbol={symbol} event={sell_event} qty={filledQty} exit={exitPx} pnl={pnl} reason={exitReason} profile={profile.name}")
+            logTrade(
+                f"SELL symbol={symbol} event={sell_event} qty={filledQty} exit={exitPx} pnl={pnl} "
+                f"reason={exitReason} profile={profile.name} "
+                f"session_high_price={sessionHighInfo.get('session_high_price', _session_high_value(pos))} "
+                f"current_price={sessionHighInfo.get('current_price', bid)} "
+                f"session_high_drop_pct={float(sessionHighInfo.get('session_high_drop_pct', 0.0) or 0.0)*100.0}"
+            )
             logCsv({
                 "ts_utc": local_timestamp(),
                 "symbol": symbol,
@@ -3432,6 +3515,9 @@ def main():
                 "tick_size": float(tick),
                 "exit_reason": exitReason,
                 "exit_reason_raw": exitReason,
+                "session_high_price": sessionHighInfo.get("session_high_price", _session_high_value(pos)),
+                "current_price": sessionHighInfo.get("current_price", bid),
+                "session_high_drop_pct": float(sessionHighInfo.get("session_high_drop_pct", 0.0) or 0.0) * 100.0,
                 "order_id": info.get("orderId", order.get("orderId", "")),
                 "client_order_id": info.get("clientOrderId", order.get("clientOrderId", "")),
                 "exchange_status": info.get("status", ""),
@@ -3470,6 +3556,8 @@ def main():
                         "entry": float(getattr(pos, 'entry', 0.0)),
                         "qty": float(getattr(pos, 'qty', 0.0)),
                         "ts_entry": float(getattr(pos, 'ts_entry', time.time())),
+                        "session_high_price": _session_high_value(pos),
+                        "high": _session_high_value(pos),
                     }), encoding="utf-8")
                     save_position(PersistedPosition(
                         symbol=symbol,
@@ -3477,7 +3565,7 @@ def main():
                         entry_qty=float(getattr(pos, 'qty', 0.0)),
                         entry_ts=float(getattr(pos, 'ts_entry', time.time())),
                         entry_reason="PARTIAL_SELL_REMAINING",
-                        high_seen=float(getattr(pos, 'high', getattr(pos, 'entry', 0.0))),
+                        high_seen=_session_high_value(pos),
                         buy_notional=float(getattr(pos, 'entry', 0.0)) * float(getattr(pos, 'qty', 0.0)),
                     ), _persisted_path)
                     logTrade(

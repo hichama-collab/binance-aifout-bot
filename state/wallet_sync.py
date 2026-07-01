@@ -216,6 +216,7 @@ def _position_payload(now: float, symbol: str, pos: Optional[Position], reason: 
         "cost_basis": float(getattr(pos, "cost_basis", entry) or entry),
         "entry_source": str(getattr(pos, "entry_source", "") or ""),
         "high": float(getattr(pos, "high", 0.0) or 0.0),
+        "session_high_price": float(getattr(pos, "sessionHighPrice", getattr(pos, "high", entry)) or getattr(pos, "high", entry) or entry),
         "stop": float(getattr(pos, "stop", 0.0) or 0.0),
         "ts_entry": float(getattr(pos, "ts_entry", 0.0) or 0.0),
         "reason": reason,
@@ -263,6 +264,7 @@ def walletSyncEvery(
                 high=float(pos.get("high", pos.get("entry", 0.0))),
                 stop=float(pos.get("stop", 0.0)),
                 ts_entry=float(pos.get("ts_entry", pos.get("time", time.time()))),
+                sessionHighPrice=float(pos.get("sessionHighPrice", pos.get("session_high_price", pos.get("high", pos.get("entry", 0.0))))),
             )
         except Exception:
             pos = None
@@ -408,7 +410,7 @@ def walletSyncEvery(
                 "holdings": holdings,
             }
         _clear_entry_unknown(syncState)
-        p = Position(qty=qty_now, entry=entry, high=max(entry, bid), stop=0.0, ts_entry=time.time())
+        p = Position(qty=qty_now, entry=entry, high=max(entry, bid), stop=0.0, ts_entry=time.time(), sessionHighPrice=max(entry, bid))
         setattr(p, "cost_basis", estimated_entry if estimated_entry > 0 else entry)
         setattr(p, "entry_source", entry_source)
         try:

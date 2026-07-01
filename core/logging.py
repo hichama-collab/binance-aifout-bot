@@ -21,6 +21,7 @@ TRADE_CSV_FIELDNAMES = [
     "notional", "min_notional", "step_size", "tick_size", "ws_age_ms",
     "roundtrip_cost_pct", "signal_edge_pct", "required_edge_pct", "expected_net_edge_pct",
     "entry_cross_spread", "entry_mode", "exit_reason", "exit_reason_raw",
+    "session_high_price", "current_price", "session_high_drop_pct",
     "order_id", "client_order_id", "exchange_status", "fill_latency_ms", "cancel_status",
     "fee_source", "fee_buy", "fee_sell", "commission_asset",
     "executed_qty", "quote_qty", "pnl_gross", "pnl_net_pct",

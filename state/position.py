@@ -2,6 +2,10 @@ from dataclasses import dataclass
 import time
 
 
+SESSION_HIGH_DROP_REASON = "SESSION_HIGH_DROP"
+SESSION_HIGH_DROP_PCT = 0.005
+
+
 def floor_tick(x: float, tick: float) -> float:
     if tick <= 0:
         return x
@@ -20,6 +24,36 @@ class Position:
     armed: bool = False
     protectArmed: bool = False
     tp: float = 0.0
+    sessionHighPrice: float = 0.0
+
+    def _ensure_session_high(self) -> None:
+        if self.sessionHighPrice <= 0:
+            self.sessionHighPrice = max(float(self.entry or 0.0), float(self.high or 0.0))
+
+    def check_session_high_drop(self, current_price: float) -> tuple[bool, dict]:
+        """Absolute exit gate: sell after a 0.5% drop from the session high."""
+        price = float(current_price or 0.0)
+        self._ensure_session_high()
+        if price <= 0 or self.sessionHighPrice <= 0:
+            return False, {
+                "session_high_price": self.sessionHighPrice,
+                "current_price": price,
+                "session_high_drop_pct": 0.0,
+                "session_high_updated": False,
+            }
+
+        updated = False
+        if price > self.sessionHighPrice:
+            self.sessionHighPrice = price
+            updated = True
+
+        drop_ratio = max(0.0, (self.sessionHighPrice - price) / self.sessionHighPrice)
+        return price <= self.sessionHighPrice * (1.0 - SESSION_HIGH_DROP_PCT), {
+            "session_high_price": self.sessionHighPrice,
+            "current_price": price,
+            "session_high_drop_pct": drop_ratio,
+            "session_high_updated": updated,
+        }
 
     def _raise_stop(self, candidate: float, tick: float):
         if candidate <= 0:

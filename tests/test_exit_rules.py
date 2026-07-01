@@ -11,7 +11,7 @@ from main import (
     loss_exit_allowed,
     strict_p_tape_exit_reason,
 )
-from state.position import Position
+from state.position import Position, SESSION_HIGH_DROP_REASON
 
 
 def _make_cfg(**kwargs):
@@ -93,6 +93,7 @@ def test_protective_loss_exits_are_allowed():
     assert loss_exit_allowed("BURST_FAIL age=2")
     assert loss_exit_allowed("ENTRY_GUARD_PROTECT gross=-0.1")
     assert loss_exit_allowed("ENTRY_GUARD_LOSS_CUT gross=-0.1")
+    assert loss_exit_allowed(SESSION_HIGH_DROP_REASON)
     assert loss_exit_allowed("PSELL FAIL age=45")
     assert loss_exit_allowed("PSELL FAST latest=1")
     assert not loss_exit_allowed("PSELL STALE")
@@ -175,3 +176,33 @@ def test_position_tp_has_minimal_net_margin_over_fees():
     pos.init_stops(cfg, SimpleNamespace(), tick=0.0001)
 
     assert pos._tp_pct >= 0.005 - 1e-12
+
+
+def test_session_high_drop_triggers_after_half_percent_giveback():
+    pos = Position(qty=1.0, entry=100.0, high=100.0, stop=0.0, ts_entry=time.time())
+
+    triggered, info = pos.check_session_high_drop(100.0)
+    assert not triggered
+    assert info["session_high_price"] == pytest.approx(100.0)
+
+    triggered, info = pos.check_session_high_drop(101.0)
+    assert not triggered
+    assert info["session_high_price"] == pytest.approx(101.0)
+    assert info["session_high_updated"] is True
+
+    triggered, info = pos.check_session_high_drop(100.49)
+    assert triggered
+    assert info["session_high_price"] == pytest.approx(101.0)
+    assert info["current_price"] == pytest.approx(100.49)
+    assert info["session_high_drop_pct"] >= 0.005
+
+
+def test_session_high_drop_does_not_trigger_before_threshold():
+    pos = Position(qty=1.0, entry=100.0, high=100.0, stop=0.0, ts_entry=time.time())
+
+    assert not pos.check_session_high_drop(101.0)[0]
+    triggered, info = pos.check_session_high_drop(100.60)
+
+    assert not triggered
+    assert info["session_high_price"] == pytest.approx(101.0)
+    assert info["session_high_drop_pct"] < 0.005
